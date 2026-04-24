@@ -16,8 +16,8 @@ B-mode 간 초음파 이미지에서 **간세포암종(HCC)** 과 **혈관종(He
    - [Directory to Provide](#directory-to-provide)
    - [Label Convention](#label-convention)
    - [1. Supervised Dataloader (`build_dataset`)](#1-supervised-dataloader-build_dataset)
-   - [2. DINO Multi-View — Global Only (`local_views=0`)](#2-dino-multi-view--global-only-local_views0)
-   - [3. DINO Multi-View — Global + Local Crops](#3-dino-multi-view--global--local-crops)
+   - [2. Multi-View — Global Only (`local_views=0`)](#2-multi-view--global-only-local_views0)
+   - [3. Multi-View — Global + Local Crops](#3-multi-view--global--local-crops)
    - [Augmentation Pipelines](#augmentation-pipelines)
 5. [Smoke-Test](#smoke-test)
 
@@ -133,7 +133,7 @@ for imgs, labels in ds_test:
 
 ---
 
-### 2. DINO Multi-View — Global Only (`local_views=0`)
+### 2. Multi-View — Global Only (`local_views=0`)
 
 `local_views=0` 이면 **global view 2개만** 반환한다.  
 두 뷰 모두 `img_size` 그대로 (원본 해상도 유지), strong augmentation 적용.
@@ -141,7 +141,7 @@ for imgs, labels in ds_test:
 ```python
 from dataloader import MultiViewDataset
 
-dino_ds = MultiViewDataset(
+multiview_ds = MultiViewDataset(
     data_root   = "/path/to/clean_ver_for_train",
     split       = "train",       # "train" / "val" / "test"
     img_size    = (224, 224),
@@ -151,16 +151,16 @@ dino_ds = MultiViewDataset(
     seed        = 42,
 )
 
-for g1, g2 in dino_ds:
+for g1, g2 in multiview_ds:
     # g1, g2 : tf.float32  shape [16, 224, 224, 3]  (동일 해상도)
-    # DINO teacher=g1, student=g2 or vice versa
-    loss = dino_loss(teacher(g1), student(g2))
+    # teacher=g1, student=g2 or vice versa
+    loss = ssl_loss(teacher(g1), student(g2))
     break
 ```
 
 ---
 
-### 3. DINO Multi-View — Global + Local Crops
+### 3. Multi-View — Global + Local Crops
 
 `local_views=N` (N ≥ 1) 이면 **global 2개 + local N개** 를 list로 반환한다.  
 Local view는 RandomCrop → resize → `img_size // 2` 해상도.
@@ -168,7 +168,7 @@ Local view는 RandomCrop → resize → `img_size // 2` 해상도.
 ```python
 from dataloader import MultiViewDataset
 
-dino_ds = MultiViewDataset(
+multiview_ds = MultiViewDataset(
     data_root        = "/path/to/clean_ver_for_train",
     split            = "train",
     img_size         = (224, 224),
@@ -180,12 +180,12 @@ dino_ds = MultiViewDataset(
     seed             = 42,
 )
 
-for views in dino_ds:
+for views in multiview_ds:
     # views: Python list, len = 2 + local_views = 8
     g1, g2         = views[0], views[1]   # float32 [16, 224, 224, 3]
     local_crops    = views[2:]             # list of 6 × float32 [16, 96, 96, 3]
 
-    # 예: iBOT / DINO 손실
+    # 예: self-supervised multi-view 손실
     global_feats   = [teacher(g1), teacher(g2)]
     student_feats  = [student(v) for v in views]
     break
@@ -201,8 +201,8 @@ for views in dino_ds:
 | 함수 | 용도 | 강도 |
 |------|------|------|
 | `build_base_augmentation(img_size)` | Supervised train | 중간 |
-| `build_strong_augmentation(img_size)` | DINO global view | 강 |
-| `build_local_crop_augmentation(parent_size, crop_scale, output_size)` | DINO local crop | 강 + crop |
+| `build_strong_augmentation(img_size)` | global view | 강 |
+| `build_local_crop_augmentation(parent_size, crop_scale, output_size)` | local crop | 강 + crop |
 
 **적용된 augmentation 목록 (B-mode US 도메인 근거)**
 

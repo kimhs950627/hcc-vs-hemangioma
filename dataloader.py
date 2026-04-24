@@ -43,20 +43,20 @@ Usage
         # labels: int32  [B]  {0=Hemangioma, 1=HCC}
         ...
 
-    # 2. DINO-style SSL — global views only (original resolution preserved)
-    dino_ds = MultiViewDataset(
+    # 2. Self-supervised multi-view — global views only (original resolution preserved)
+    multiview_ds = MultiViewDataset(
         data_root="./clean_ver_for_train",
         split="train",
         img_size=(224, 224),
         batch_size=16,
         local_views=0,          # 0 → return only (global1, global2)
     )
-    for g1, g2 in dino_ds:
+    for g1, g2 in multiview_ds:
         # g1, g2: float32 [B, 224, 224, 3]
         ...
 
-    # 3. DINO — global + local views
-    dino_ds = MultiViewDataset(
+    # 3. Multi-view — global + local views
+    multiview_ds = MultiViewDataset(
         data_root="./clean_ver_for_train",
         split="train",
         img_size=(224, 224),
@@ -64,7 +64,7 @@ Usage
         local_views=6,
         local_crop_scale=(0.05, 0.40),
     )
-    for views in dino_ds:
+    for views in multiview_ds:
         # views: list of tensors, len = 2 + local_views
         g1, g2, *locals_ = views
         # g1, g2  : [B, 224, 224, 3]
@@ -160,7 +160,7 @@ def _collect_split(data_root: str, split: str) -> list[tuple[str, int]]:
 # References:
 #   - Bassi et al. (Johns Hopkins, MICCAI best-paper) — medical SSL aug
 #   - Sowrirajan et al. (2021) MoCo chest X-ray
-#   - Caron et al. (2021) DINO multi-crop strategy
+#   - Caron et al. (2021) multi-crop self-supervised strategy
 
 
 def build_base_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
@@ -200,10 +200,10 @@ def build_base_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
 
 
 def build_strong_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
-    """Global-view augmentation for DINO / MoCo-style SSL.
+    """Global-view augmentation for self-supervised / contrastive-style SSL.
 
     Stronger photometric distortion than supervised baseline;
-    mirrors DINO (Caron et al., 2021) adapted for medical US.
+    Inspired by multi-crop self-supervised learning (Caron et al., 2021), adapted for medical US.
 
     Input  : (B, H, W, C) uint8 [0, 255]
     Output : (B, H, W, C) float32 [0, 1]
@@ -236,7 +236,7 @@ def build_local_crop_augmentation(
     crop_scale: tuple[float, float] = (0.05, 0.40),
     output_size: tuple[int, int] | None = None,
 ) -> keras.Sequential:
-    """Local-crop augmentation for DINO small views.
+    """Local-crop augmentation for small multi-view crops.
 
     Crops a random small region of the image, then resizes to output_size.
     Crop height/width is computed from the geometric mean of crop_scale bounds.
@@ -367,11 +367,11 @@ def build_dataset(
 
 
 # ---------------------------------------------------------------------------
-# 5. DINO Multi-View Dataloader
+# 5. Multi-View Dataloader
 # ---------------------------------------------------------------------------
 
 class MultiViewDataset:
-    """Multi-crop dataloader for DINO / iBOT self-supervised learning.
+    """Multi-crop dataloader for self-supervised multi-view learning.
 
     Reads ONE split from the SMC-LUD flat structure.
     Labels are NOT yielded (unsupervised pre-training mode).
@@ -509,15 +509,15 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"  [WARN] {e}")
 
-    # ── Test 2: DINO global-only ──────────────────────────────────────────
+    # ── Test 2: global-only multi-view ───────────────────────────────────────
     print()
     print("=" * 60)
-    print("Smoke-test 2: MultiViewDataset (local_views=0)")
+    print("Smoke-test 2: MultiViewDataset (local_views=0, global-only)")
     print("=" * 60)
     try:
-        dino_ds = MultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
+        multiview_ds = MultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
                                         batch_size=4, local_views=0)
-        for g1, g2 in dino_ds:
+        for g1, g2 in multiview_ds:
             print(f"  global_view_1 : {g1.shape}  dtype={g1.dtype}")
             print(f"  global_view_2 : {g2.shape}  dtype={g2.dtype}")
             assert g1.shape == g2.shape, "Shape mismatch!"
@@ -526,15 +526,15 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"  [WARN] {e}")
 
-    # ── Test 3: DINO + local views ────────────────────────────────────────
+    # ── Test 3: multi-view + local crops ─────────────────────────────────────
     print()
     print("=" * 60)
-    print("Smoke-test 3: MultiViewDataset (local_views=6)")
+    print("Smoke-test 3: MultiViewDataset (local_views=6, with local crops)")
     print("=" * 60)
     try:
-        dino_ds6 = MultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
+        multiview_ds6 = MultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
                                          batch_size=4, local_views=6)
-        for views in dino_ds6:
+        for views in multiview_ds6:
             print(f"  Total views returned : {len(views)}  (expected 8)")
             for i, v in enumerate(views):
                 tag = "global" if i < 2 else "local "
