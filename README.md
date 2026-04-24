@@ -139,9 +139,9 @@ for imgs, labels in ds_test:
 두 뷰 모두 `img_size` 그대로 (원본 해상도 유지), strong augmentation 적용.
 
 ```python
-from dataloader import DINOMultiViewDataset
+from dataloader import MultiViewDataset
 
-dino_ds = DINOMultiViewDataset(
+dino_ds = MultiViewDataset(
     data_root   = "/path/to/clean_ver_for_train",
     split       = "train",       # "train" / "val" / "test"
     img_size    = (224, 224),
@@ -166,9 +166,9 @@ for g1, g2 in dino_ds:
 Local view는 RandomCrop → resize → `img_size // 2` 해상도.
 
 ```python
-from dataloader import DINOMultiViewDataset
+from dataloader import MultiViewDataset
 
-dino_ds = DINOMultiViewDataset(
+dino_ds = MultiViewDataset(
     data_root        = "/path/to/clean_ver_for_train",
     split            = "train",
     img_size         = (224, 224),
@@ -242,12 +242,12 @@ Smoke-test 1: build_dataset (supervised)
   labels: [0 1 1 0]  (0=Hemangioma, 1=HCC)
   pixel range: [0.000, 1.000]
 
-Smoke-test 2: DINOMultiViewDataset (local_views=0)
+Smoke-test 2: MultiViewDataset (local_views=0)
   global_view_1 : (4, 224, 224, 3)  dtype=float32
   global_view_2 : (4, 224, 224, 3)  dtype=float32
   PASS: global-only mode
 
-Smoke-test 3: DINOMultiViewDataset (local_views=6)
+Smoke-test 3: MultiViewDataset (local_views=6)
   Total views returned : 8  (expected 8)
     [global view 0] shape=(4, 224, 224, 3)  dtype=float32
     [global view 1] shape=(4, 224, 224, 3)  dtype=float32
