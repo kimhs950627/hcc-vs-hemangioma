@@ -1,2 +1,257 @@
-# hcc-vs-hemangioma
-HCC vs Hemangioma classification using B-mode liver ultrasound (SMC-LUD dataset). Includes DINO-aware dataloaders and medical augmentation pipelines.
+# HCC vs. Hemangioma Classification
+
+B-mode 간 초음파 이미지에서 **간세포암종(HCC)** 과 **혈관종(Hemangioma)** 을 분류하는 딥러닝 프로젝트.
+
+> **Dataset**: [SMC-LUD (Samsung Medical Center – Liver Ultrasound Dataset)](https://doi.org/10.6084/m9.figshare.31112716)  
+> *Nature Scientific Data, 2026-03-10 · 5,385 B-mode images · 1,021 patients*
+
+---
+
+## Table of Contents
+
+1. [Repository Structure](#repository-structure)
+2. [Dataset Structure](#dataset-structure)
+3. [Installation](#installation)
+4. [Dataloader](#dataloader)
+   - [Directory to Provide](#directory-to-provide)
+   - [Label Convention](#label-convention)
+   - [1. Supervised Dataloader (`build_dataset`)](#1-supervised-dataloader-build_dataset)
+   - [2. DINO Multi-View — Global Only (`local_views=0`)](#2-dino-multi-view--global-only-local_views0)
+   - [3. DINO Multi-View — Global + Local Crops](#3-dino-multi-view--global--local-crops)
+   - [Augmentation Pipelines](#augmentation-pipelines)
+5. [Smoke-Test](#smoke-test)
+
+---
+
+## Repository Structure
+
+```
+hcc-vs-hemangioma/
+├── dataloader.py       # SMC-LUD dataloader (this document)
+└── README.md
+```
+
+---
+
+## Dataset Structure
+
+SMC-LUD `clean_ver_for_train` 디렉토리 기준. Train / Val / Test split이 **이미 완료**된 상태로 배포되며, 각 클래스 폴더 안에 이미지가 **flat하게** 존재한다 (환자별 sub-directory 없음).
+
+```
+clean_ver_for_train/          ← data_root 로 지정할 디렉토리
+├── train_clean/
+│   ├── HCC/
+│   │   ├── img_0001.png
+│   │   ├── img_0002.png
+│   │   └── ...
+│   └── Hemangioma/
+│       ├── img_0001.png
+│       └── ...
+├── val_clean/
+│   ├── HCC/
+│   └── Hemangioma/
+└── test_clean/
+    ├── HCC/
+    └── Hemangioma/
+```
+
+> `original_data/` 및 `split_for_train/` 폴더는 dataloader에서 사용하지 않는다.
+
+---
+
+## Installation
+
+```bash
+pip install keras tensorflow numpy
+```
+
+- **Keras 3** (backend-agnostic) 사용. TensorFlow는 `tf.data` I/O pipeline에만 의존.
+- Python 3.11+, single consumer GPU (≤16 GB VRAM) 기준.
+
+---
+
+## Dataloader
+
+### Directory to Provide
+
+모든 함수에서 `data_root` 인자에 **`clean_ver_for_train/` 경로**를 넘긴다.
+
+```python
+DATA_ROOT = "/path/to/clean_ver_for_train"
+```
+
+내부적으로 다음 세 경로를 자동으로 탐색한다.
+
+| split 인자 | 실제 탐색 경로 |
+|-----------|--------------|
+| `"train"` | `data_root/train_clean/{HCC,Hemangioma}/` |
+| `"val"`   | `data_root/val_clean/{HCC,Hemangioma}/`   |
+| `"test"`  | `data_root/test_clean/{HCC,Hemangioma}/`  |
+
+---
+
+### Label Convention
+
+| 클래스 | 레이블 |
+|--------|--------|
+| Hemangioma (혈관종) | `0` |
+| HCC (간세포암종)    | `1` |
+
+---
+
+### 1. Supervised Dataloader (`build_dataset`)
+
+학습·검증·테스트용 `tf.data.Dataset` 세 개를 한번에 반환한다.  
+Train split에만 data augmentation이 적용되고, Val/Test는 rescale만 수행한다.
+
+```python
+from dataloader import build_dataset
+
+ds_train, ds_val, ds_test = build_dataset(
+    data_root   = "/path/to/clean_ver_for_train",
+    img_size    = (224, 224),   # 모든 이미지를 이 크기로 resize
+    batch_size  = 32,
+    use_augmentation = True,    # Train에만 base augmentation 적용
+    seed        = 42,
+)
+
+# 사용 예시
+for imgs, labels in ds_train:
+    # imgs  : tf.float32  shape [32, 224, 224, 3],  range [0, 1]
+    # labels: tf.int32    shape [32],  {0=Hemangioma, 1=HCC}
+    print(imgs.shape, labels.numpy())
+    break
+
+# 검증 루프
+for imgs, labels in ds_val:
+    predictions = model(imgs, training=False)
+
+# 최종 평가
+for imgs, labels in ds_test:
+    ...
+```
+
+---
+
+### 2. DINO Multi-View — Global Only (`local_views=0`)
+
+`local_views=0` 이면 **global view 2개만** 반환한다.  
+두 뷰 모두 `img_size` 그대로 (원본 해상도 유지), strong augmentation 적용.
+
+```python
+from dataloader import DINOMultiViewDataset
+
+dino_ds = DINOMultiViewDataset(
+    data_root   = "/path/to/clean_ver_for_train",
+    split       = "train",       # "train" / "val" / "test"
+    img_size    = (224, 224),
+    batch_size  = 16,
+    local_views = 0,             # ← 0: global view 2개만 반환
+    shuffle     = True,
+    seed        = 42,
+)
+
+for g1, g2 in dino_ds:
+    # g1, g2 : tf.float32  shape [16, 224, 224, 3]  (동일 해상도)
+    # DINO teacher=g1, student=g2 or vice versa
+    loss = dino_loss(teacher(g1), student(g2))
+    break
+```
+
+---
+
+### 3. DINO Multi-View — Global + Local Crops
+
+`local_views=N` (N ≥ 1) 이면 **global 2개 + local N개** 를 list로 반환한다.  
+Local view는 RandomCrop → resize → `img_size // 2` 해상도.
+
+```python
+from dataloader import DINOMultiViewDataset
+
+dino_ds = DINOMultiViewDataset(
+    data_root        = "/path/to/clean_ver_for_train",
+    split            = "train",
+    img_size         = (224, 224),
+    batch_size       = 16,
+    local_views      = 6,                    # ← global 2 + local 6 = 총 8개 뷰
+    local_crop_scale = (0.05, 0.40),         # 이미지 면적의 5~40% crop
+    local_output_size= (96, 96),             # 원하면 직접 지정 (기본: img_size // 2)
+    shuffle          = True,
+    seed             = 42,
+)
+
+for views in dino_ds:
+    # views: Python list, len = 2 + local_views = 8
+    g1, g2         = views[0], views[1]   # float32 [16, 224, 224, 3]
+    local_crops    = views[2:]             # list of 6 × float32 [16, 96, 96, 3]
+
+    # 예: iBOT / DINO 손실
+    global_feats   = [teacher(g1), teacher(g2)]
+    student_feats  = [student(v) for v in views]
+    break
+```
+
+---
+
+### Augmentation Pipelines
+
+세 가지 Keras Sequential augmentation layer가 내장돼 있다.  
+모두 **Keras 3 `layers.*` API만** 사용하며 외부 라이브러리(cv2, scipy 등)에 의존하지 않는다.
+
+| 함수 | 용도 | 강도 |
+|------|------|------|
+| `build_base_augmentation(img_size)` | Supervised train | 중간 |
+| `build_strong_augmentation(img_size)` | DINO global view | 강 |
+| `build_local_crop_augmentation(parent_size, crop_scale, output_size)` | DINO local crop | 강 + crop |
+
+**적용된 augmentation 목록 (B-mode US 도메인 근거)**
+
+| Transform | 파라미터 | 근거 |
+|-----------|----------|------|
+| `RandomFlip` (H+V) | — | 초음파 방향성 제한 없음 |
+| `RandomRotation` | ±15° | 탐촉자 각도 변이 시뮬레이션 |
+| `RandomZoom` | ±15~20% | 병변 크기 variability |
+| `RandomTranslation` | 5~8% | 병변 위치 variability |
+| `RandomBrightness` | 0.15~0.25 | US gain / depth attenuation 변동 |
+| `RandomContrast` | 0.20~0.35 | TGC 변동 |
+| `GaussianNoise` | std 0.025~0.04 | Speckle noise 시뮬레이션 |
+| `Rescaling` | ÷255 | uint8 → float32 [0,1] |
+
+> Blur는 Keras 3 stable API에 없으므로 GaussianNoise로 대체함.
+
+---
+
+## Smoke-Test
+
+데이터셋 경로를 인자로 넘겨 전체 파이프라인을 검증한다.
+
+```bash
+python dataloader.py /path/to/clean_ver_for_train
+```
+
+정상 실행 시 아래와 같은 출력이 나온다.
+
+```
+[build_dataset] Collecting samples ...
+  [train] Hemangioma= 2134  HCC= 2172  total= 4306
+  [val  ] Hemangioma=  267  HCC=  272  total=  539
+  [test ] Hemangioma=  268  HCC=  272  total=  540
+
+Smoke-test 1: build_dataset (supervised)
+  imgs  : (4, 224, 224, 3)  dtype=float32
+  labels: [0 1 1 0]  (0=Hemangioma, 1=HCC)
+  pixel range: [0.000, 1.000]
+
+Smoke-test 2: DINOMultiViewDataset (local_views=0)
+  global_view_1 : (4, 224, 224, 3)  dtype=float32
+  global_view_2 : (4, 224, 224, 3)  dtype=float32
+  PASS: global-only mode
+
+Smoke-test 3: DINOMultiViewDataset (local_views=6)
+  Total views returned : 8  (expected 8)
+    [global view 0] shape=(4, 224, 224, 3)  dtype=float32
+    [global view 1] shape=(4, 224, 224, 3)  dtype=float32
+    [local  view 2] shape=(4, 112, 112, 3)  dtype=float32
+    ...
+  PASS: multi-crop mode
+```
