@@ -30,7 +30,7 @@ Label convention
 
 Usage
 -----
-    from dataloader import build_dataset, DINOMultiViewDataset
+    from dataloader import build_dataset, MultiViewDataset
 
     # 1. Vanilla supervised loader
     ds_train, ds_val, ds_test = build_dataset(
@@ -44,7 +44,7 @@ Usage
         ...
 
     # 2. DINO-style SSL — global views only (original resolution preserved)
-    dino_ds = DINOMultiViewDataset(
+    dino_ds = MultiViewDataset(
         data_root="./clean_ver_for_train",
         split="train",
         img_size=(224, 224),
@@ -56,7 +56,7 @@ Usage
         ...
 
     # 3. DINO — global + local views
-    dino_ds = DINOMultiViewDataset(
+    dino_ds = MultiViewDataset(
         data_root="./clean_ver_for_train",
         split="train",
         img_size=(224, 224),
@@ -370,7 +370,7 @@ def build_dataset(
 # 5. DINO Multi-View Dataloader
 # ---------------------------------------------------------------------------
 
-class DINOMultiViewDataset:
+class MultiViewDataset:
     """Multi-crop dataloader for DINO / iBOT self-supervised learning.
 
     Reads ONE split from the SMC-LUD flat structure.
@@ -428,7 +428,7 @@ class DINOMultiViewDataset:
         self.local_views       = local_views
         self.local_output_size = local_output_size or (img_size[0] // 2, img_size[1] // 2)
 
-        print(f"[DINOMultiViewDataset] split={split}")
+        print(f"[MultiViewDataset] split={split}")
         samples = _collect_split(data_root, split)
         if shuffle:
             rng = random.Random(seed)
@@ -512,10 +512,10 @@ if __name__ == "__main__":
     # ── Test 2: DINO global-only ──────────────────────────────────────────
     print()
     print("=" * 60)
-    print("Smoke-test 2: DINOMultiViewDataset (local_views=0)")
+    print("Smoke-test 2: MultiViewDataset (local_views=0)")
     print("=" * 60)
     try:
-        dino_ds = DINOMultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
+        dino_ds = MultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
                                         batch_size=4, local_views=0)
         for g1, g2 in dino_ds:
             print(f"  global_view_1 : {g1.shape}  dtype={g1.dtype}")
@@ -529,10 +529,10 @@ if __name__ == "__main__":
     # ── Test 3: DINO + local views ────────────────────────────────────────
     print()
     print("=" * 60)
-    print("Smoke-test 3: DINOMultiViewDataset (local_views=6)")
+    print("Smoke-test 3: MultiViewDataset (local_views=6)")
     print("=" * 60)
     try:
-        dino_ds6 = DINOMultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
+        dino_ds6 = MultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
                                          batch_size=4, local_views=6)
         for views in dino_ds6:
             print(f"  Total views returned : {len(views)}  (expected 8)")
