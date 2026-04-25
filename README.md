@@ -419,6 +419,7 @@ print(hema_bank.shape, hcc_bank.shape)
 This returns in-memory numpy arrays and also saves both prototype files to disk.
 
 
+
 ## Full Pipeline Example
 
 The example below shows the intended end-to-end workflow:
@@ -426,7 +427,7 @@ The example below shows the intended end-to-end workflow:
 2. Export teacher encoder weights
 3. Stage 2 supervised + SupCon training initialized from the teacher
 4. Build dual prototype banks from the **train split**
-5. Run prototype-based inference and obtain malignancy-related scores
+5. Run prototype-based inference and obtain malignancy-related scores and heatmaps
 
 ```python
 import numpy as np
@@ -531,11 +532,26 @@ print("HCC global score:", result["hcc_global_score"])
 print("HCC patch score:", result["hcc_patch_score"])
 print("Malignancy score:", result["malignancy_score"])
 
-overlay_image = result["overlay_image"]
-prototype_overlay_image = result["prototype_overlay_image"]
+# Heatmaps
+overlay_image = result["overlay_image"]  # Grad-CAM / attention-based explanation
+hcc_proto_overlay = result["prototype_overlay_image"]  # HCC prototype-only heatmap
+margin_proto_overlay = result["prototype_margin_overlay_image"]  # (HCC - Hemangioma) dual-bank margin heatmap
 ```
 
 ### Expected artifacts
+
+- `output/vit_stage1_teacher_encoder.weights.h5`
+- `output/vit_stage2_classifier.weights.h5`
+- `output/prototype_bank/hemangioma_prototypes.npy`
+- `output/prototype_bank/hcc_prototypes.npy`
+
+### Recommended order
+
+- Use the **EMA teacher encoder** from Stage 1 to initialize Stage 2.
+- Build prototype banks **after Stage 2**, not before.
+- Build prototype banks from the **train split only**.
+- Use the HCC bank (and the dual-bank margin) for malignancy-oriented prototype heatmaps.
+
 
 - `output/vit_stage1_teacher_encoder.weights.h5`
 - `output/vit_stage2_classifier.weights.h5`
