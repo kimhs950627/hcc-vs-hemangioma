@@ -7,6 +7,7 @@ import numpy as np
 import tensorflow as tf
 
 from training.losses import prototype_similarity_score
+from inference.scorer import prototype_heatmap, malignancy_score
 
 
 def preprocess_image_array(image: np.ndarray, target_size: tuple[int, int] = (224, 224)) -> tf.Tensor:
@@ -68,16 +69,33 @@ def infer_with_prototypes(classifier_model, image: np.ndarray, prototypes: np.nd
     out = classifier_model(x, training=False)
     probs = out['probabilities'].numpy()[0]
     embedding = out['embedding']
-    malignancy = prototype_similarity_score(embedding, tf.convert_to_tensor(prototypes), reduction='max').numpy()[0]
+    score_dict = malignancy_score(embedding, out.get('encoded_patches', None), tf.convert_to_tensor(prototypes, dtype=tf.float32), alpha=0.5)
+    malignancy = score_dict['malignancy_score'].numpy()[0]
     encoder_name = classifier_model.model.encoder.name if hasattr(classifier_model, 'model') else classifier_model.encoder.name
     if 'convnext' in encoder_name or 'efficientnet' in encoder_name or 'cnn' in encoder_name:
         overlay = gradcam_overlay(classifier_model, image=image, class_index=1)
     else:
         overlay = attention_overlay(classifier_model, image=image, head_reduction='mean')
+    proto_overlay = None
+    if out.get('encoded_patches', None) is not None:
+        proto_overlay = prototype_overlay(image=image, encoded_patches=out['encoded_patches'], prototypes=prototypes)
     return {
         'p_hemangioma': float(probs[0]),
         'p_hcc': float(probs[1]),
         'pred_label': int(np.argmax(probs)),
+        'global_score': float(score_dict['global_score'].numpy()[0]),
+        'patch_score': float(score_dict['patch_score'].numpy()[0]),
         'malignancy_score': float(malignancy),
         'overlay_image': overlay,
+        'prototype_overlay_image': proto_overlay,
     }
+
+
+
+def prototype_overlay(image: np.ndarray, encoded_patches: tf.Tensor, prototypes: np.ndarray | tf.Tensor) -> np.ndarray:
+    x = preprocess_image_array(image)
+    heat = prototype_heatmap(encoded_patches, tf.convert_to_tensor(prototypes, dtype=tf.float32), image_size=(x.shape[1], x.shape[2]))
+    heat = heat.numpy()[0, ..., 0]
+    img = x.numpy()[0]
+    color = np.stack([heat, np.zeros_like(heat), 1.0 - heat], axis=-1)
+    return np.clip(0.55 * img + 0.45 * color, 0.0, 1.0)

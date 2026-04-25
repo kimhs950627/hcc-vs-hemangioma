@@ -55,3 +55,12 @@ def build_stage2_trainer(encoder_name: str, input_shape=(224, 224, 3), num_class
     model = SupConClassifier(encoder_name=encoder_name, input_shape=input_shape, num_classes=num_classes, supcon_weight=supcon_weight)
     model.compile(optimizer=keras.optimizers.AdamW(learning_rate=lr))
     return model
+
+
+
+def stage2_encoder_recommendation() -> str:
+    return (
+        'Use the EMA teacher encoder from Stage 1 as the default initializer for Stage 2. '
+        'The student/online encoder can be used for ablation, but the teacher is generally '
+        'more stable because it is a temporal ensemble of online weights.'
+    )
