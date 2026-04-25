@@ -77,8 +77,6 @@ from __future__ import annotations
 import os
 import pathlib
 import random
-from typing import Sequence
-
 import numpy as np
 import tensorflow as tf          # used ONLY for tf.data I/O pipeline
 import keras
@@ -370,8 +368,65 @@ def build_dataset(
 # 5. Multi-View Dataloader
 # ---------------------------------------------------------------------------
 
+def _build_multiview_dataset(
+    samples: list[tuple[str, int]],
+    img_size: tuple[int, int],
+    batch_size: int,
+    local_views: int,
+    local_crop_scale: tuple[float, float],
+    local_output_size: tuple[int, int] | None,
+    shuffle: bool,
+    seed: int,
+) -> tf.data.Dataset:
+    """Create a fit-ready tf.data.Dataset for multi-view learning.
+
+    Returns:
+        local_views == 0:
+            dataset yielding (g1, g2)
+        local_views > 0:
+            dataset yielding tuple(g1, g2, l1, ..., lN)
+    """
+    paths = [s[0] for s in samples]
+    labels = [s[1] for s in samples]
+
+    raw_ds = tf.data.Dataset.from_tensor_slices((paths, labels))
+    if shuffle:
+        raw_ds = raw_ds.shuffle(buffer_size=len(paths), seed=seed, reshuffle_each_iteration=True)
+
+    raw_ds = (
+        raw_ds
+        .map(lambda p, l: _decode_image(p, l, img_size), num_parallel_calls=tf.data.AUTOTUNE)
+        .batch(batch_size, drop_remainder=True)
+    )
+
+    global_aug = build_strong_augmentation(img_size)
+    local_size = local_output_size or (img_size[0] // 2, img_size[1] // 2)
+    local_aug = None
+    if local_views > 0:
+        local_aug = build_local_crop_augmentation(
+            parent_size=img_size,
+            crop_scale=local_crop_scale,
+            output_size=local_size,
+        )
+
+    def _to_views(imgs_uint8, _):
+        g1 = global_aug(imgs_uint8, training=True)
+        g2 = global_aug(imgs_uint8, training=True)
+        if local_views == 0:
+            return g1, g2
+        views = [g1, g2]
+        for _ in range(local_views):
+            views.append(local_aug(imgs_uint8, training=True))
+        return tuple(views)
+
+    return raw_ds.map(_to_views, num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)
+
 class MultiViewDataset:
     """Multi-crop dataloader for self-supervised multi-view learning.
+
+    This class wraps an internal ``tf.data.Dataset`` and exposes a small
+    tf.data-like interface (``take()``, ``prefetch()``, ``as_dataset()``),
+    so it can be used directly with ``model.fit(...)``.
 
     Reads ONE split from the SMC-LUD flat structure.
     Labels are NOT yielded (unsupervised pre-training mode).
@@ -393,7 +448,7 @@ class MultiViewDataset:
         batch_size       : Batch size.
         local_views      : Number of local crops.
                            0  → yield (g1, g2)   — tuple of 2 tensors
-                           N  → yield [g1, g2, l1, ..., lN]  — list
+                           N  → yield (g1, g2, l1, ..., lN)  — tuple
         local_crop_scale : (min, max) area fraction for local crops.
         local_output_size: (H, W) of local view output; default = img_size // 2.
         shuffle          : Shuffle the dataset.
@@ -405,9 +460,8 @@ class MultiViewDataset:
             g1, g2 : float32 [B, H, W, 3]
 
         local_views > 0:
-            yields [g1, g2, l1, ..., lN]   (list length = 2 + local_views)
-            g1, g2 : float32 [B, H,   W,   3]
-            l*     : float32 [B, H//2, W//2, 3]  (or local_output_size)
+            yields (g1, g2, l1, ..., lN)
+            tuple length = 2 + local_views
     """
 
     def __init__(
@@ -423,66 +477,52 @@ class MultiViewDataset:
         seed: int = 42,
     ) -> None:
         set_seed(seed)
-        self.img_size          = img_size
-        self.batch_size        = batch_size
-        self.local_views       = local_views
+        self.data_root = data_root
+        self.split = split
+        self.img_size = img_size
+        self.batch_size = batch_size
+        self.local_views = local_views
+        self.local_crop_scale = local_crop_scale
         self.local_output_size = local_output_size or (img_size[0] // 2, img_size[1] // 2)
+        self.shuffle = shuffle
+        self.seed = seed
 
         print(f"[MultiViewDataset] split={split}")
-        samples = _collect_split(data_root, split)
-        if shuffle:
-            rng = random.Random(seed)
-            rng.shuffle(samples)
+        self.samples = _collect_split(data_root, split)
+        self.num_samples = len(self.samples)
 
-        paths  = [s[0] for s in samples]
-        labels = [s[1] for s in samples]
-
-        # Raw uint8 tf.data (shared source for both global & local views)
-        self._raw_ds = (
-            tf.data.Dataset.from_tensor_slices((paths, labels))
-            .map(
-                lambda p, l: _decode_image(p, l, img_size),
-                num_parallel_calls=tf.data.AUTOTUNE,
-            )
-            .batch(batch_size, drop_remainder=True)
-            .prefetch(tf.data.AUTOTUNE)
+        self.dataset = _build_multiview_dataset(
+            samples=self.samples,
+            img_size=img_size,
+            batch_size=batch_size,
+            local_views=local_views,
+            local_crop_scale=local_crop_scale,
+            local_output_size=self.local_output_size,
+            shuffle=shuffle,
+            seed=seed,
         )
 
-        # Build augmentation layers once (reused every iteration)
-        self._global_aug = build_strong_augmentation(img_size)
-        if local_views > 0:
-            self._local_aug = build_local_crop_augmentation(
-                parent_size=img_size,
-                crop_scale=local_crop_scale,
-                output_size=self.local_output_size,
-            )
-
-        total = len(samples)
         print(
             f"  global_views : 2 @ {img_size}  (strong aug)\n"
             f"  local_views  : {local_views} @ "
             f"{self.local_output_size if local_views else 'N/A'}  (crop aug)\n"
-            f"  total images : {total}  |  steps/epoch ≈ {total // batch_size}"
+            f"  total images : {self.num_samples}  |  steps/epoch ≈ {self.num_samples // batch_size}"
         )
 
-    # ------------------------------------------------------------------
     def __iter__(self):
-        for imgs_uint8, _ in self._raw_ds:
-            # Two global views at full resolution
-            g1 = self._global_aug(imgs_uint8, training=True)   # [B, H, W, 3]
-            g2 = self._global_aug(imgs_uint8, training=True)   # [B, H, W, 3]
-
-            if self.local_views == 0:
-                yield g1, g2
-            else:
-                views = [g1, g2]
-                for _ in range(self.local_views):
-                    lv = self._local_aug(imgs_uint8, training=True)
-                    views.append(lv)
-                yield views
+        return iter(self.dataset)
 
     def __len__(self) -> int:
-        return sum(1 for _ in self._raw_ds)
+        return self.num_samples // self.batch_size
+
+    def take(self, count: int) -> tf.data.Dataset:
+        return self.dataset.take(count)
+
+    def prefetch(self, buffer_size=tf.data.AUTOTUNE) -> tf.data.Dataset:
+        return self.dataset.prefetch(buffer_size)
+
+    def as_dataset(self) -> tf.data.Dataset:
+        return self.dataset
 
 
 # ---------------------------------------------------------------------------
@@ -515,7 +555,7 @@ if __name__ == "__main__":
     try:
         multiview_ds = MultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
                                         batch_size=4, local_views=0)
-        for g1, g2 in multiview_ds:
+        for g1, g2 in multiview_ds.take(1):
             print(f"  global_view_1 : {g1.shape}  dtype={g1.dtype}")
             print(f"  global_view_2 : {g2.shape}  dtype={g2.dtype}")
             assert g1.shape == g2.shape, "Shape mismatch!"
@@ -532,7 +572,7 @@ if __name__ == "__main__":
     try:
         multiview_ds6 = MultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
                                          batch_size=4, local_views=6)
-        for views in multiview_ds6:
+        for views in multiview_ds6.take(1):
             print(f"  Total views returned : {len(views)}  (expected 8)")
             for i, v in enumerate(views):
                 tag = "global" if i < 2 else "local "
