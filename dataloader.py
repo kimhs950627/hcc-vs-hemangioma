@@ -324,11 +324,15 @@ def build_dataset(
     img_size: tuple[int, int] = (224, 224),
     batch_size: int = 32,
     use_augmentation: bool = True,
+    shuffle_train: bool = True,
+    shuffle_val: bool = True,
+    shuffle_test: bool = True,
     seed: int = 42,
 ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
     """Build train / val / test tf.data.Dataset from SMC-LUD flat structure.
 
     The function reads the pre-split directories:
+        All three splits can be shuffled independently.
         data_root/train_clean/{HCC,Hemangioma}/
         data_root/val_clean/{HCC,Hemangioma}/
         data_root/test_clean/{HCC,Hemangioma}/
@@ -338,6 +342,9 @@ def build_dataset(
         img_size        : (H, W) to resize all images.
         batch_size      : Batch size for all splits.
         use_augmentation: If True, applies base_augmentation to train split only.
+        shuffle_train   : If True, shuffle train samples.
+        shuffle_val     : If True, shuffle validation samples.
+        shuffle_test    : If True, shuffle test samples.
         seed            : Random seed.
 
     Returns:
@@ -357,9 +364,9 @@ def build_dataset(
     # Val / Test: only rescale (no augmentation), keep uint8 → float mapping
     rescale_only = keras.Sequential([layers.Rescaling(scale=1.0 / 255.0)])
 
-    ds_train = _make_tf_dataset(train_s, img_size, batch_size, shuffle=True,  augment_layer=aug,          seed=seed)
-    ds_val   = _make_tf_dataset(val_s,   img_size, batch_size, shuffle=False, augment_layer=rescale_only)
-    ds_test  = _make_tf_dataset(test_s,  img_size, batch_size, shuffle=False, augment_layer=rescale_only)
+    ds_train = _make_tf_dataset(train_s, img_size, batch_size, shuffle=shuffle_train, augment_layer=aug,          seed=seed)
+    ds_val   = _make_tf_dataset(val_s,   img_size, batch_size, shuffle=shuffle_val,   augment_layer=rescale_only, seed=seed)
+    ds_test  = _make_tf_dataset(test_s,  img_size, batch_size, shuffle=shuffle_test,  augment_layer=rescale_only, seed=seed)
 
     return ds_train, ds_val, ds_test
 
@@ -451,7 +458,7 @@ class MultiViewDataset:
                            N  → yield (g1, g2, l1, ..., lN)  — tuple
         local_crop_scale : (min, max) area fraction for local crops.
         local_output_size: (H, W) of local view output; default = img_size // 2.
-        shuffle          : Shuffle the dataset.
+        shuffle          : Shuffle the dataset (applies to train / val / test).
         seed             : Random seed.
 
     Iteration:
@@ -539,7 +546,10 @@ if __name__ == "__main__":
     print("Smoke-test 1: build_dataset (supervised)")
     print("=" * 60)
     try:
-        ds_tr, ds_va, ds_te = build_dataset(DATA_ROOT, img_size=(224, 224), batch_size=4)
+        ds_tr, ds_va, ds_te = build_dataset(
+            DATA_ROOT, img_size=(224, 224), batch_size=4,
+            shuffle_train=True, shuffle_val=True, shuffle_test=True
+        )
         for imgs, lbls in ds_tr.take(1):
             print(f"  imgs  : {imgs.shape}  dtype={imgs.dtype}")
             print(f"  labels: {lbls.numpy()}  (0=Hemangioma, 1=HCC)")
