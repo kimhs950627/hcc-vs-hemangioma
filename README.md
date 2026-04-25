@@ -417,3 +417,134 @@ print(hema_bank.shape, hcc_bank.shape)
 ```
 
 This returns in-memory numpy arrays and also saves both prototype files to disk.
+
+
+## Full Pipeline Example
+
+The example below shows the intended end-to-end workflow:
+1. Stage 1 SSL pretraining with EMA teacher-student learning
+2. Export teacher encoder weights
+3. Stage 2 supervised + SupCon training initialized from the teacher
+4. Build dual prototype banks from the **train split**
+5. Run prototype-based inference and obtain malignancy-related scores
+
+```python
+import numpy as np
+from dataloader import MultiViewDataset, build_dataset
+from training.stage1_ssl import build_stage1_trainer
+from training.stage2_supcon import build_stage2_trainer
+from inference.build_prototype_bank import build_dual_prototype_bank
+from visualization.interpret import infer_with_prototypes
+from models.encoder import build_classifier
+
+# -----------------------------
+# 1) Stage 1 SSL pretraining
+# -----------------------------
+ssl_ds = MultiViewDataset(
+    data_root="./clean_ver_for_train",
+    split="train",
+    img_size=(224, 224),
+    batch_size=16,
+    local_views=6,
+).as_dataset()
+
+ssl_model = build_stage1_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    temperature=0.1,
+    ema_momentum=0.996,
+    lr=1e-4,
+)
+
+ssl_model.fit(ssl_ds, epochs=10)
+
+# Export the EMA teacher encoder for Stage 2 initialization
+teacher_encoder = ssl_model.get_stage2_encoder(use_teacher=True)
+teacher_encoder.save_weights("output/vit_stage1_teacher_encoder.weights.h5")
+
+# -----------------------------
+# 2) Stage 2 supervised training
+# -----------------------------
+ds_train, ds_val, ds_test = build_dataset(
+    data_root="./clean_ver_for_train",
+    img_size=(224, 224),
+    batch_size=16,
+    use_augmentation=True,
+    shuffle_train=True,
+    shuffle_val=False,
+    shuffle_test=False,
+)
+
+stage2_model = build_stage2_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    num_classes=2,
+    supcon_weight=0.3,
+    lr=1e-4,
+    teacher_encoder_weights="output/vit_stage1_teacher_encoder.weights.h5",
+)
+
+stage2_model.fit(ds_train, validation_data=ds_val, epochs=20)
+stage2_model.model.save_weights("output/vit_stage2_classifier.weights.h5")
+
+# -----------------------------
+# 3) Build dual prototype banks
+# -----------------------------
+proto_result = build_dual_prototype_bank(
+    data_root="./clean_ver_for_train",
+    encoder="vit",
+    weights="output/vit_stage2_classifier.weights.h5",
+    n_prototypes=8,
+    output_dir="output/prototype_bank",
+    img_size=224,
+    batch_size=16,
+)
+
+hema_bank = proto_result["hemangioma_prototypes"]
+hcc_bank = proto_result["hcc_prototypes"]
+
+print(proto_result["hemangioma_path"])
+print(proto_result["hcc_path"])
+
+# -----------------------------
+# 4) Prototype-based inference
+# -----------------------------
+classifier_model = build_classifier("vit", input_shape=(224, 224, 3))
+classifier_model.load_weights("output/vit_stage2_classifier.weights.h5")
+
+# Replace this with a real preprocessed image array of shape [H, W, 3]
+image_np = np.zeros((224, 224, 3), dtype=np.float32)
+
+result = infer_with_prototypes(
+    classifier_model=classifier_model,
+    image=image_np,
+    hemangioma_prototypes=hema_bank,
+    hcc_prototypes=hcc_bank,
+)
+
+print("P(Hemangioma):", result["p_hemangioma"])
+print("P(HCC):", result["p_hcc"])
+print("Hemangioma score:", result["hemangioma_score"])
+print("HCC score:", result["hcc_score"])
+print("HCC global score:", result["hcc_global_score"])
+print("HCC patch score:", result["hcc_patch_score"])
+print("Malignancy score:", result["malignancy_score"])
+
+overlay_image = result["overlay_image"]
+prototype_overlay_image = result["prototype_overlay_image"]
+```
+
+### Expected artifacts
+
+- `output/vit_stage1_teacher_encoder.weights.h5`
+- `output/vit_stage2_classifier.weights.h5`
+- `output/prototype_bank/hemangioma_prototypes.npy`
+- `output/prototype_bank/hcc_prototypes.npy`
+
+### Recommended order
+
+- Use the **EMA teacher encoder** from Stage 1 to initialize Stage 2.
+- Build prototype banks **after Stage 2**, not before.
+- Build prototype banks from the **train split only**.
+- Use the HCC bank for malignancy-oriented prototype heatmaps.
