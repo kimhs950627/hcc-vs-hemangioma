@@ -48,7 +48,7 @@ def patch_level_score(encoded_patches: tf.Tensor, prototypes: tf.Tensor, patch_r
     return per_patch
 
 
-def malignancy_score(
+def class_malignancy_score(
     embedding: tf.Tensor,
     encoded_patches: tf.Tensor | None,
     prototypes: tf.Tensor,
@@ -56,10 +56,33 @@ def malignancy_score(
 ) -> dict[str, tf.Tensor]:
     g = global_prototype_score(embedding, prototypes, reduction='max')
     if encoded_patches is None:
-        return {'global_score': g, 'patch_score': g, 'malignancy_score': g}
+        return {'global_score': g, 'patch_score': g, 'score': g}
     p = patch_level_score(encoded_patches, prototypes, patch_reduction='max', image_reduction='mean')
     score = alpha * g + (1.0 - alpha) * p
-    return {'global_score': g, 'patch_score': p, 'malignancy_score': score}
+    return {'global_score': g, 'patch_score': p, 'score': score}
+
+
+def dual_bank_scores(
+    embedding: tf.Tensor,
+    encoded_patches: tf.Tensor | None,
+    hemangioma_prototypes: tf.Tensor,
+    hcc_prototypes: tf.Tensor,
+    alpha: float = 0.5,
+) -> dict[str, tf.Tensor]:
+    hema = class_malignancy_score(embedding, encoded_patches, hemangioma_prototypes, alpha=alpha)
+    hcc = class_malignancy_score(embedding, encoded_patches, hcc_prototypes, alpha=alpha)
+    logits = tf.stack([hema['score'], hcc['score']], axis=-1)
+    probs = tf.nn.softmax(logits, axis=-1)
+    return {
+        'hemangioma_global_score': hema['global_score'],
+        'hemangioma_patch_score': hema['patch_score'],
+        'hemangioma_score': hema['score'],
+        'hcc_global_score': hcc['global_score'],
+        'hcc_patch_score': hcc['patch_score'],
+        'hcc_score': hcc['score'],
+        'dual_bank_probabilities': probs,
+        'malignancy_score': hcc['score'],
+    }
 
 
 def prototype_heatmap(encoded_patches: tf.Tensor, prototypes: tf.Tensor, image_size: tuple[int, int]) -> tf.Tensor:
@@ -73,12 +96,19 @@ def prototype_heatmap(encoded_patches: tf.Tensor, prototypes: tf.Tensor, image_s
     return heat
 
 
-def infer_scores_from_outputs(outputs: dict[str, Any], prototypes: np.ndarray | tf.Tensor, alpha: float = 0.5) -> dict[str, Any]:
-    proto = tf.convert_to_tensor(prototypes, dtype=tf.float32)
-    scores = malignancy_score(
+def infer_scores_from_outputs(
+    outputs: dict[str, Any],
+    hemangioma_prototypes: np.ndarray | tf.Tensor,
+    hcc_prototypes: np.ndarray | tf.Tensor,
+    alpha: float = 0.5,
+) -> dict[str, Any]:
+    hema_proto = tf.convert_to_tensor(hemangioma_prototypes, dtype=tf.float32)
+    hcc_proto = tf.convert_to_tensor(hcc_prototypes, dtype=tf.float32)
+    scores = dual_bank_scores(
         embedding=outputs['embedding'],
         encoded_patches=outputs.get('encoded_patches', None),
-        prototypes=proto,
+        hemangioma_prototypes=hema_proto,
+        hcc_prototypes=hcc_proto,
         alpha=alpha,
     )
     return {k: v.numpy() for k, v in scores.items()}

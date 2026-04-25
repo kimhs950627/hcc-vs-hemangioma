@@ -11,10 +11,20 @@ from training.losses import supervised_contrastive_loss
 
 
 class SupConClassifier(keras.Model):
-    def __init__(self, encoder_name: str, input_shape=(224, 224, 3), num_classes: int = 2, supcon_weight: float = 0.3):
+    def __init__(
+        self,
+        encoder_name: str,
+        input_shape=(224, 224, 3),
+        num_classes: int = 2,
+        supcon_weight: float = 0.3,
+        encoder_init_weights: str | None = None,
+    ):
         super().__init__()
         self.supcon_weight = supcon_weight
         self.model = build_classifier(encoder_name, input_shape=input_shape, num_classes=num_classes)
+        self.encoder_init_weights = encoder_init_weights
+        if encoder_init_weights:
+            self.model.encoder.load_weights(encoder_init_weights)
         self.ce_loss = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         self.loss_tracker = keras.metrics.Mean(name='loss')
         self.acc = keras.metrics.SparseCategoricalAccuracy(name='acc')
@@ -51,8 +61,21 @@ class SupConClassifier(keras.Model):
         return {'loss': self.loss_tracker.result(), 'acc': self.acc.result()}
 
 
-def build_stage2_trainer(encoder_name: str, input_shape=(224, 224, 3), num_classes: int = 2, supcon_weight: float = 0.3, lr: float = 1e-4):
-    model = SupConClassifier(encoder_name=encoder_name, input_shape=input_shape, num_classes=num_classes, supcon_weight=supcon_weight)
+def build_stage2_trainer(
+    encoder_name: str,
+    input_shape=(224, 224, 3),
+    num_classes: int = 2,
+    supcon_weight: float = 0.3,
+    lr: float = 1e-4,
+    teacher_encoder_weights: str | None = None,
+):
+    model = SupConClassifier(
+        encoder_name=encoder_name,
+        input_shape=input_shape,
+        num_classes=num_classes,
+        supcon_weight=supcon_weight,
+        encoder_init_weights=teacher_encoder_weights,
+    )
     model.compile(optimizer=keras.optimizers.AdamW(learning_rate=lr))
     return model
 

@@ -255,3 +255,120 @@ Smoke-test 3: MultiViewDataset (local_views=6)
     ...
   PASS: multi-crop mode
 ```
+
+
+## Stage 1 SSL Training
+
+Stage 1 uses a student-teacher SSL framework with **EMA teacher updates** in `training/stage1_ssl.py`.
+For Stage 2 initialization, use the **teacher encoder weights by default** because the teacher is a temporal ensemble and typically more stable.
+
+```python
+from dataloader import MultiViewDataset
+from training.stage1_ssl import build_stage1_trainer
+
+ssl_ds = MultiViewDataset(
+    data_root="./clean_ver_for_train",
+    split="train",
+    img_size=(224, 224),
+    batch_size=16,
+    local_views=6,
+).as_dataset()
+
+ssl_model = build_stage1_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    temperature=0.1,
+    ema_momentum=0.996,
+    lr=1e-4,
+)
+
+ssl_model.fit(ssl_ds, epochs=10)
+
+# recommended for Stage 2
+teacher_encoder = ssl_model.get_stage2_encoder(use_teacher=True)
+teacher_encoder.save_weights("output/vit_stage1_teacher_encoder.weights.h5")
+```
+
+## Stage 2 Supervised + SupCon Training
+
+Stage 2 can initialize the encoder directly from the **Stage 1 teacher weights**.
+
+```python
+from dataloader import build_dataset
+from training.stage2_supcon import build_stage2_trainer, stage2_encoder_recommendation
+
+print(stage2_encoder_recommendation())
+
+ds_train, ds_val, ds_test = build_dataset(
+    data_root="./clean_ver_for_train",
+    img_size=(224, 224),
+    batch_size=16,
+    use_augmentation=True,
+    shuffle_train=True,
+    shuffle_val=True,
+    shuffle_test=True,
+)
+
+stage2_model = build_stage2_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    num_classes=2,
+    supcon_weight=0.3,
+    lr=1e-4,
+    teacher_encoder_weights="output/vit_stage1_teacher_encoder.weights.h5",
+)
+
+stage2_model.fit(ds_train, validation_data=ds_val, epochs=20)
+```
+
+## Prototype Bank Construction
+
+The prototype bank is now built from the **train split only** and supports a **dual bank**:
+- `hemangioma_prototypes.npy`
+- `hcc_prototypes.npy`
+
+```bash
+python inference/build_prototype_bank.py   --data_root ./clean_ver_for_train   --encoder vit   --weights output/stage2_classifier.weights.h5   --n_prototypes 8   --output_dir output/prototype_bank
+```
+
+## Inference and Scoring
+
+Dual-bank inference returns both **hemangioma score** and **HCC score**, as well as global/patch-level scores and heatmaps.
+
+```python
+import numpy as np
+from models.encoder import build_classifier
+from visualization.interpret import infer_with_prototypes
+
+model = build_classifier("vit", input_shape=(224, 224, 3))
+model.load_weights("output/stage2_classifier.weights.h5")
+
+hema_bank = np.load("output/prototype_bank/hemangioma_prototypes.npy")
+hcc_bank = np.load("output/prototype_bank/hcc_prototypes.npy")
+
+result = infer_with_prototypes(
+    classifier_model=model,
+    image=image_np,
+    hemangioma_prototypes=hema_bank,
+    hcc_prototypes=hcc_bank,
+)
+
+print("P(Hemangioma):", result["p_hemangioma"])
+print("P(HCC):", result["p_hcc"])
+print("Hemangioma score:", result["hemangioma_score"])
+print("HCC score:", result["hcc_score"])
+print("Global HCC score:", result["hcc_global_score"])
+print("Patch HCC score:", result["hcc_patch_score"])
+print("Malignancy score:", result["malignancy_score"])
+
+overlay = result["overlay_image"]
+proto_overlay = result["prototype_overlay_image"]
+```
+
+## Notes on Outputs
+
+- Transformer encoders return: `cls_token`, `encoded_patches`, `last_encoder_layer_attentional_weights`
+- CNN encoders return: `gap_vector`, `feature_map`
+- `overlay_image`: Grad-CAM for CNNs, attention overlay for Transformer-family encoders
+- `prototype_overlay_image`: patch-level prototype similarity heatmap

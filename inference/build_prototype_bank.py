@@ -19,13 +19,13 @@ class SimpleKMeans:
 
     def fit(self, x: np.ndarray):
         rng = np.random.default_rng(self.seed)
-        idx = rng.choice(len(x), size=self.n_clusters, replace=False)
+        idx = rng.choice(len(x), size=min(self.n_clusters, len(x)), replace=False)
         centers = x[idx].copy()
         for _ in range(self.n_iter):
             dist = ((x[:, None, :] - centers[None, :, :]) ** 2).sum(axis=-1)
             labels = dist.argmin(axis=1)
             new_centers = []
-            for k in range(self.n_clusters):
+            for k in range(len(centers)):
                 members = x[labels == k]
                 if len(members) == 0:
                     new_centers.append(centers[k])
@@ -39,18 +39,17 @@ class SimpleKMeans:
         return self
 
 
-def collect_embeddings(model, dataset, target_label: int = 1) -> np.ndarray:
+def collect_embeddings(model, dataset, target_label: int) -> np.ndarray:
     embs = []
     for images, labels in dataset:
         mask = tf.equal(labels, target_label)
         if not tf.reduce_any(mask):
             continue
         out = model(images, training=False)
-        emb = out['embedding']
-        emb = tf.boolean_mask(emb, mask)
+        emb = tf.boolean_mask(out['embedding'], mask)
         embs.append(emb.numpy())
     if not embs:
-        raise RuntimeError('No target-label samples found for prototype bank construction.')
+        raise RuntimeError(f'No samples found for target label {target_label}.')
     return np.concatenate(embs, axis=0)
 
 
@@ -60,12 +59,12 @@ def main():
     parser.add_argument('--encoder', type=str, default='vit')
     parser.add_argument('--weights', type=str, default='')
     parser.add_argument('--n_prototypes', type=int, default=8)
-    parser.add_argument('--output', type=str, default='output/hcc_prototypes.npy')
+    parser.add_argument('--output_dir', type=str, default='output/prototype_bank')
     parser.add_argument('--img_size', type=int, default=224)
     parser.add_argument('--batch_size', type=int, default=32)
     args = parser.parse_args()
 
-    _, _, ds_test = build_dataset(
+    ds_train, _, _ = build_dataset(
         data_root=args.data_root,
         img_size=(args.img_size, args.img_size),
         batch_size=args.batch_size,
@@ -77,12 +76,25 @@ def main():
     model = build_classifier(args.encoder, input_shape=(args.img_size, args.img_size, 3))
     if args.weights:
         model.load_weights(args.weights)
-    embs = collect_embeddings(model, ds_test, target_label=1)
-    km = SimpleKMeans(n_clusters=args.n_prototypes).fit(embs)
-    out_path = pathlib.Path(args.output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    np.save(out_path, km.cluster_centers_.astype(np.float32))
-    print({'n_embeddings': int(len(embs)), 'n_prototypes': int(args.n_prototypes), 'output': str(out_path)})
+
+    hema_embs = collect_embeddings(model, ds_train, target_label=0)
+    hcc_embs = collect_embeddings(model, ds_train, target_label=1)
+
+    hema_bank = SimpleKMeans(n_clusters=args.n_prototypes).fit(hema_embs).cluster_centers_.astype(np.float32)
+    hcc_bank = SimpleKMeans(n_clusters=args.n_prototypes).fit(hcc_embs).cluster_centers_.astype(np.float32)
+
+    out_dir = pathlib.Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    np.save(out_dir / 'hemangioma_prototypes.npy', hema_bank)
+    np.save(out_dir / 'hcc_prototypes.npy', hcc_bank)
+
+    print({
+        'split': 'train',
+        'n_hemangioma_embeddings': int(len(hema_embs)),
+        'n_hcc_embeddings': int(len(hcc_embs)),
+        'n_prototypes_per_class': int(args.n_prototypes),
+        'output_dir': str(out_dir),
+    })
 
 
 if __name__ == '__main__':
