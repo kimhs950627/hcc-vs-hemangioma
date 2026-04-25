@@ -112,3 +112,48 @@ def infer_scores_from_outputs(
         alpha=alpha,
     )
     return {k: v.numpy() for k, v in scores.items()}
+
+
+def patchwise_mean_similarity(encoded_patches: tf.Tensor, prototypes: tf.Tensor) -> tf.Tensor:
+    """Return per-patch mean cosine similarity to prototypes.
+
+    encoded_patches: [B, N, D]
+    prototypes: [M, D]
+    returns: [B, N]
+    """
+    sim = patch_prototype_similarity(encoded_patches, prototypes)  # [B, N, M]
+    return tf.reduce_mean(sim, axis=-1)
+
+
+def hcc_prototype_heatmap(encoded_patches: tf.Tensor, hcc_prototypes: tf.Tensor, image_size: tuple[int, int]) -> tf.Tensor:
+    per_patch = patchwise_mean_similarity(encoded_patches, hcc_prototypes)  # [B, N]
+    n = tf.shape(per_patch)[1]
+    side = tf.cast(tf.math.sqrt(tf.cast(n, tf.float32)), tf.int32)
+    heat = tf.reshape(per_patch, [tf.shape(encoded_patches)[0], side, side, 1])
+    heat = heat - tf.reduce_min(heat, axis=(1, 2, 3), keepdims=True)
+    heat = heat / (tf.reduce_max(heat, axis=(1, 2, 3), keepdims=True) + 1e-8)
+    heat = tf.image.resize(heat, image_size)
+    return heat
+
+
+def dual_bank_margin_heatmap(
+    encoded_patches: tf.Tensor,
+    hemangioma_prototypes: tf.Tensor,
+    hcc_prototypes: tf.Tensor,
+    image_size: tuple[int, int],
+) -> tf.Tensor:
+    """Per-patch (mean HCC sim - mean hemangioma sim) heatmap.
+
+    Returns normalized margin heatmap upsampled to image_size.
+    """
+    hema_mean = patchwise_mean_similarity(encoded_patches, hemangioma_prototypes)  # [B, N]
+    hcc_mean = patchwise_mean_similarity(encoded_patches, hcc_prototypes)          # [B, N]
+    margin = hcc_mean - hema_mean                                                  # [B, N]
+    n = tf.shape(margin)[1]
+    side = tf.cast(tf.math.sqrt(tf.cast(n, tf.float32)), tf.int32)
+    heat = tf.reshape(margin, [tf.shape(encoded_patches)[0], side, side, 1])
+    # normalize to [0,1] per image for visualization
+    heat = heat - tf.reduce_min(heat, axis=(1, 2, 3), keepdims=True)
+    heat = heat / (tf.reduce_max(heat, axis=(1, 2, 3), keepdims=True) + 1e-8)
+    heat = tf.image.resize(heat, image_size)
+    return heat

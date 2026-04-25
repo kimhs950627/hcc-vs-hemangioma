@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 
 from training.losses import prototype_similarity_score
-from inference.scorer import prototype_heatmap, malignancy_score
+from inference.scorer import prototype_heatmap, malignancy_score, hcc_prototype_heatmap, dual_bank_margin_heatmap
 
 
 def preprocess_image_array(image: np.ndarray, target_size: tuple[int, int] = (224, 224)) -> tf.Tensor:
@@ -104,6 +104,7 @@ def infer_with_prototypes(
         'malignancy_score': float(malignancy),
         'overlay_image': overlay,
         'prototype_overlay_image': proto_overlay,
+        'prototype_margin_overlay_image': proto_margin_overlay,
     }
 
 
