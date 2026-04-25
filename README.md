@@ -372,3 +372,48 @@ proto_overlay = result["prototype_overlay_image"]
 - CNN encoders return: `gap_vector`, `feature_map`
 - `overlay_image`: Grad-CAM for CNNs, attention overlay for Transformer-family encoders
 - `prototype_overlay_image`: patch-level prototype similarity heatmap
+
+
+## Prototype Bank Construction
+
+The prototype bank is built from the **train split only** and supports a **dual bank**:
+- `hemangioma_prototypes.npy`
+- `hcc_prototypes.npy`
+
+### CLI usage
+
+```bash
+python inference/build_prototype_bank.py \
+  --data_root ./clean_ver_for_train \
+  --encoder vit \
+  --weights output/stage2_classifier.weights.h5 \
+  --n_prototypes 8 \
+  --output_dir output/prototype_bank
+```
+
+### Python / notebook usage
+
+You can also import the script in a `.ipynb` notebook and build/save the dual prototype bank directly.
+
+```python
+from inference.build_prototype_bank import build_dual_prototype_bank
+
+result = build_dual_prototype_bank(
+    data_root="./clean_ver_for_train",
+    encoder="vit",
+    weights="output/stage2_classifier.weights.h5",
+    n_prototypes=8,
+    output_dir="output/prototype_bank",
+    img_size=224,
+    batch_size=16,
+)
+
+hema_bank = result["hemangioma_prototypes"]
+hcc_bank = result["hcc_prototypes"]
+
+print(result["hemangioma_path"])
+print(result["hcc_path"])
+print(hema_bank.shape, hcc_bank.shape)
+```
+
+This returns in-memory numpy arrays and also saves both prototype files to disk.
