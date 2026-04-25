@@ -459,11 +459,9 @@ class MultiViewDataset:
 
         total = len(samples)
         print(
-            f"  global_views : 2 @ {img_size}  (strong aug)
-"
+            f"  global_views : 2 @ {img_size}  (strong aug)\n"
             f"  local_views  : {local_views} @ "
-            f"{self.local_output_size if local_views else 'N/A'}  (crop aug)
-"
+            f"{self.local_output_size if local_views else 'N/A'}  (crop aug)\n"
             f"  total images : {total}  |  steps/epoch ≈ {total // batch_size}"
         )
 
