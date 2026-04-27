@@ -66,10 +66,9 @@ class BYOLPretrainModel(keras.Model):
             tw.assign(self.ema_momentum * tw + (1.0 - self.ema_momentum) * sw)
 
     def train_step(self, data):
-        views = data
-        if isinstance(data, tuple):
-            views = data[0]
-        v1, v2 = views[:2]
+        views = data if isinstance(data, (tuple, list)) else (data,)
+        v1 = views[0]
+        v2 = views[1]
         with tf.GradientTape() as tape:
             p1 = self._online_proj(v1, training=True)
             p2 = self._online_proj(v2, training=True)
@@ -84,10 +83,9 @@ class BYOLPretrainModel(keras.Model):
         return {'loss': loss}
 
     def test_step(self, data):
-        views = data
-        if isinstance(data, tuple):
-            views = data[0]
-        v1, v2 = views[:2]
+        views = data if isinstance(data, (tuple, list)) else (data,)
+        v1 = views[0]
+        v2 = views[1]
         p1 = self._online_proj(v1, training=False)
         p2 = self._online_proj(v2, training=False)
         t1 = self._teacher_proj(v1)

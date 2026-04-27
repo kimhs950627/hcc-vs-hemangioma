@@ -91,12 +91,10 @@ class DINOPretrainModel(keras.Model):
         return tf.nn.softmax(centered / self.teacher_temp_var, axis=-1)
 
     def train_step(self, data):
-        views = data
-        if isinstance(data, tuple):
-            views = data[0]
+        views = data if isinstance(data, (tuple, list)) else (data,)
         global1 = views[0]
         global2 = views[1]
-        local_views = tf.unstack(views[2:], axis=0) if tf.is_tensor(views) else list(views[2:])
+        local_views = list(views[2:])
         self._update_teacher_temp()
         with tf.GradientTape() as tape:
             t1_logits = self._teacher_logits(global1)
@@ -118,9 +116,7 @@ class DINOPretrainModel(keras.Model):
         return {'loss': loss, 'teacher_temp': self.teacher_temp_var}
 
     def test_step(self, data):
-        views = data
-        if isinstance(data, tuple):
-            views = data[0]
+        views = data if isinstance(data, (tuple, list)) else (data,)
         global1 = views[0]
         global2 = views[1]
         t1_logits = self._teacher_logits(global1)

@@ -61,10 +61,9 @@ class MoCoPretrainModel(keras.Model):
             tw.assign(self.ema_momentum * tw + (1.0 - self.ema_momentum) * sw)
 
     def train_step(self, data):
-        views = data
-        if isinstance(data, tuple):
-            views = data[0]
-        v1, v2 = views[:2]
+        views = data if isinstance(data, (tuple, list)) else (data,)
+        v1 = views[0]
+        v2 = views[1]
         with tf.GradientTape() as tape:
             z1 = self._embed_online(v1, training=True)
             z2_teacher = tf.stop_gradient(self._embed_teacher(v2))
@@ -77,10 +76,9 @@ class MoCoPretrainModel(keras.Model):
         return {'loss': loss}
 
     def test_step(self, data):
-        views = data
-        if isinstance(data, tuple):
-            views = data[0]
-        v1, v2 = views[:2]
+        views = data if isinstance(data, (tuple, list)) else (data,)
+        v1 = views[0]
+        v2 = views[1]
         z1 = self._embed_online(v1, training=False)
         z2 = self._embed_teacher(v2)
         loss = info_nce_loss(z1, z2, temperature=self.temperature)
