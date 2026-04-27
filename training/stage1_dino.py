@@ -94,8 +94,9 @@ class DINOPretrainModel(keras.Model):
         views = data
         if isinstance(data, tuple):
             views = data[0]
-        global1, global2 = views[:2]
-        local_views = views[2:] if len(views) > 2 else []
+        global1 = views[0]
+        global2 = views[1]
+        local_views = tf.unstack(views[2:], axis=0) if tf.is_tensor(views) else list(views[2:])
         self._update_teacher_temp()
         with tf.GradientTape() as tape:
             t1_logits = self._teacher_logits(global1)
@@ -120,7 +121,8 @@ class DINOPretrainModel(keras.Model):
         views = data
         if isinstance(data, tuple):
             views = data[0]
-        global1, global2 = views[:2]
+        global1 = views[0]
+        global2 = views[1]
         t1_logits = self._teacher_logits(global1)
         t1 = self._teacher_probs(t1_logits)
         s2 = self._student_logits(global2, training=False)
