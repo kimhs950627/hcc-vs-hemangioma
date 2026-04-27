@@ -22,6 +22,7 @@ class DINOPretrainModel(keras.Model):
         warmup_epochs: int = 10,
         center_momentum: float = 0.9,
         ema_momentum: float = 0.996,
+        n_local: int = 0,
     ):
         super().__init__()
         self.student_temp = student_temp
@@ -31,6 +32,7 @@ class DINOPretrainModel(keras.Model):
         self.warmup_epochs = warmup_epochs
         self.center_momentum = center_momentum
         self.ema_momentum = ema_momentum
+        self.n_local = n_local
         self.online_encoder = build_encoder(encoder_name, input_shape=input_shape)
         self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape)
         self.projector = keras.Sequential([
@@ -94,19 +96,50 @@ class DINOPretrainModel(keras.Model):
         views = tf.nest.flatten(data)
         global1 = views[0]
         global2 = views[1]
-        local_views = views[2:]
         self._update_teacher_temp()
         with tf.GradientTape() as tape:
             t1_logits = self._teacher_logits(global1)
             t2_logits = self._teacher_logits(global2)
             t1 = tf.stop_gradient(self._teacher_probs(t1_logits))
             t2 = tf.stop_gradient(self._teacher_probs(t2_logits))
-            loss_terms = []
-            all_student_views = (global1, global2, *local_views)
-            for v in all_student_views:
-                s = self._student_logits(v, training=True)
-                loss_terms.append(dino_cross_entropy(s, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
-                loss_terms.append(dino_cross_entropy(s, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
+            s_global1 = self._student_logits(global1, training=True)
+            s_global2 = self._student_logits(global2, training=True)
+            loss_terms = [
+                dino_cross_entropy(s_global1, tf.math.log(t1 + 1e-8), self.student_temp, 1.0),
+                dino_cross_entropy(s_global1, tf.math.log(t2 + 1e-8), self.student_temp, 1.0),
+                dino_cross_entropy(s_global2, tf.math.log(t1 + 1e-8), self.student_temp, 1.0),
+                dino_cross_entropy(s_global2, tf.math.log(t2 + 1e-8), self.student_temp, 1.0),
+            ]
+            if self.n_local >= 1:
+                local1 = views[2]
+                s_local1 = self._student_logits(local1, training=True)
+                loss_terms.append(dino_cross_entropy(s_local1, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
+                loss_terms.append(dino_cross_entropy(s_local1, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
+            if self.n_local >= 2:
+                local2 = views[3]
+                s_local2 = self._student_logits(local2, training=True)
+                loss_terms.append(dino_cross_entropy(s_local2, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
+                loss_terms.append(dino_cross_entropy(s_local2, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
+            if self.n_local >= 3:
+                local3 = views[4]
+                s_local3 = self._student_logits(local3, training=True)
+                loss_terms.append(dino_cross_entropy(s_local3, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
+                loss_terms.append(dino_cross_entropy(s_local3, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
+            if self.n_local >= 4:
+                local4 = views[5]
+                s_local4 = self._student_logits(local4, training=True)
+                loss_terms.append(dino_cross_entropy(s_local4, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
+                loss_terms.append(dino_cross_entropy(s_local4, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
+            if self.n_local >= 5:
+                local5 = views[6]
+                s_local5 = self._student_logits(local5, training=True)
+                loss_terms.append(dino_cross_entropy(s_local5, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
+                loss_terms.append(dino_cross_entropy(s_local5, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
+            if self.n_local >= 6:
+                local6 = views[7]
+                s_local6 = self._student_logits(local6, training=True)
+                loss_terms.append(dino_cross_entropy(s_local6, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
+                loss_terms.append(dino_cross_entropy(s_local6, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
             loss = tf.add_n(loss_terms) / tf.cast(len(loss_terms), tf.float32)
         vars_ = self.online_encoder.trainable_weights + self.projector.trainable_weights
         grads = tape.gradient(loss, vars_)
@@ -141,6 +174,7 @@ def build_stage1_dino_trainer(
     warmup_epochs: int = 10,
     center_momentum: float = 0.9,
     ema_momentum: float = 0.996,
+    n_local: int = 0,
     lr: float = 1e-4,
 ):
     model = DINOPretrainModel(
@@ -154,6 +188,7 @@ def build_stage1_dino_trainer(
         warmup_epochs=warmup_epochs,
         center_momentum=center_momentum,
         ema_momentum=ema_momentum,
+        n_local=n_local,
     )
     model.compile(optimizer=keras.optimizers.Adam(learning_rate=lr))
     return model

@@ -23,6 +23,7 @@ def build_stage1_trainer(
     teacher_temp_target: float = 0.04,
     warmup_epochs: int = 10,
     center_momentum: float = 0.9,
+    n_local: int = 0,
 ):
     mode = ssl_mode.lower()
     if mode == 'moco':
@@ -55,6 +56,7 @@ def build_stage1_trainer(
             warmup_epochs=warmup_epochs,
             center_momentum=center_momentum,
             ema_momentum=ema_momentum,
+            n_local=n_local,
             lr=lr,
         )
     raise ValueError(f'Unsupported ssl_mode={ssl_mode}. Expected one of: {SSL_MODES}')

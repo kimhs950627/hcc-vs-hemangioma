@@ -671,3 +671,16 @@ stage2_model = build_stage2_trainer(
     lr=1e-4,
 )
 ```
+
+
+For DINO training with graph mode, you can explicitly pass the number of local views:
+
+```python
+ssl_model = build_stage1_trainer(
+    encoder_name="vit",
+    input_shape=(384, 384, 3),
+    projection_dim=256,
+    ssl_mode="dino",
+    n_local=4,
+)
+```
