@@ -19,6 +19,10 @@ def build_stage1_trainer(
     ssl_mode: str = 'moco',
     predictor_dim: int = 256,
     teacher_temp: float = 0.04,
+    teacher_temp_warmup_start: float = 0.04,
+    teacher_temp_target: float = 0.04,
+    warmup_epochs: int = 10,
+    center_momentum: float = 0.9,
 ):
     mode = ssl_mode.lower()
     if mode == 'moco':
@@ -46,6 +50,10 @@ def build_stage1_trainer(
             projection_dim=projection_dim,
             temperature=temperature,
             teacher_temp=teacher_temp,
+            teacher_temp_warmup_start=teacher_temp_warmup_start,
+            teacher_temp_target=teacher_temp_target,
+            warmup_epochs=warmup_epochs,
+            center_momentum=center_momentum,
             ema_momentum=ema_momentum,
             lr=lr,
         )

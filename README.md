@@ -284,6 +284,10 @@ ssl_model = build_stage1_trainer(
     ssl_mode="moco",  # "moco" | "byol" | "dino"
     predictor_dim=256,  # used by BYOL
     teacher_temp=0.04,  # used by DINO
+    teacher_temp_warmup_start=0.04,
+    teacher_temp_target=0.07,
+    warmup_epochs=10,
+    center_momentum=0.9,
 )
 
 ssl_model.fit(ssl_ds, epochs=10)
@@ -604,6 +608,10 @@ dino_model = build_stage1_trainer(
     projection_dim=256,
     temperature=0.1,
     teacher_temp=0.04,
+    teacher_temp_warmup_start=0.04,
+    teacher_temp_target=0.07,
+    warmup_epochs=10,
+    center_momentum=0.9,
     ema_momentum=0.996,
     lr=1e-4,
     ssl_mode="dino",
@@ -615,3 +623,32 @@ Implementation files:
 - `training/stage1_byol.py`
 - `training/stage1_dino.py`
 - `training/stage1_ssl.py` (router)
+
+
+### DINO stabilization options
+
+The DINO implementation now includes the following stabilization components:
+- **Teacher centering** via a running center vector updated with `center_momentum`
+- **Sharpening** through the teacher temperature
+- **Temperature scheduling** with `teacher_temp_warmup_start`, `teacher_temp_target`, and `warmup_epochs`
+
+Recommended DINO snippet:
+
+```python
+ssl_model = build_stage1_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    temperature=0.1,
+    ema_momentum=0.996,
+    lr=1e-4,
+    ssl_mode="dino",
+    teacher_temp=0.04,
+    teacher_temp_warmup_start=0.04,
+    teacher_temp_target=0.07,
+    warmup_epochs=10,
+    center_momentum=0.9,
+)
+```
+
+For DINO, use `MultiViewDataset(..., local_views>0)` so the student sees both global and local crops while the teacher uses the two global views.
