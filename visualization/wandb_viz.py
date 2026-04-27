@@ -87,28 +87,34 @@ def _prepare_display_image(image: np.ndarray, normalize_from_minus1: bool = Fals
 
 def _normalize_heatmap(hm: np.ndarray) -> np.ndarray:
     hm = np.asarray(hm, dtype="float32")
-    hm = np.maximum(hm, 0.0)
-    m = hm.max()
-    if m > 0:
-        hm = hm / m
+    hm_min = float(np.min(hm))
+    hm_max = float(np.max(hm))
+    if hm_max > hm_min:
+        hm = (hm - hm_min) / (hm_max - hm_min)
+    else:
+        hm = np.zeros_like(hm, dtype="float32")
+    hm = np.clip(hm, 0.0, 1.0)
     return hm
 
 
 def _resize_heatmap(hm: np.ndarray, target_hw: tuple[int, int]) -> np.ndarray:
+    hm = _normalize_heatmap(hm)
     hm_tf = tf.convert_to_tensor(hm[..., None], dtype=tf.float32)
     hm_tf = tf.image.resize(hm_tf, target_hw, method="bilinear")
-    return tf.squeeze(hm_tf, axis=-1).numpy()
+    hm_np = tf.squeeze(hm_tf, axis=-1).numpy()
+    return _normalize_heatmap(hm_np)
 
 
 def _colormap_heatmap(hm: np.ndarray) -> np.ndarray:
-    hm_uint8 = np.uint8(np.clip(hm, 0.0, 1.0) * 255.0)
-    cmap = keras.src.utils.image_utils.array_to_img(np.zeros((1,1,3), dtype='uint8'))  # noop to keep keras imported
+    hm = _normalize_heatmap(hm)
+    hm_uint8 = np.uint8(hm * 255.0)
     import matplotlib.cm as cm
-    colored = cm.get_cmap("jet")(hm_uint8)[..., :3]
-    return (colored * 255.0).astype("uint8")
+    colored = cm.get_cmap("jet")(hm_uint8.astype(np.float32) / 255.0)[..., :3]
+    return np.uint8(np.clip(colored * 255.0, 0.0, 255.0))
 
 
 def _overlay_image(image_uint8: np.ndarray, hm: np.ndarray, alpha: float = 0.45) -> np.ndarray:
+    hm = _normalize_heatmap(hm)
     heat_rgb = _colormap_heatmap(hm)
     out = image_uint8.astype("float32") * (1.0 - alpha) + heat_rgb.astype("float32") * alpha
     return np.clip(out, 0, 255).astype("uint8")
