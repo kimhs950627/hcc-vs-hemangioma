@@ -684,3 +684,100 @@ ssl_model = build_stage1_trainer(
     n_local=4,
 )
 ```
+
+
+
+## W&B visualization
+
+The repository includes a W&B helper module for both SSL Stage 1 and Stage 2 visualization. W&B Keras metric logging is supported through the official Keras integration, and prediction/image tables can be logged with a custom callback built on `wandb.log()` and `wandb.Table()` [web:230][web:235]. Grad-CAM generation follows the standard Keras pattern of building a model that returns both the target feature map and logits, then differentiating the class score with respect to the feature map [web:236].
+
+### Stage 1 SSL
+
+```python
+import wandb
+from visualization.wandb_viz import (
+    init_wandb,
+    get_wandb_callbacks,
+    WandbAttentionVisualizer,
+    WandbVisualizationConfig,
+)
+
+init_wandb(
+    project="hcc-vs-hemangioma",
+    run_name="stage1-dino-vit",
+    config={"stage": 1, "ssl_mode": "dino", "n_local": 4},
+    tags=["stage1", "ssl", "attention"],
+)
+
+vis_cfg = WandbVisualizationConfig(
+    test_dir="./data/test",
+    num_images=8,
+    image_size=(224, 224),
+    log_every_n_epochs=1,
+    stage="stage1",
+)
+
+callbacks = get_wandb_callbacks() + [
+    WandbAttentionVisualizer(vis_cfg),
+]
+
+history = ssl_model.fit(
+    ssl_train_ds,
+    validation_data=ssl_val_ds,
+    epochs=100,
+    callbacks=callbacks,
+)
+```
+
+For each selected raw test image, the callback logs:
+- Raw image.
+- Merged last-layer CLS-to-patch attention heatmap.
+- Overlay of merged attention on the raw image.
+- Per-head overlay for every attention head.
+- Normal scalar metrics already emitted by `fit()` such as loss and temperature.
+
+### Stage 2 supervised / SupCon
+
+```python
+import wandb
+from visualization.wandb_viz import (
+    init_wandb,
+    get_wandb_callbacks,
+    WandbStage2Visualizer,
+    WandbVisualizationConfig,
+)
+
+init_wandb(
+    project="hcc-vs-hemangioma",
+    run_name="stage2-vit-supcon",
+    config={"stage": 2, "task": "hcc_vs_hemangioma"},
+    tags=["stage2", "supcon", "gradcam"],
+)
+
+vis_cfg = WandbVisualizationConfig(
+    test_dir="./data/test",
+    num_images=8,
+    image_size=(224, 224),
+    log_every_n_epochs=1,
+    stage="stage2",
+    gradcam_layer_name=None,
+)
+
+callbacks = get_wandb_callbacks() + [
+    WandbStage2Visualizer(vis_cfg),
+]
+
+history = clf_model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=50,
+    callbacks=callbacks,
+)
+```
+
+For each selected test image, the Stage 2 callback logs:
+- Raw image.
+- Ground-truth label and predicted label.
+- Merged last-layer attention heatmap and overlay.
+- Per-head attention overlays.
+- Grad-CAM overlay for class 0 and Grad-CAM overlay for class 1.
