@@ -40,3 +40,16 @@ def prototype_similarity_score(embedding: tf.Tensor, prototypes: tf.Tensor, redu
     if reduction == 'mean':
         return tf.reduce_mean(sim, axis=-1)
     return sim
+
+
+def negative_cosine_similarity(p: tf.Tensor, z: tf.Tensor) -> tf.Tensor:
+    p = tf.math.l2_normalize(p, axis=-1)
+    z = tf.math.l2_normalize(z, axis=-1)
+    return -tf.reduce_mean(tf.reduce_sum(p * tf.stop_gradient(z), axis=-1))
+
+
+def dino_cross_entropy(student_logits: tf.Tensor, teacher_logits: tf.Tensor, student_temp: float = 0.1, teacher_temp: float = 0.04) -> tf.Tensor:
+    s = student_logits / student_temp
+    t = tf.stop_gradient(tf.nn.softmax(teacher_logits / teacher_temp, axis=-1))
+    logp = tf.nn.log_softmax(s, axis=-1)
+    return -tf.reduce_mean(tf.reduce_sum(t * logp, axis=-1))

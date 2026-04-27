@@ -259,8 +259,8 @@ Smoke-test 3: MultiViewDataset (local_views=6)
 
 ## Stage 1 SSL Training
 
-Stage 1 uses a student-teacher SSL framework with **EMA teacher updates** in `training/stage1_ssl.py`.
-For Stage 2 initialization, use the **teacher encoder weights by default** because the teacher is a temporal ensemble and typically more stable.
+Stage 1 supports selectable SSL modes in `training/stage1_ssl.py`: `moco`, `byol`, and `dino`.
+For Stage 2 initialization, use the **teacher encoder weights by default** because the EMA teacher is a temporal ensemble and typically more stable.
 
 ```python
 from dataloader import MultiViewDataset
@@ -281,6 +281,9 @@ ssl_model = build_stage1_trainer(
     temperature=0.1,
     ema_momentum=0.996,
     lr=1e-4,
+    ssl_mode="moco",  # "moco" | "byol" | "dino"
+    predictor_dim=256,  # used by BYOL
+    teacher_temp=0.04,  # used by DINO
 )
 
 ssl_model.fit(ssl_ds, epochs=10)
@@ -564,3 +567,51 @@ margin_proto_overlay = result["prototype_margin_overlay_image"]  # (HCC - Hemang
 - Build prototype banks **after Stage 2**, not before.
 - Build prototype banks from the **train split only**.
 - Use the HCC bank for malignancy-oriented prototype heatmaps.
+
+
+### Stage 1 SSL modes
+
+```python
+from training.stage1_ssl import build_stage1_trainer
+
+# MoCo-like EMA contrastive SSL
+moco_model = build_stage1_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    temperature=0.1,
+    ema_momentum=0.996,
+    lr=1e-4,
+    ssl_mode="moco",
+)
+
+# BYOL
+byol_model = build_stage1_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    predictor_dim=256,
+    ema_momentum=0.996,
+    lr=1e-4,
+    ssl_mode="byol",
+)
+
+# DINO
+# local_views>0 in MultiViewDataset is recommended for DINO.
+dino_model = build_stage1_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    temperature=0.1,
+    teacher_temp=0.04,
+    ema_momentum=0.996,
+    lr=1e-4,
+    ssl_mode="dino",
+)
+```
+
+Implementation files:
+- `training/stage1_moco.py`
+- `training/stage1_byol.py`
+- `training/stage1_dino.py`
+- `training/stage1_ssl.py` (router)
