@@ -46,7 +46,7 @@ class DINOPretrainModel(keras.Model):
         self._teacher_initialized = False
 
     def compile(self, optimizer, **kwargs):
-        super().compile(**kwargs)
+        super().compile(run_eagerly=True, **kwargs)
         self.optimizer = optimizer
 
     def _student_logits(self, x, training=True):
@@ -94,7 +94,7 @@ class DINOPretrainModel(keras.Model):
         views = data if isinstance(data, (tuple, list)) else (data,)
         global1 = views[0]
         global2 = views[1]
-        local_views = list(views[2:])
+        local_views = views[2:]
         self._update_teacher_temp()
         with tf.GradientTape() as tape:
             t1_logits = self._teacher_logits(global1)
