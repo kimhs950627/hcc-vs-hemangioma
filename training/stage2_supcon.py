@@ -17,11 +17,21 @@ class SupConClassifier(keras.Model):
         input_shape=(224, 224, 3),
         num_classes: int = 2,
         supcon_weight: float = 0.3,
+        projection_dim: int = 128,
+        classifier_hidden_dim: int = 256,
+        dropout_rate: float = 0.2,
         encoder_init_weights: str | None = None,
     ):
         super().__init__()
         self.supcon_weight = supcon_weight
-        self.model = build_classifier(encoder_name, input_shape=input_shape, num_classes=num_classes)
+        self.model = build_classifier(
+            encoder_name,
+            input_shape=input_shape,
+            num_classes=num_classes,
+            projection_dim=projection_dim,
+            classifier_hidden_dim=classifier_hidden_dim,
+            dropout_rate=dropout_rate,
+        )
         self.encoder_init_weights = encoder_init_weights
         if encoder_init_weights:
             self.model.encoder.load_weights(encoder_init_weights)
@@ -42,7 +52,7 @@ class SupConClassifier(keras.Model):
         with tf.GradientTape() as tape:
             out = self.model(x, training=True)
             ce = self.ce_loss(y, out['logits'])
-            scl = supervised_contrastive_loss(y, out['embedding'])
+            scl = supervised_contrastive_loss(y, out['projection'])
             loss = ce + self.supcon_weight * scl
         grads = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
@@ -54,7 +64,7 @@ class SupConClassifier(keras.Model):
         x, y = data
         out = self.model(x, training=False)
         ce = self.ce_loss(y, out['logits'])
-        scl = supervised_contrastive_loss(y, out['embedding'])
+        scl = supervised_contrastive_loss(y, out['projection'])
         loss = ce + self.supcon_weight * scl
         self.loss_tracker.update_state(loss)
         self.acc.update_state(y, out['probabilities'])
@@ -66,6 +76,9 @@ def build_stage2_trainer(
     input_shape=(224, 224, 3),
     num_classes: int = 2,
     supcon_weight: float = 0.3,
+    projection_dim: int = 128,
+    classifier_hidden_dim: int = 256,
+    dropout_rate: float = 0.2,
     lr: float = 1e-4,
     teacher_encoder_weights: str | None = None,
 ):
@@ -74,6 +87,9 @@ def build_stage2_trainer(
         input_shape=input_shape,
         num_classes=num_classes,
         supcon_weight=supcon_weight,
+        projection_dim=projection_dim,
+        classifier_hidden_dim=classifier_hidden_dim,
+        dropout_rate=dropout_rate,
         encoder_init_weights=teacher_encoder_weights,
     )
     model.compile(optimizer=keras.optimizers.AdamW(learning_rate=lr))

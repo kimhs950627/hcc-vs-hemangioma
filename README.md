@@ -652,3 +652,22 @@ ssl_model = build_stage1_trainer(
 ```
 
 For DINO, use `MultiViewDataset(..., local_views>0)` so the student sees both global and local crops while the teacher uses the two global views.
+
+
+### Stage 2 projection head
+
+Stage 2 now uses a dedicated **projection head** for the supervised contrastive loss and a separate **classifier head** for cross-entropy.
+This better matches standard SupCon practice: contrastive geometry is learned in the projection space, while classification logits are predicted from the base encoder embedding.
+
+```python
+stage2_model = build_stage2_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    num_classes=2,
+    supcon_weight=0.3,
+    projection_dim=128,
+    classifier_hidden_dim=256,
+    dropout_rate=0.2,
+    lr=1e-4,
+)
+```

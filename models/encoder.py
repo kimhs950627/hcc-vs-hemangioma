@@ -254,3 +254,59 @@ def build_encoder(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), 
 def build_classifier(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), num_classes: int = 2) -> ClassifierWithEncoder:
     encoder = build_encoder(name=name, input_shape=input_shape)
     return ClassifierWithEncoder(encoder=encoder, num_classes=num_classes, name=f'{name}_classifier')
+
+
+class Classifier(keras.Model):
+    def __init__(
+        self,
+        encoder_name: str,
+        input_shape=(224, 224, 3),
+        num_classes: int = 2,
+        projection_dim: int = 128,
+        classifier_hidden_dim: int = 256,
+        dropout_rate: float = 0.2,
+    ):
+        super().__init__()
+        self.encoder = build_encoder(encoder_name, input_shape=input_shape)
+        self.projection_head = keras.Sequential([
+            layers.Dense(classifier_hidden_dim, activation='gelu'),
+            layers.Dropout(dropout_rate),
+            layers.Dense(projection_dim),
+        ], name='stage2_projection_head')
+        self.classifier_head = keras.Sequential([
+            layers.Dense(classifier_hidden_dim, activation='gelu'),
+            layers.Dropout(dropout_rate),
+            layers.Dense(num_classes),
+        ], name='stage2_classifier_head')
+
+    def call(self, x, training=False):
+        enc = self.encoder(x, training=training)
+        base_embedding = enc['embedding']
+        projection = self.projection_head(base_embedding, training=training)
+        logits = self.classifier_head(base_embedding, training=training)
+        return {
+            'embedding': base_embedding,
+            'projection': projection,
+            'logits': logits,
+            'probabilities': tf.nn.softmax(logits, axis=-1),
+            'tokens': enc.get('tokens', None),
+            'features': enc.get('features', None),
+        }
+
+
+def build_classifier(
+    encoder_name: str,
+    input_shape=(224, 224, 3),
+    num_classes: int = 2,
+    projection_dim: int = 128,
+    classifier_hidden_dim: int = 256,
+    dropout_rate: float = 0.2,
+):
+    return Classifier(
+        encoder_name=encoder_name,
+        input_shape=input_shape,
+        num_classes=num_classes,
+        projection_dim=projection_dim,
+        classifier_hidden_dim=classifier_hidden_dim,
+        dropout_rate=dropout_rate,
+    )
