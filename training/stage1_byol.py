@@ -37,7 +37,7 @@ class BYOLPretrainModel(keras.Model):
         self._teacher_initialized = False
 
     def compile(self, optimizer, **kwargs):
-        super().compile(run_eagerly=True, **kwargs)
+        super().compile(jit_compile=False, **kwargs)
         self.optimizer = optimizer
 
     def _online_proj(self, x, training=True):

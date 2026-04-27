@@ -34,7 +34,7 @@ class MoCoPretrainModel(keras.Model):
         self._teacher_initialized = False
 
     def compile(self, optimizer, **kwargs):
-        super().compile(run_eagerly=True, **kwargs)
+        super().compile(jit_compile=False, **kwargs)
         self.optimizer = optimizer
 
     def _embed_online(self, x, training=True):
