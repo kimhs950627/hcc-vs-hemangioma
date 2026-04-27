@@ -91,7 +91,7 @@ class DINOPretrainModel(keras.Model):
         return tf.nn.softmax(centered / self.teacher_temp_var, axis=-1)
 
     def train_step(self, data):
-        views = data if isinstance(data, (tuple, list)) else (data,)
+        views = tf.nest.flatten(data)
         global1 = views[0]
         global2 = views[1]
         local_views = views[2:]
@@ -102,7 +102,8 @@ class DINOPretrainModel(keras.Model):
             t1 = tf.stop_gradient(self._teacher_probs(t1_logits))
             t2 = tf.stop_gradient(self._teacher_probs(t2_logits))
             loss_terms = []
-            for v in [global1, global2] + list(local_views):
+            all_student_views = (global1, global2, *local_views)
+            for v in all_student_views:
                 s = self._student_logits(v, training=True)
                 loss_terms.append(dino_cross_entropy(s, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
                 loss_terms.append(dino_cross_entropy(s, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
@@ -116,7 +117,7 @@ class DINOPretrainModel(keras.Model):
         return {'loss': loss, 'teacher_temp': self.teacher_temp_var}
 
     def test_step(self, data):
-        views = data if isinstance(data, (tuple, list)) else (data,)
+        views = tf.nest.flatten(data)
         global1 = views[0]
         global2 = views[1]
         t1_logits = self._teacher_logits(global1)
