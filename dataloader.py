@@ -146,6 +146,31 @@ def _collect_split(data_root: str, split: str) -> list[tuple[str, int]]:
 # ---------------------------------------------------------------------------
 # 2. Keras Data-Augmentation Layers  (Medical-Domain, Keras 3 only)
 # ---------------------------------------------------------------------------
+
+
+class RandomGamma(layers.Layer):
+    def __init__(self, gamma_range: tuple[float, float] = (0.7, 1.5), p: float = 1.0, **kwargs):
+        super().__init__(**kwargs)
+        self.gamma_range = gamma_range
+        self.p = p
+
+    def call(self, inputs, training: bool = False):
+        x = tf.cast(inputs, tf.float32)
+        if not training:
+            return x
+        batch = tf.shape(x)[0]
+        apply_mask = tf.cast(tf.random.uniform([batch, 1, 1, 1]) < self.p, tf.float32)
+        gamma = tf.random.uniform([batch, 1, 1, 1], self.gamma_range[0], self.gamma_range[1], dtype=tf.float32)
+        x01 = tf.clip_by_value(x / 255.0, 0.0, 1.0)
+        x_gamma = tf.pow(x01 + 1e-6, gamma)
+        x_gamma = tf.clip_by_value(x_gamma * 255.0, 0.0, 255.0)
+        return apply_mask * x_gamma + (1.0 - apply_mask) * x
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg.update({'gamma_range': self.gamma_range, 'p': self.p})
+        return cfg
+
 # Design rationale for B-mode liver US images:
 #   ✓ H/V flip — no anatomical handedness constraint in axial US views
 #   ✓ Rotation ≤ 15° — probe tilt variability; heavier rotation risks artefact
@@ -187,7 +212,8 @@ def build_base_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
             ),
             # ── Photometric (US gain / TGC simulation) ────────────────────
             layers.RandomBrightness(factor=0.15),
-            layers.RandomContrast(factor=0.20),
+            layers.RandomContrast(factor=0.25),
+            RandomGamma(gamma_range=(0.80, 1.25), p=0.8, name="base_random_gamma"),
             # ── Speckle noise simulation ──────────────────────────────────
             layers.GaussianNoise(stddev=0.025),
             # ── Normalise to [0, 1] ───────────────────────────────────────
@@ -221,7 +247,8 @@ def build_strong_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
                 fill_mode="reflect",
             ),
             layers.RandomBrightness(factor=0.25),
-            layers.RandomContrast(factor=0.35),
+            layers.RandomContrast(factor=0.40),
+            RandomGamma(gamma_range=(0.70, 1.40), p=0.9, name="strong_random_gamma"),
             layers.GaussianNoise(stddev=0.04),
             layers.Rescaling(scale=1.0 / 255.0),
         ],
@@ -260,8 +287,9 @@ def build_local_crop_augmentation(
             layers.Resizing(height=out_h, width=out_w, interpolation="bilinear"),
             layers.RandomFlip("horizontal_and_vertical"),
             layers.RandomRotation(factor=0.083, fill_mode="reflect"),  # ±30°
-            layers.RandomBrightness(factor=0.20),
-            layers.RandomContrast(factor=0.30),
+            layers.RandomBrightness(factor=0.22),
+            layers.RandomContrast(factor=0.35),
+            RandomGamma(gamma_range=(0.75, 1.35), p=0.9, name="local_random_gamma"),
             layers.GaussianNoise(stddev=0.035),
             layers.Rescaling(scale=1.0 / 255.0),
         ],

@@ -781,3 +781,13 @@ For each selected test image, the Stage 2 callback logs:
 - Merged last-layer attention heatmap and overlay.
 - Per-head attention overlays.
 - Grad-CAM overlay for class 0 and Grad-CAM overlay for class 1.
+
+
+### Updated augmentation strategy
+
+The training augmentation pipeline now includes stronger ultrasound-oriented photometric perturbation with:
+- `RandomContrast`
+- `RandomBrightness`
+- custom Keras `RandomGamma`
+
+This is intended to reduce shortcut learning toward only bright echogenic regions and improve robustness to hypoechoic lesion interiors and gain/TGC variability.
