@@ -171,19 +171,95 @@ class RandomGamma(layers.Layer):
         cfg.update({'gamma_range': self.gamma_range, 'p': self.p})
         return cfg
 
+
+class RandomSolarization(layers.Layer):
+    """Probabilistic solarization for one view in a multi-view SSL pipeline.
+
+    Wraps keras.layers.Solarization with per-sample application probability `p`.
+    Applied ONLY to global_view_2 in build_strong_augmentation_v2(), following
+    the DINO paper (Caron et al., 2021) which applies solarization exclusively
+    to one of the two global views to break the brightness-shortcut in SSL.
+
+    Operation (for pixels above threshold):
+        pixel_out = max_value - pixel + min_value
+        i.e. pixel_out = 255 - pixel  (for uint8 input in [0, 255])
+    This inverts bright regions, forcing the model to attend to structure
+    rather than absolute intensity — especially beneficial for B-mode
+    ultrasound where hypoechoic regions are otherwise ignored.
+
+    Args:
+        p               : Probability of applying solarization to each sample.
+                          DINO paper uses p=0.2. Default: 0.2.
+        threshold_factor: Only pixels above (threshold_factor * 255) are
+                          inverted. Range [0, 1]. Default: 0.5 (mid-gray).
+        addition_factor : Additive jitter before solarization, in [0, 1]
+                          (fraction of value_range). Default: 0.0.
+        value_range     : (min_val, max_val) of input. Default: (0, 255).
+
+    References:
+        - Caron et al. (2021) DINO, https://arxiv.org/abs/2104.14294
+        - keras.io/api/layers/preprocessing_layers/image_augmentation/solarization/
+    """
+
+    def __init__(
+        self,
+        p: float = 0.2,
+        threshold_factor: float = 0.5,
+        addition_factor: float = 0.0,
+        value_range: tuple[float, float] = (0, 255),
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.p = p
+        self.threshold_factor = threshold_factor
+        self.addition_factor = addition_factor
+        self.value_range = value_range
+        # Internal keras Solarization layer (operates on whole batch)
+        self._solar_layer = layers.Solarization(
+            addition_factor=addition_factor,
+            threshold_factor=threshold_factor,
+            value_range=value_range,
+        )
+
+    def call(self, inputs, training: bool = False):
+        x = tf.cast(inputs, tf.float32)
+        if not training:
+            return x
+        # Per-sample mask: shape [B, 1, 1, 1]
+        batch = tf.shape(x)[0]
+        apply_mask = tf.cast(
+            tf.random.uniform([batch, 1, 1, 1]) < self.p, tf.float32
+        )
+        x_solar = tf.cast(self._solar_layer(tf.cast(x, tf.uint8)), tf.float32)
+        return apply_mask * x_solar + (1.0 - apply_mask) * x
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg.update({
+            'p': self.p,
+            'threshold_factor': self.threshold_factor,
+            'addition_factor': self.addition_factor,
+            'value_range': self.value_range,
+        })
+        return cfg
+
+
 # Design rationale for B-mode liver US images:
 #   ✓ H/V flip — no anatomical handedness constraint in axial US views
 #   ✓ Rotation ≤ 15° — probe tilt variability; heavier rotation risks artefact
 #   ✓ Zoom / Translation — lesion size and position variability
 #   ✓ Brightness / Contrast — US gain, TGC, and depth attenuation variation
 #   ✓ GaussianNoise — speckle noise simulation (Keras-native; no scipy/cv2)
+#   ✓ Solarization (global_view_2 only, p=0.2) — breaks bright-region shortcut
+#      by inverting high-intensity pixels; forces attention to hypoechoic regions
+#      Reference: DINO (Caron et al., 2021), applied to view 2 only
 #   ✗ Color jitter — meaningless for grayscale-to-RGB B-mode images
 #   ✗ Heavy elastic deformation — risks corrupting anatomical landmarks
 #
 # References:
 #   - Bassi et al. (Johns Hopkins, MICCAI best-paper) — medical SSL aug
 #   - Sowrirajan et al. (2021) MoCo chest X-ray
-#   - Caron et al. (2021) multi-crop self-supervised strategy
+#   - Caron et al. (2021) multi-crop self-supervised strategy (DINO)
 
 
 def build_base_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
@@ -224,9 +300,10 @@ def build_base_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
 
 
 def build_strong_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
-    """Global-view augmentation for self-supervised / contrastive-style SSL.
+    """Global-view augmentation for self-supervised learning — view 1 (no solarization).
 
-    Stronger photometric distortion than supervised baseline;
+    Used for global_view_1 in DINO-style SSL.
+    Stronger photometric distortion than supervised baseline.
     Inspired by multi-crop self-supervised learning (Caron et al., 2021), adapted for medical US.
 
     Input  : (B, H, W, C) uint8 [0, 255]
@@ -256,6 +333,61 @@ def build_strong_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
     )
 
 
+def build_strong_augmentation_with_solarization(img_size: tuple[int, int]) -> keras.Sequential:
+    """Global-view augmentation for self-supervised learning — view 2 (WITH solarization).
+
+    Used EXCLUSIVELY for global_view_2 in DINO-style SSL.
+    Adds RandomSolarization (p=0.2, threshold_factor=0.5) before rescaling,
+    following DINO (Caron et al., 2021) which applies solarization to one view only.
+
+    Solarization rationale for B-mode US:
+      - Inverts pixels above mid-gray threshold (127/255)
+      - Forces SSL loss to rely on structural/contextual features rather than
+        absolute brightness → reduces hypoechoic region shortcut bias
+      - p=0.2 balances augmentation diversity without destroying image semantics
+
+    Input  : (B, H, W, C) uint8 [0, 255]
+    Output : (B, H, W, C) float32 [0, 1]
+
+    References:
+        Caron et al. (2021) DINO, Sec 3.3 and Appendix A
+        https://keras.io/api/layers/preprocessing_layers/image_augmentation/solarization/
+    """
+    return keras.Sequential(
+        [
+            layers.RandomFlip("horizontal_and_vertical"),
+            layers.RandomRotation(factor=0.042, fill_mode="reflect"),
+            layers.RandomZoom(
+                height_factor=(-0.20, 0.20),
+                width_factor=(-0.20, 0.20),
+                fill_mode="reflect",
+            ),
+            layers.RandomTranslation(
+                height_factor=0.08,
+                width_factor=0.08,
+                fill_mode="reflect",
+            ),
+            layers.RandomBrightness(factor=0.25),
+            layers.RandomContrast(factor=0.40),
+            RandomGamma(gamma_range=(0.70, 1.40), p=0.9, name="solarized_random_gamma"),
+            layers.GaussianNoise(stddev=0.04),
+            # ── Solarization (view 2 only) ────────────────────────────────
+            # Applied BEFORE Rescaling so input is still in [0, 255] uint8
+            # threshold_factor=0.5 → only pixels > 127 are inverted
+            # p=0.2 follows DINO paper recommendation
+            RandomSolarization(
+                p=0.2,
+                threshold_factor=0.5,
+                addition_factor=0.0,
+                value_range=(0, 255),
+                name="random_solarization",
+            ),
+            layers.Rescaling(scale=1.0 / 255.0),
+        ],
+        name="strong_augmentation_with_solarization",
+    )
+
+
 def build_local_crop_augmentation(
     parent_size: tuple[int, int],
     crop_scale: tuple[float, float] = (0.05, 0.40),
@@ -265,6 +397,7 @@ def build_local_crop_augmentation(
 
     Crops a random small region of the image, then resizes to output_size.
     Crop height/width is computed from the geometric mean of crop_scale bounds.
+    NOTE: Solarization is NOT applied to local crops (DINO design choice).
 
     Args:
         parent_size : (H, W) of the incoming full image.
@@ -415,6 +548,11 @@ def _build_multiview_dataset(
 ) -> tf.data.Dataset:
     """Create a fit-ready tf.data.Dataset for multi-view learning.
 
+    Solarization strategy (DINO paper):
+        global_view_1 : build_strong_augmentation()                     — NO solarization
+        global_view_2 : build_strong_augmentation_with_solarization()   — solarization p=0.2
+        local_views   : build_local_crop_augmentation()                 — NO solarization
+
     Returns:
         local_views == 0:
             dataset yielding (g1, g2)
@@ -434,7 +572,11 @@ def _build_multiview_dataset(
         .batch(batch_size, drop_remainder=True)
     )
 
-    global_aug = build_strong_augmentation(img_size)
+    # View 1: no solarization
+    global_aug_v1 = build_strong_augmentation(img_size)
+    # View 2: WITH solarization (p=0.2, DINO-style)
+    global_aug_v2 = build_strong_augmentation_with_solarization(img_size)
+
     local_size = local_output_size or (img_size[0] // 2, img_size[1] // 2)
     local_aug = None
     if local_views > 0:
@@ -445,8 +587,8 @@ def _build_multiview_dataset(
         )
 
     def _to_views(imgs_uint8, _):
-        g1 = global_aug(imgs_uint8, training=True)
-        g2 = global_aug(imgs_uint8, training=True)
+        g1 = global_aug_v1(imgs_uint8, training=True)   # no solarization
+        g2 = global_aug_v2(imgs_uint8, training=True)   # solarization p=0.2
         if local_views == 0:
             return g1, g2
         views = [g1, g2]
@@ -467,9 +609,15 @@ class MultiViewDataset:
     Labels are NOT yielded (unsupervised pre-training mode).
     For linear probing / fine-tuning use build_dataset().
 
+    Solarization strategy (DINO paper, Caron et al., 2021):
+        global_view_1 → build_strong_augmentation()                     — no solarization
+        global_view_2 → build_strong_augmentation_with_solarization()   — p=0.2
+        local_views   → build_local_crop_augmentation()                 — no solarization
+
     Global views (always 2):
         - Resolution = img_size  (original input resolution is PRESERVED)
-        - Augmentation : build_strong_augmentation()
+        - View 1 augmentation : build_strong_augmentation()
+        - View 2 augmentation : build_strong_augmentation_with_solarization()
 
     Local views (optional, N = local_views):
         - Created only when local_views > 0
@@ -538,10 +686,11 @@ class MultiViewDataset:
         )
 
         print(
-            f"  global_views : 2 @ {img_size}  (strong aug)\n"
-            f"  local_views  : {local_views} @ "
-            f"{self.local_output_size if local_views else 'N/A'}  (crop aug)\n"
-            f"  total images : {self.num_samples}  |  steps/epoch ≈ {self.num_samples // batch_size}"
+            f"  global_view_1 : 224x224 (strong aug, no solarization)\n"
+            f"  global_view_2 : 224x224 (strong aug + solarization p=0.2)\n"
+            f"  local_views   : {local_views} @ "
+            f"{self.local_output_size if local_views else 'N/A'}  (crop aug, no solarization)\n"
+            f"  total images  : {self.num_samples}  |  steps/epoch ≈ {self.num_samples // batch_size}"
         )
 
     def __iter__(self):
@@ -594,8 +743,8 @@ if __name__ == "__main__":
         multiview_ds = MultiViewDataset(DATA_ROOT, split="train", img_size=(224, 224),
                                         batch_size=4, local_views=0)
         for g1, g2 in multiview_ds.take(1):
-            print(f"  global_view_1 : {g1.shape}  dtype={g1.dtype}")
-            print(f"  global_view_2 : {g2.shape}  dtype={g2.dtype}")
+            print(f"  global_view_1 (no solar) : {g1.shape}  dtype={g1.dtype}")
+            print(f"  global_view_2 (solar p=0.2): {g2.shape}  dtype={g2.dtype}")
             assert g1.shape == g2.shape, "Shape mismatch!"
             break
         print("  PASS: global-only mode")
