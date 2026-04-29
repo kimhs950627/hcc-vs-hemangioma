@@ -270,7 +270,7 @@ def run_supervised_benchmark(
     tf.random.set_seed(seed)
 
     outdir = pathlib.Path(output_dir)
-    for sub in ('checkpoints', 'metrics', 'roc', 'gradcam', 'attention'):
+    for sub in ('checkpoints', 'metrics', 'roc', 'reports', 'attention'):
         (outdir / sub).mkdir(parents=True, exist_ok=True)
 
     # ── Datasets ──────────────────────────────────────────────────────────────

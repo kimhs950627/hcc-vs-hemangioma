@@ -410,7 +410,9 @@ outputs/benchmark_vit/
 ├── checkpoints/best.weights.h5
 ├── metrics/metrics_all.csv
 ├── roc/roc_epoch_*.png
-├── gradcam/
+├── reports/
+│   ├── classification_report.json
+│   └── classification_report.txt
 ├── attention/
 └── test_report.json
 ```
