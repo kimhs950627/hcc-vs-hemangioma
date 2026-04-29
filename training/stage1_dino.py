@@ -43,6 +43,7 @@ class DINOPretrainModel(keras.Model):
         self.center = tf.Variable(tf.zeros([1, projection_dim], dtype=tf.float32), trainable=False, name='dino_center')
         self.teacher_temp_var = tf.Variable(float(teacher_temp), trainable=False, dtype=tf.float32, name='teacher_temp_var')
         self._teacher_initialized = False
+        self.ssl_step = tf.Variable(0, trainable=False, dtype=tf.int64, name='ssl_step')
 
     def compile(self, optimizer, **kwargs):
         super().compile(jit_compile=False, **kwargs)
@@ -77,8 +78,7 @@ class DINOPretrainModel(keras.Model):
         self.center.assign(self.center_momentum * self.center + (1.0 - self.center_momentum) * batch_center)
 
     def _update_teacher_temp(self):
-        step = getattr(self, '_train_counter', tf.constant(0, dtype=tf.int64))
-        self.teacher_temp_var.assign(resolve_schedule_value(self.teacher_temperature, step))
+        self.teacher_temp_var.assign(resolve_schedule_value(self.teacher_temperature, self.ssl_step))
 
     def _teacher_probs(self, logits):
         centered = logits - self.center

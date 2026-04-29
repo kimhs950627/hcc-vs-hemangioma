@@ -36,14 +36,14 @@ class MoCoPretrainModel(keras.Model):
         ], name='moco_teacher_projector')
         self.teacher_temp_var = tf.Variable(0.04, trainable=False, dtype=tf.float32, name='moco_teacher_temp_var')
         self._teacher_initialized = False
+        self.ssl_step = tf.Variable(0, trainable=False, dtype=tf.int64, name='ssl_step')
 
     def compile(self, optimizer, **kwargs):
         super().compile(jit_compile=False, **kwargs)
         self.optimizer = optimizer
 
     def _update_teacher_temp(self):
-        step = getattr(self, '_train_counter', tf.constant(0, dtype=tf.int64))
-        self.teacher_temp_var.assign(resolve_schedule_value(self.teacher_temperature, step))
+        self.teacher_temp_var.assign(resolve_schedule_value(self.teacher_temperature, self.ssl_step))
 
     def _embed_online(self, x, training=True):
         out = self.online_encoder(x, training=training)
@@ -85,6 +85,7 @@ class MoCoPretrainModel(keras.Model):
         self.optimizer.apply_gradients(zip(grads, vars_))
         self._init_teacher()
         self._ema_update()
+        self.ssl_step.assign_add(1)
         return {'loss': loss, 'teacher_temp': self.teacher_temp_var}
 
     def test_step(self, data):
