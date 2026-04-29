@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from training.stage1_byol import BYOLPretrainModel, build_stage1_byol_trainer
@@ -20,8 +19,8 @@ def build_stage1_trainer(
     ssl_mode: str = 'moco',
     predictor_dim: int = 256,
     teacher_temp: float = 0.04,
-    teacher_temp_warmup_start: float = 0.04,
-    teacher_temp_target: float = 0.04,
+    teacher_temp_warmup_start: float | None = None,
+    teacher_temp_target: float | None = None,
     warmup_steps: int = 10,
     center_momentum: float = 0.9,
     n_local: int = 0,
@@ -30,18 +29,29 @@ def build_stage1_trainer(
     clipvalue: float | None = None,
     weight_decay: float = 1e-4,
 ):
+    """Build a stage-1 SSL trainer.
+
+    teacher_temperature priority (highest → lowest):
+      1. explicit ``teacher_temperature`` object  (schedule or callable)
+      2. LinearWarmupSchedule if both ``teacher_temp_warmup_start`` AND
+         ``teacher_temp_target`` are explicitly given
+      3. scalar ``teacher_temp``
+    """
     mode = ssl_mode.lower()
 
-    teacher_temp_schedule = teacher_temperature
-    if teacher_temp_schedule is None and (
-        teacher_temp_warmup_start != teacher_temp_target or teacher_temp != teacher_temp_target
-    ):
+    # ── resolve teacher temperature ──────────────────────────────────────
+    if teacher_temperature is not None:
+        # explicit schedule/callable wins unconditionally
+        teacher_temp_schedule: TemperatureInput = teacher_temperature
+    elif teacher_temp_warmup_start is not None and teacher_temp_target is not None:
+        # warmup only when BOTH start and target are explicitly provided
         teacher_temp_schedule = LinearWarmupSchedule(
             start_value=teacher_temp_warmup_start,
             end_value=teacher_temp_target,
             warmup_steps=warmup_steps,
         )
-    elif teacher_temp_schedule is None:
+    else:
+        # no warmup — use scalar teacher_temp as-is
         teacher_temp_schedule = teacher_temp
 
     if mode == 'moco':
