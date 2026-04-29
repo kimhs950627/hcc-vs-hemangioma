@@ -7,6 +7,7 @@ from keras import layers
 
 from models.encoder import build_encoder
 from training.losses import dino_cross_entropy
+from training.ssl_schedules import LrInput, TemperatureInput, resolve_schedule_value
 
 
 class DINOPretrainModel(keras.Model):
@@ -17,9 +18,7 @@ class DINOPretrainModel(keras.Model):
         projection_dim: int = 256,
         student_temp: float = 0.1,
         teacher_temp: float = 0.04,
-        teacher_temp_warmup_start: float = 0.04,
-        teacher_temp_target: float = 0.04,
-        warmup_epochs: int = 10,
+        teacher_temperature: TemperatureInput | None = None,
         center_momentum: float = 0.9,
         ema_momentum: float = 0.996,
         n_local: int = 0,
@@ -27,9 +26,7 @@ class DINOPretrainModel(keras.Model):
         super().__init__()
         self.student_temp = student_temp
         self.teacher_temp = teacher_temp
-        self.teacher_temp_warmup_start = teacher_temp_warmup_start
-        self.teacher_temp_target = teacher_temp_target
-        self.warmup_epochs = warmup_epochs
+        self.teacher_temperature = teacher_temperature if teacher_temperature is not None else teacher_temp
         self.center_momentum = center_momentum
         self.ema_momentum = ema_momentum
         self.n_local = n_local
@@ -80,17 +77,12 @@ class DINOPretrainModel(keras.Model):
         self.center.assign(self.center_momentum * self.center + (1.0 - self.center_momentum) * batch_center)
 
     def _update_teacher_temp(self):
-        if not hasattr(self, '_train_counter'):
-            return
-        step = tf.cast(self._train_counter, tf.float32)
-        warmup = tf.cast(max(self.warmup_epochs, 1), tf.float32)
-        ratio = tf.minimum(step / warmup, 1.0)
-        value = self.teacher_temp_warmup_start + ratio * (self.teacher_temp_target - self.teacher_temp_warmup_start)
-        self.teacher_temp_var.assign(value)
+        step = getattr(self, '_train_counter', tf.constant(0, dtype=tf.int64))
+        self.teacher_temp_var.assign(resolve_schedule_value(self.teacher_temperature, step))
 
     def _teacher_probs(self, logits):
         centered = logits - self.center
-        return tf.nn.softmax(centered / self.teacher_temp_var, axis=-1)
+        return tf.nn.softmax(centered / tf.maximum(self.teacher_temp_var, 1e-6), axis=-1)
 
     def train_step(self, data):
         views = tf.nest.flatten(data)
@@ -110,36 +102,10 @@ class DINOPretrainModel(keras.Model):
                 dino_cross_entropy(s_global2, tf.math.log(t1 + 1e-8), self.student_temp, 1.0),
                 dino_cross_entropy(s_global2, tf.math.log(t2 + 1e-8), self.student_temp, 1.0),
             ]
-            if self.n_local >= 1:
-                local1 = views[2]
-                s_local1 = self._student_logits(local1, training=True)
-                loss_terms.append(dino_cross_entropy(s_local1, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
-                loss_terms.append(dino_cross_entropy(s_local1, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
-            if self.n_local >= 2:
-                local2 = views[3]
-                s_local2 = self._student_logits(local2, training=True)
-                loss_terms.append(dino_cross_entropy(s_local2, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
-                loss_terms.append(dino_cross_entropy(s_local2, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
-            if self.n_local >= 3:
-                local3 = views[4]
-                s_local3 = self._student_logits(local3, training=True)
-                loss_terms.append(dino_cross_entropy(s_local3, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
-                loss_terms.append(dino_cross_entropy(s_local3, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
-            if self.n_local >= 4:
-                local4 = views[5]
-                s_local4 = self._student_logits(local4, training=True)
-                loss_terms.append(dino_cross_entropy(s_local4, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
-                loss_terms.append(dino_cross_entropy(s_local4, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
-            if self.n_local >= 5:
-                local5 = views[6]
-                s_local5 = self._student_logits(local5, training=True)
-                loss_terms.append(dino_cross_entropy(s_local5, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
-                loss_terms.append(dino_cross_entropy(s_local5, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
-            if self.n_local >= 6:
-                local6 = views[7]
-                s_local6 = self._student_logits(local6, training=True)
-                loss_terms.append(dino_cross_entropy(s_local6, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
-                loss_terms.append(dino_cross_entropy(s_local6, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
+            for local in views[2:2 + self.n_local]:
+                s_local = self._student_logits(local, training=True)
+                loss_terms.append(dino_cross_entropy(s_local, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
+                loss_terms.append(dino_cross_entropy(s_local, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
             loss = tf.add_n(loss_terms) / tf.cast(len(loss_terms), tf.float32)
         vars_ = self.online_encoder.trainable_weights + self.projector.trainable_weights
         grads = tape.gradient(loss, vars_)
@@ -153,6 +119,7 @@ class DINOPretrainModel(keras.Model):
         views = tf.nest.flatten(data)
         global1 = views[0]
         global2 = views[1]
+        self._update_teacher_temp()
         t1_logits = self._teacher_logits(global1)
         t1 = self._teacher_probs(t1_logits)
         s2 = self._student_logits(global2, training=False)
@@ -169,13 +136,14 @@ def build_stage1_dino_trainer(
     projection_dim: int = 256,
     temperature: float = 0.1,
     teacher_temp: float = 0.04,
-    teacher_temp_warmup_start: float = 0.04,
-    teacher_temp_target: float = 0.04,
-    warmup_epochs: int = 10,
+    teacher_temperature: TemperatureInput | None = None,
     center_momentum: float = 0.9,
     ema_momentum: float = 0.996,
     n_local: int = 0,
-    lr: float = 1e-4,
+    lr: LrInput = 1e-4,
+    clipnorm: float | None = None,
+    clipvalue: float | None = None,
+    weight_decay: float = 1e-4,
 ):
     model = DINOPretrainModel(
         encoder_name=encoder_name,
@@ -183,12 +151,17 @@ def build_stage1_dino_trainer(
         projection_dim=projection_dim,
         student_temp=temperature,
         teacher_temp=teacher_temp,
-        teacher_temp_warmup_start=teacher_temp_warmup_start,
-        teacher_temp_target=teacher_temp_target,
-        warmup_epochs=warmup_epochs,
+        teacher_temperature=teacher_temperature,
         center_momentum=center_momentum,
         ema_momentum=ema_momentum,
         n_local=n_local,
     )
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate=lr))
+    model.compile(
+        optimizer=keras.optimizers.AdamW(
+            learning_rate=lr,
+            weight_decay=weight_decay,
+            clipnorm=clipnorm,
+            clipvalue=clipvalue,
+        )
+    )
     return model

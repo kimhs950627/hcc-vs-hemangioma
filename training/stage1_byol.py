@@ -7,6 +7,7 @@ from keras import layers
 
 from models.encoder import build_encoder
 from training.losses import negative_cosine_similarity
+from training.ssl_schedules import LrInput, TemperatureInput, resolve_schedule_value
 
 
 class BYOLPretrainModel(keras.Model):
@@ -17,9 +18,11 @@ class BYOLPretrainModel(keras.Model):
         projection_dim: int = 256,
         predictor_dim: int = 256,
         ema_momentum: float = 0.996,
+        teacher_temperature: TemperatureInput = 0.04,
     ):
         super().__init__()
         self.ema_momentum = ema_momentum
+        self.teacher_temperature = teacher_temperature
         self.online_encoder = build_encoder(encoder_name, input_shape=input_shape)
         self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape)
         self.projector = keras.Sequential([
@@ -34,21 +37,28 @@ class BYOLPretrainModel(keras.Model):
             layers.Dense(predictor_dim, activation='gelu'),
             layers.Dense(projection_dim),
         ], name='byol_predictor')
+        self.teacher_temp_var = tf.Variable(0.04, trainable=False, dtype=tf.float32, name='byol_teacher_temp_var')
         self._teacher_initialized = False
 
     def compile(self, optimizer, **kwargs):
         super().compile(jit_compile=False, **kwargs)
         self.optimizer = optimizer
 
+    def _update_teacher_temp(self):
+        step = getattr(self, '_train_counter', tf.constant(0, dtype=tf.int64))
+        self.teacher_temp_var.assign(resolve_schedule_value(self.teacher_temperature, step))
+
     def _online_proj(self, x, training=True):
         out = self.online_encoder(x, training=training)
         z = self.projector(out['embedding'], training=training)
         p = self.predictor(z, training=training)
-        return p
+        return tf.math.l2_normalize(p, axis=-1)
 
     def _teacher_proj(self, x):
         out = self.teacher_encoder(x, training=False)
-        return self.teacher_projector(out['embedding'], training=False)
+        z = self.teacher_projector(out['embedding'], training=False)
+        temp = tf.maximum(self.teacher_temp_var, 1e-6)
+        return tf.math.l2_normalize(z / temp, axis=-1)
 
     def _init_teacher(self):
         if self._teacher_initialized:
@@ -69,6 +79,7 @@ class BYOLPretrainModel(keras.Model):
         views = tf.nest.flatten(data)
         v1 = views[0]
         v2 = views[1]
+        self._update_teacher_temp()
         with tf.GradientTape() as tape:
             p1 = self._online_proj(v1, training=True)
             p2 = self._online_proj(v2, training=True)
@@ -80,18 +91,19 @@ class BYOLPretrainModel(keras.Model):
         self.optimizer.apply_gradients(zip(grads, vars_))
         self._init_teacher()
         self._ema_update()
-        return {'loss': loss}
+        return {'loss': loss, 'teacher_temp': self.teacher_temp_var}
 
     def test_step(self, data):
         views = tf.nest.flatten(data)
         v1 = views[0]
         v2 = views[1]
+        self._update_teacher_temp()
         p1 = self._online_proj(v1, training=False)
         p2 = self._online_proj(v2, training=False)
         t1 = self._teacher_proj(v1)
         t2 = self._teacher_proj(v2)
         loss = 0.5 * (negative_cosine_similarity(p1, t2) + negative_cosine_similarity(p2, t1))
-        return {'loss': loss}
+        return {'loss': loss, 'teacher_temp': self.teacher_temp_var}
 
     def get_stage2_encoder(self, use_teacher: bool = True):
         return self.teacher_encoder if use_teacher else self.online_encoder
@@ -103,7 +115,11 @@ def build_stage1_byol_trainer(
     projection_dim: int = 256,
     predictor_dim: int = 256,
     ema_momentum: float = 0.996,
-    lr: float = 1e-4,
+    lr: LrInput = 1e-4,
+    teacher_temperature: TemperatureInput = 0.04,
+    clipnorm: float | None = None,
+    clipvalue: float | None = None,
+    weight_decay: float = 1e-4,
 ):
     model = BYOLPretrainModel(
         encoder_name=encoder_name,
@@ -111,6 +127,14 @@ def build_stage1_byol_trainer(
         projection_dim=projection_dim,
         predictor_dim=predictor_dim,
         ema_momentum=ema_momentum,
+        teacher_temperature=teacher_temperature,
     )
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate=lr))
+    model.compile(
+        optimizer=keras.optimizers.AdamW(
+            learning_rate=lr,
+            weight_decay=weight_decay,
+            clipnorm=clipnorm,
+            clipvalue=clipvalue,
+        )
+    )
     return model
