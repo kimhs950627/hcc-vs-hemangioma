@@ -1,321 +1,441 @@
-"""
-callbacks/epoch_visualization.py
+"""Epoch-wise metrics and visualization callback for HCC vs. Hemangioma.
 
-Keras callback that runs at the end of every epoch and saves:
-  1. Full validation metrics (accuracy, ROC-AUC, sensitivity, specificity, PPV, NPV)
-     -> outputs/<run>/metrics/metrics_epoch_{epoch:03d}.json
-     -> outputs/<run>/metrics/metrics_all.csv  (append every epoch)
-  2. ROC curve PNG
-     -> outputs/<run>/roc/roc_epoch_{epoch:03d}.png
-  3. Grad-CAM / attention overlay grid for sample images
-     -> outputs/<run>/heatmap/heatmap_epoch_{epoch:03d}.png
+Every epoch (or every N epochs):
 
-Design decisions
-----------------
-- No sklearn dependency: metrics are computed with utils.metrics.
-- No cv2 / PIL dependency: resizing is done via tf.image.resize.
-- Attention extraction is best-effort:
-    - ViT family: tries to call model with return_attention=True.
-    - CNN family: falls back to Grad-CAM via utils.gradcam.
-- Callback is safe to use with both benchmark_supervised and stage2 models.
+1. **Classification metrics** (full validation set)
+   - Accuracy, ROC-AUC, Sensitivity, Specificity, PPV, NPV
+   - Saved as ``metrics/metrics_epoch_{epoch:03d}.json``
+   - Appended to ``metrics/metrics_all.csv``
+   - ROC curve PNG saved to ``roc/roc_epoch_{epoch:03d}.png``
+
+2. **Grad-CAM heatmaps** (CNN encoders: ConvNeXt, EfficientNet)
+   - Overlaid on sample images
+   - Saved to ``gradcam/epoch_{epoch:03d}_sample_{i:02d}.png``
+
+3. **Attention map visualizations** (ViT / Swin encoders)
+   - CLS-to-patch attention weight averaged over heads
+   - Resized to image dimensions and overlaid
+   - Saved to ``attention/epoch_{epoch:03d}_sample_{i:02d}.png``
+
 """
 
 from __future__ import annotations
 
 import csv
-import json
-from pathlib import Path
-from typing import Optional
+import pathlib
+from typing import Any
 
 import numpy as np
+import tensorflow as tf
+import keras
+
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+    _MPL_OK = True
+except ImportError:
+    _MPL_OK = False
+
+from utils.metrics import binary_classification_metrics, save_metrics_json, plot_roc_curve
 
 
-class EpochMetricsAndVisualizationCallback:
-    """Per-epoch validation metrics + Grad-CAM / attention visualizations.
+# ─────────────────────────────────────────────────────────────────────────────
+# Grad-CAM
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Parameters
-    ----------
-    val_dataset :
-        A ``tf.data.Dataset`` yielding ``(images, labels)`` batches.
-        Labels should be integer scalars (0 or 1).
-    output_dir :
-        Root directory for all saved outputs.
-    last_conv_layer_name :
-        Name of the last convolutional layer for Grad-CAM.  Pass ``None``
-        for pure Transformer models (gradient × input saliency is used instead).
-    sample_images :
-        Optional float32 array (M, H, W, C) of *fixed* sample images to
-        visualize each epoch.  If ``None``, the first batch of val_dataset
-        is used.
-    sample_labels :
-        Optional int array (M,) of ground-truth labels for sample_images.
-    threshold :
-        Hard decision threshold for confusion-matrix metrics.
-    max_visualizations :
-        Maximum number of images in the per-epoch heatmap grid.
-    log_to_console :
-        Print a one-line metric summary after each epoch.
+def _make_gradcam_heatmap(
+    grad_model: keras.Model,
+    image: np.ndarray,
+) -> np.ndarray | None:
+    """Compute single-image Grad-CAM heatmap [H_cam, W_cam].
+
+    Args:
+        grad_model : A Keras model with TWO outputs:
+                     [last_conv_feature_map (B,H,W,C), logit (B,1)].
+        image      : Float32 array (H, W, 3), values in [0, 1].
+
+    Returns:
+        Normalised heatmap (H_cam, W_cam) in [0, 1], or None on failure.
     """
+    try:
+        img_t = tf.cast(tf.expand_dims(image, 0), tf.float32)  # (1,H,W,3)
+        with tf.GradientTape() as tape:
+            inputs = tf.cast(img_t, tf.float32)
+            tape.watch(inputs)
+            conv_out, logit = grad_model(inputs, training=False)
+            loss = tf.squeeze(logit)                             # scalar
+        grads = tape.gradient(loss, conv_out)                    # (1,H,W,C)
+        # Pool spatial dimensions → channel weights.
+        pooled = tf.reduce_mean(grads, axis=(1, 2), keepdims=True)  # (1,1,1,C)
+        cam    = tf.reduce_sum(conv_out * pooled, axis=-1)           # (1,H,W)
+        cam    = tf.squeeze(cam).numpy()                             # (H,W)
+        cam    = np.maximum(cam, 0)
+        if cam.max() > 0:
+            cam = cam / cam.max()
+        return cam.astype(np.float32)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[Grad-CAM] Failed: {exc}")
+        return None
+
+
+def _build_grad_model(
+    core_model: keras.Model,
+    last_conv_layer_name: str | None,
+) -> keras.Model | None:
+    """Build a gradient model for Grad-CAM.
+
+    Searches `core_model.enc` (if present) or `core_model` for a Conv2D layer
+    matching `last_conv_layer_name`. Returns None if not found.
+
+    Returns:
+        keras.Model with outputs [conv_feature_map, logit] or None.
+    """
+    if last_conv_layer_name is None:
+        return None
+
+    # Resolve the backbone model.
+    backbone = getattr(core_model, 'enc', core_model)
+    inner    = getattr(backbone,   'base_model', backbone)
+
+    try:
+        conv_layer = inner.get_layer(last_conv_layer_name)
+    except (ValueError, AttributeError):
+        # Fall back: iterate submodels.
+        conv_layer = None
+        for layer in inner.layers:
+            if layer.name == last_conv_layer_name:
+                conv_layer = layer
+                break
+        if conv_layer is None:
+            return None
+
+    try:
+        # Build functional model: input → [conv_out, logit]
+        grad_model = keras.Model(
+            inputs  = inner.input,
+            outputs = [conv_layer.output, inner.output],
+        )
+        return grad_model
+    except Exception as exc:  # noqa: BLE001
+        print(f"[Grad-CAM] Could not build gradient model: {exc}")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ViT / Swin attention visualization
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _extract_attention_map(
+    core_model: keras.Model,
+    image: np.ndarray,
+    patch_size: int = 16,
+) -> np.ndarray | None:
+    """Extract CLS-to-patch attention map from ViT / Swin encoder.
+
+    Returns:
+        Float32 array (H_img, W_img) normalised to [0, 1], or None.
+    """
+    try:
+        enc = getattr(core_model, 'enc', core_model)
+        img_t = tf.cast(tf.expand_dims(image, 0), tf.float32)  # (1,H,W,3)
+        enc_out = enc(img_t, training=False, return_attention=True)
+        attn = enc_out.get('last_encoder_layer_attentional_weights')
+        if attn is None:
+            return None
+        # attn shape: (B, n_heads, N_tokens, N_tokens)
+        # where N_tokens = n_patches + 1 (CLS token at index 0)
+        attn_np = attn.numpy()                    # (1, H, N, N)
+        attn_np = attn_np[0]                      # (n_heads, N, N)
+        # Average over heads; take CLS row (index 0); skip CLS column.
+        cls_attn = attn_np[:, 0, 1:]              # (n_heads, n_patches)
+        cls_attn = cls_attn.mean(axis=0)          # (n_patches,)
+        n_patches = cls_attn.shape[0]
+        grid_size = int(np.sqrt(n_patches))
+        if grid_size * grid_size != n_patches:
+            return None
+        cam = cls_attn.reshape(grid_size, grid_size)
+        # Upsample to original image size.
+        h, w = image.shape[:2]
+        cam_resized = np.array(
+            tf.image.resize(
+                cam[..., np.newaxis],
+                (h, w),
+                method='bilinear',
+            )
+        ).squeeze(-1)
+        if cam_resized.max() > 0:
+            cam_resized = cam_resized / cam_resized.max()
+        return cam_resized.astype(np.float32)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[Attention] Failed: {exc}")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Image saving helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _save_overlay(
+    image: np.ndarray,
+    heatmap: np.ndarray,
+    save_path: str | pathlib.Path,
+    label: int | None = None,
+    prob: float | None = None,
+    epoch: int | None = None,
+    title_prefix: str = "",
+    alpha: float = 0.45,
+) -> None:
+    """Save side-by-side [original | heatmap overlay] PNG.
+
+    Args:
+        image     : (H, W, 3) float32 in [0, 1]
+        heatmap   : (H, W) float32 in [0, 1]
+        save_path : Output file path.
+        label     : Ground-truth label (0/1).
+        prob      : Predicted probability of class 1.
+        epoch     : Epoch index (for title).
+        title_prefix : Extra prefix for subplot title.
+        alpha     : Heatmap blending strength.
+    """
+    if not _MPL_OK:
+        return
+    label_str = {
+        0: 'Hemangioma', 1: 'HCC', None: '?'
+    }.get(label, str(label))
+    prob_str  = f"P(HCC)={prob:.3f}" if prob is not None else ""
+
+    colormap   = cm.get_cmap('jet')
+    heatmap_rgb = colormap(heatmap)[..., :3].astype(np.float32)
+    overlay     = (1 - alpha) * image + alpha * heatmap_rgb
+    overlay     = np.clip(overlay, 0, 1)
+
+    fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+    axes[0].imshow(image)
+    axes[0].set_title(f"{title_prefix}  GT: {label_str}", fontsize=10)
+    axes[0].axis('off')
+    axes[1].imshow(overlay)
+    ep_str = f" [Epoch {epoch}]" if epoch is not None else ""
+    axes[1].set_title(f"Heatmap{ep_str}  {prob_str}", fontsize=10)
+    axes[1].axis('off')
+
+    fig.tight_layout()
+    pathlib.Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(save_path, dpi=100)
+    plt.close(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main callback
+# ─────────────────────────────────────────────────────────────────────────────
+
+class EpochMetricsAndVisualizationCallback(keras.callbacks.Callback):
+    """Compute full classification metrics and save visualizations every epoch.
+
+    This callback operates on the *raw* core model (not the functional fit_model)
+    so that it can access encoder-specific outputs (attention, feature_map).
+
+    Args:
+        val_dataset          : Validation ``tf.data.Dataset`` yielding (imgs, labels).
+        output_dir           : Root output directory.
+        last_conv_layer_name : Last Conv2D layer name for Grad-CAM (CNN only).
+                               Set to None to skip Grad-CAM.
+        core_model           : The raw model with call() → dict output.
+                               If None, falls back to ``self.model``.
+        sample_images        : Fixed (N, H, W, 3) float32 array for visualization.
+        sample_labels        : Corresponding int labels (N,).
+        viz_every_n_epochs   : Save visualizations every N epochs (default 1).
+        max_viz_samples      : Max samples to visualize per epoch.
+        threshold            : Classification threshold for metric computation.
+        csv_header_written   : Internal flag — do not set manually.
+    """
+
+    _CSV_FIELDS = [
+        'epoch', 'accuracy', 'roc_auc',
+        'sensitivity', 'specificity', 'ppv', 'npv', 'f1',
+        'threshold', 'youden_threshold',
+        'youden_sensitivity', 'youden_specificity',
+        'tp', 'tn', 'fp', 'fn',
+    ]
 
     def __init__(
         self,
-        val_dataset,
-        output_dir: str | Path,
-        last_conv_layer_name: Optional[str] = None,
-        sample_images: Optional[np.ndarray] = None,
-        sample_labels: Optional[np.ndarray] = None,
+        val_dataset: tf.data.Dataset,
+        output_dir: str,
+        last_conv_layer_name: str | None = None,
+        core_model: keras.Model | None = None,
+        sample_images: np.ndarray | None = None,
+        sample_labels: np.ndarray | None = None,
+        viz_every_n_epochs: int = 1,
+        max_viz_samples: int = 8,
         threshold: float = 0.5,
-        max_visualizations: int = 8,
-        log_to_console: bool = True,
-    ):
-        self.val_dataset = val_dataset
-        self.output_dir = Path(output_dir)
-        self.last_conv_layer_name = last_conv_layer_name
-        self.sample_images = sample_images
-        self.sample_labels = sample_labels
-        self.threshold = threshold
-        self.max_vis = max_visualizations
-        self.log_to_console = log_to_console
-        self._csv_path: Optional[Path] = None
-        self._csv_header_written = False
-
-    # ───────────────────────────────────────────────────────────────────
-    # Keras callback interface
-    # ───────────────────────────────────────────────────────────────────
-
-    def set_model(self, model):
-        """Called automatically by Keras before training starts."""
-        self.model = model
-
-    def on_epoch_end(self, epoch: int, logs: Optional[dict] = None) -> None:
-        """Run after every epoch."""
-        # ── 1. Collect validation predictions ─────────────────────────────
-        all_probs, all_labels = self._collect_predictions()
-
-        # ── 2. Compute metrics ────────────────────────────────────────────
-        from utils.metrics import (
-            binary_classification_metrics,
-            save_metrics_json,
-            format_metrics_string,
-        )
-        metrics = binary_classification_metrics(
-            all_labels, all_probs, threshold=self.threshold, compute_youden=True
-        )
-        metrics["epoch"] = epoch + 1
-
-        # ── 3. Save JSON + CSV ────────────────────────────────────────────
-        metrics_dir = self.output_dir / "metrics"
-        metrics_dir.mkdir(parents=True, exist_ok=True)
-        json_path = metrics_dir / f"metrics_epoch_{epoch + 1:03d}.json"
-        save_metrics_json(metrics, json_path)
-        self._append_csv(metrics, metrics_dir / "metrics_all.csv")
-
-        # ── 4. ROC curve PNG ───────────────────────────────────────────────
-        roc_dir = self.output_dir / "roc"
-        roc_dir.mkdir(parents=True, exist_ok=True)
-        self._save_roc_curve(
-            metrics,
-            roc_dir / f"roc_epoch_{epoch + 1:03d}.png",
-            epoch=epoch + 1,
-        )
-
-        # ── 5. Heatmap visualization ──────────────────────────────────────
-        heatmap_dir = self.output_dir / "heatmap"
-        heatmap_dir.mkdir(parents=True, exist_ok=True)
-        self._save_heatmap_grid(
-            heatmap_dir / f"heatmap_epoch_{epoch + 1:03d}.png",
-            all_probs,
-        )
-
-        # ── 6. Console log ─────────────────────────────────────────────────
-        if self.log_to_console:
-            print(f"\n[EpochViz] epoch={epoch+1:03d}  {format_metrics_string(metrics)}")
-
-        # Propagate to Keras logs dict so ModelCheckpoint can monitor them
-        if logs is not None:
-            for key in ("accuracy", "roc_auc", "sensitivity", "specificity", "ppv", "npv"):
-                logs[f"val_{key}"] = metrics.get(key, 0.0)
-
-    # ───────────────────────────────────────────────────────────────────
-    # Private helpers
-    # ───────────────────────────────────────────────────────────────────
-
-    def _collect_predictions(self):
-        import tensorflow as tf
-
-        all_probs, all_labels = [], []
-        for batch in self.val_dataset:
-            imgs, labels = batch
-            logits = self.model(imgs, training=False)
-            if hasattr(logits, "numpy"):
-                logits_np = logits.numpy()
-            else:
-                logits_np = np.array(logits)
-            # Handle both single-logit (shape N,1 or N,) and two-class (shape N,2) outputs
-            if logits_np.ndim == 1 or logits_np.shape[-1] == 1:
-                probs = _sigmoid(logits_np.ravel())
-            else:
-                probs = _softmax(logits_np)[:, 1]
-            all_probs.append(probs)
-            all_labels.append(np.array(labels).ravel())
-
-        return np.concatenate(all_probs), np.concatenate(all_labels)
-
-    def _save_roc_curve(
-        self, metrics: dict, path: Path, epoch: int
     ) -> None:
-        import matplotlib.pyplot as plt
+        super().__init__()
+        self.val_dataset          = val_dataset
+        self.outdir               = pathlib.Path(output_dir)
+        self.last_conv_layer_name = last_conv_layer_name
+        self.core_model           = core_model
+        self.sample_images        = sample_images
+        self.sample_labels        = sample_labels if sample_labels is not None else []
+        self.viz_every_n_epochs   = viz_every_n_epochs
+        self.max_viz_samples      = max_viz_samples
+        self.threshold            = threshold
+        self._csv_written         = False
+        self._grad_model          = None   # built lazily on first epoch
 
-        fpr = metrics.get("roc_fpr", [])
-        tpr = metrics.get("roc_tpr", [])
-        auc = metrics.get("roc_auc", 0.0)
-        best_thresh = metrics.get("youden_threshold", self.threshold)
+    # ── Keras hook ─────────────────────────────────────────────────────────
+    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
+        core = self.core_model or self.model
+        epoch_1 = epoch + 1   # 1-indexed for filenames
 
-        fig, ax = plt.subplots(figsize=(5, 4))
-        ax.plot(fpr, tpr, lw=2, label=f"AUC = {auc:.4f}")
-        ax.plot([0, 1], [0, 1], "--", color="gray", lw=1)
-
-        # Mark Youden-optimal point
-        if fpr and tpr:
-            youden_vals = [t - f for t, f in zip(tpr, fpr)]
-            best_idx = int(np.argmax(youden_vals))
-            ax.scatter(
-                fpr[best_idx], tpr[best_idx],
-                color="red", zorder=5,
-                label=f"Youden thresh={best_thresh:.3f}",
-            )
-
-        ax.set_xlabel("FPR (1 - Specificity)")
-        ax.set_ylabel("TPR (Sensitivity)")
-        ax.set_title(f"ROC Curve  Epoch {epoch}")
-        ax.legend(loc="lower right", fontsize=9)
-        ax.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(str(path), dpi=120)
-        plt.close(fig)
-
-    def _save_heatmap_grid(self, path: Path, all_probs: np.ndarray) -> None:
-        from utils.gradcam import make_gradcam_heatmap, save_gradcam_grid
-
-        # Pick sample images
-        if self.sample_images is not None:
-            imgs = self.sample_images[: self.max_vis]
-            labels = (
-                self.sample_labels[: self.max_vis]
-                if self.sample_labels is not None
-                else None
-            )
-        else:
-            imgs, labels = self._take_sample_batch()
-
-        if imgs is None or len(imgs) == 0:
+        # ── 1. Full-validation metrics ──────────────────────────────────────
+        y_true, y_prob = self._predict_val(core)
+        if len(y_true) == 0:
             return
 
-        # Compute per-sample probs from model
-        import tensorflow as tf
-
-        logits = self.model(tf.cast(imgs, tf.float32), training=False)
-        logits_np = logits.numpy() if hasattr(logits, "numpy") else np.array(logits)
-        if logits_np.ndim == 1 or logits_np.shape[-1] == 1:
-            probs = _sigmoid(logits_np.ravel())
-        else:
-            probs = _softmax(logits_np)[:, 1]
-
-        # Build title strings
-        class_names = ["Hemangioma", "HCC"]
-        titles = []
-        for i in range(len(imgs)):
-            pred_class = int(probs[i] >= self.threshold)
-            gt_str = class_names[int(labels[i])] if labels is not None else "?"
-            titles.append(f"GT:{gt_str} | P(HCC)={probs[i]:.2f}")
-
-        # Grad-CAM
-        heatmaps = make_gradcam_heatmap(
-            self.model, imgs, self.last_conv_layer_name, class_index=1
+        metrics = binary_classification_metrics(
+            y_true, y_prob,
+            threshold      = self.threshold,
+            compute_youden = True,
         )
-        save_gradcam_grid(imgs, heatmaps, path, titles=titles)
+        metrics['epoch'] = epoch_1
 
-    def _take_sample_batch(self):
-        """Grab the first batch from val_dataset as sample images."""
-        try:
-            for batch in self.val_dataset.take(1):
-                imgs, labels = batch
-                imgs_np = np.array(imgs)[: self.max_vis]
-                labels_np = np.array(labels)[: self.max_vis]
-                return imgs_np, labels_np
-        except Exception:
-            pass
-        return None, None
+        # Save per-epoch JSON.
+        json_path = self.outdir / 'metrics' / f'metrics_epoch_{epoch_1:03d}.json'
+        save_metrics_json(metrics, json_path)
 
-    def _append_csv(self, metrics: dict, csv_path: Path) -> None:
-        """Append one row to the running metrics CSV."""
-        skip_keys = {"roc_fpr", "roc_tpr"}
-        row = {k: v for k, v in metrics.items() if k not in skip_keys}
-        write_header = not csv_path.exists()
-        with open(csv_path, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+        # Append to CSV.
+        self._append_csv(metrics, epoch_1)
+
+        # Log to Keras progress bar.
+        if logs is not None:
+            for k in ('accuracy', 'roc_auc', 'sensitivity', 'specificity', 'ppv', 'npv'):
+                logs[f'val_full_{k}'] = metrics.get(k, float('nan'))
+
+        _m = metrics
+        print(
+            f"  [EpochViz E{epoch_1:03d}] "
+            f"acc={_m['accuracy']:.4f}  auc={_m['roc_auc']:.4f}  "
+            f"sens={_m['sensitivity']:.4f}  spec={_m['specificity']:.4f}  "
+            f"PPV={_m['ppv']:.4f}  NPV={_m['npv']:.4f}"
+        )
+
+        # ROC curve PNG.
+        roc_path = self.outdir / 'roc' / f'roc_epoch_{epoch_1:03d}.png'
+        plot_roc_curve(y_true, y_prob, epoch=epoch_1, save_path=roc_path)
+
+        # ── 2. Visualizations (every N epochs) ──────────────────────────
+        if (epoch_1 % self.viz_every_n_epochs != 0) and (epoch_1 != 1):
+            return
+        if self.sample_images is None or len(self.sample_images) == 0:
+            return
+
+        n = min(self.max_viz_samples, len(self.sample_images))
+        imgs   = self.sample_images[:n]
+        labels = np.array(self.sample_labels[:n], dtype=int) if len(self.sample_labels) else np.zeros(n, int)
+
+        # Get per-sample probabilities from core model.
+        probs = self._batch_predict(core, imgs)
+
+        # Lazily build grad model.
+        if self._grad_model is None and self.last_conv_layer_name is not None:
+            self._grad_model = _build_grad_model(core, self.last_conv_layer_name)
+            if self._grad_model is None:
+                print("[EpochViz] Grad-CAM model could not be built; skipping Grad-CAM.")
+
+        for i in range(n):
+            img   = imgs[i]           # (H, W, 3)
+            lbl   = int(labels[i])
+            prob  = float(probs[i])
+
+            # ---- Grad-CAM ----
+            if self._grad_model is not None:
+                heatmap = _make_gradcam_heatmap(self._grad_model, img)
+                if heatmap is not None:
+                    h, w = img.shape[:2]
+                    heatmap_up = np.array(
+                        tf.image.resize(heatmap[..., np.newaxis], (h, w))
+                    ).squeeze(-1)
+                    gcam_path = (
+                        self.outdir / 'gradcam'
+                        / f'epoch_{epoch_1:03d}_sample_{i:02d}.png'
+                    )
+                    _save_overlay(
+                        image=img, heatmap=heatmap_up,
+                        save_path=gcam_path,
+                        label=lbl, prob=prob, epoch=epoch_1,
+                        title_prefix='GradCAM',
+                    )
+
+            # ---- Attention map (ViT/Swin) ----
+            attn_map = _extract_attention_map(core, img)
+            if attn_map is not None:
+                attn_path = (
+                    self.outdir / 'attention'
+                    / f'epoch_{epoch_1:03d}_sample_{i:02d}.png'
+                )
+                _save_overlay(
+                    image=img, heatmap=attn_map,
+                    save_path=attn_path,
+                    label=lbl, prob=prob, epoch=epoch_1,
+                    title_prefix='Attention',
+                )
+
+    # ── Internal helpers ────────────────────────────────────────────────
+    def _predict_val(
+        self,
+        core: keras.Model,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Run inference on full val dataset; return (y_true, y_prob)."""
+        all_true, all_prob = [], []
+        for imgs, lbls in self.val_dataset:
+            out = core(imgs, training=False)
+            # Support both 'probability' (benchmark) and 'probabilities' (Classifier).
+            if 'probability' in out:
+                probs = tf.squeeze(out['probability'], axis=-1)   # (B,)
+            elif 'probabilities' in out:
+                probs = out['probabilities'][:, 1]                # (B,)  class-1
+            elif 'logit' in out:
+                probs = tf.squeeze(tf.sigmoid(out['logit']), -1)
+            elif 'logits' in out:
+                probs = tf.sigmoid(out['logits'][:, 1] - out['logits'][:, 0])
+            else:
+                continue
+            all_true.append(lbls.numpy())
+            all_prob.append(probs.numpy())
+        if not all_true:
+            return np.array([]), np.array([])
+        return np.concatenate(all_true), np.concatenate(all_prob)
+
+    def _batch_predict(
+        self,
+        core: keras.Model,
+        images: np.ndarray,
+    ) -> np.ndarray:
+        """Return (N,) probability array for sample images."""
+        imgs_t = tf.cast(images, tf.float32)
+        out    = core(imgs_t, training=False)
+        if 'probability' in out:
+            return tf.squeeze(out['probability'], -1).numpy()
+        if 'probabilities' in out:
+            return out['probabilities'][:, 1].numpy()
+        if 'logit' in out:
+            return tf.squeeze(tf.sigmoid(out['logit']), -1).numpy()
+        if 'logits' in out:
+            return tf.sigmoid(out['logits'][:, 1] - out['logits'][:, 0]).numpy()
+        return np.full(len(images), 0.5)
+
+    def _append_csv(self, metrics: dict[str, Any], epoch_1: int) -> None:
+        """Append one row to metrics_all.csv."""
+        csv_path = self.outdir / 'metrics' / 'metrics_all.csv'
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        write_header = not self._csv_written or not csv_path.exists()
+        with open(csv_path, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=self._CSV_FIELDS, extrasaction='ignore')
             if write_header:
                 writer.writeheader()
+                self._csv_written = True
+            row = {k: metrics.get(k, '') for k in self._CSV_FIELDS}
+            row['epoch'] = epoch_1
             writer.writerow(row)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Keras callback adapter
-# (wraps the above class so Keras can call it via fit(callbacks=[...]))
-# ─────────────────────────────────────────────────────────────────────────────
-
-def build_epoch_visualization_callback(
-    val_dataset,
-    output_dir: str | Path,
-    last_conv_layer_name: Optional[str] = None,
-    sample_images: Optional[np.ndarray] = None,
-    sample_labels: Optional[np.ndarray] = None,
-    threshold: float = 0.5,
-    max_visualizations: int = 8,
-    log_to_console: bool = True,
-):
-    """Factory that returns a Keras-compatible callback.
-
-    Internally imports keras and subclasses keras.callbacks.Callback so that
-    the heavy import is deferred until training actually starts.
-
-    Returns
-    -------
-    A ``keras.callbacks.Callback`` instance ready to be passed to
-    ``model.fit(callbacks=[...])``.
-    """
-    import keras
-
-    _inner = EpochMetricsAndVisualizationCallback(
-        val_dataset=val_dataset,
-        output_dir=output_dir,
-        last_conv_layer_name=last_conv_layer_name,
-        sample_images=sample_images,
-        sample_labels=sample_labels,
-        threshold=threshold,
-        max_visualizations=max_visualizations,
-        log_to_console=log_to_console,
-    )
-
-    class _KerasAdapter(keras.callbacks.Callback):
-        def set_model(self, model):
-            super().set_model(model)
-            _inner.set_model(model)
-
-        def on_epoch_end(self, epoch, logs=None):
-            _inner.on_epoch_end(epoch, logs)
-
-    return _KerasAdapter()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Math helpers (no sklearn dependency)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-np.clip(x, -50, 50)))
-
-
-def _softmax(x: np.ndarray) -> np.ndarray:
-    e = np.exp(x - x.max(axis=-1, keepdims=True))
-    return e / e.sum(axis=-1, keepdims=True)
