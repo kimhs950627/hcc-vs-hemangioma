@@ -13,13 +13,14 @@ B-mode 간 초음파 이미지에서 **간세포암종(HCC)** 과 **혈관종(He
 2. [Dataset Structure](#dataset-structure)
 3. [Installation](#installation)
 4. [Dataloader](#dataloader)
-   - [Directory to Provide](#directory-to-provide)
-   - [Label Convention](#label-convention)
-   - [1. Supervised Dataloader (`build_dataset`)](#1-supervised-dataloader-build_dataset)
-   - [2. Multi-View — Global Only (`local_views=0`)](#2-multi-view--global-only-local_views0)
-   - [3. Multi-View — Global + Local Crops](#3-multi-view--global--local-crops)
-   - [Augmentation Pipelines](#augmentation-pipelines)
-5. [Smoke-Test](#smoke-test)
+5. [Stage 1 — DINO + SimMIM SSL Trainer](#stage-1--dino--simmim-ssl-trainer)
+6. [Stage 1 — Other SSL Modes](#stage-1--other-ssl-modes)
+7. [Stage 2 Supervised + SupCon](#stage-2-supervised--supcon-training)
+8. [**Supervised Benchmark Baseline**](#supervised-benchmark-baseline)
+9. [Prototype Bank Construction](#prototype-bank-construction)
+10. [Inference and Scoring](#inference-and-scoring)
+11. [W&B Visualization](#wb-visualization)
+12. [Smoke-Test](#smoke-test)
 
 ---
 
@@ -27,7 +28,25 @@ B-mode 간 초음파 이미지에서 **간세포암종(HCC)** 과 **혈관종(He
 
 ```
 hcc-vs-hemangioma/
-├── dataloader.py       # SMC-LUD dataloader (this document)
+├── dataloader.py
+├── models/
+│   └── encoder.py           # VisionTransformer, Swin-like, ConvNeXt, EfficientNet
+├── training/
+│   ├── stage1_ssl.py         # SSL router (moco / byol / dino)
+│   ├── stage1_dino.py        # DINO + SimMIM combined trainer
+│   ├── stage1_moco.py
+│   ├── stage1_byol.py
+│   ├── stage2_supcon.py
+│   └── benchmark_supervised.py   # ← Scratch supervised baseline
+├── callbacks/
+│   └── epoch_visualization.py    # ← Per-epoch metrics + Grad-CAM + attention
+├── utils/
+│   ├── metrics.py                # Binary classification metrics
+│   └── gradcam.py
+├── inference/
+│   └── build_prototype_bank.py
+├── visualization/
+│   └── wandb_viz.py
 └── README.md
 ```
 
@@ -35,18 +54,11 @@ hcc-vs-hemangioma/
 
 ## Dataset Structure
 
-SMC-LUD `clean_ver_for_train` 디렉토리 기준. Train / Val / Test split이 **이미 완료**된 상태로 배포되며, 각 클래스 폴더 안에 이미지가 **flat하게** 존재한다 (환자별 sub-directory 없음).
-
 ```
-clean_ver_for_train/          ← data_root 로 지정할 디렉토리
+clean_ver_for_train/          ← data_root
 ├── train_clean/
 │   ├── HCC/
-│   │   ├── img_0001.png
-│   │   ├── img_0002.png
-│   │   └── ...
 │   └── Hemangioma/
-│       ├── img_0001.png
-│       └── ...
 ├── val_clean/
 │   ├── HCC/
 │   └── Hemangioma/
@@ -55,43 +67,6 @@ clean_ver_for_train/          ← data_root 로 지정할 디렉토리
     └── Hemangioma/
 ```
 
-> `original_data/` 및 `split_for_train/` 폴더는 dataloader에서 사용하지 않는다.
-
----
-
-## Installation
-
-```bash
-pip install keras tensorflow numpy
-```
-
-- **Keras 3** (backend-agnostic) 사용. TensorFlow는 `tf.data` I/O pipeline에만 의존.
-- Python 3.11+, single consumer GPU (≤16 GB VRAM) 기준.
-
----
-
-## Dataloader
-
-### Directory to Provide
-
-모든 함수에서 `data_root` 인자에 **`clean_ver_for_train/` 경로**를 넘긴다.
-
-```python
-DATA_ROOT = "/path/to/clean_ver_for_train"
-```
-
-내부적으로 다음 세 경로를 자동으로 탐색한다.
-
-| split 인자 | 실제 탐색 경로 |
-|-----------|--------------|
-| `"train"` | `data_root/train_clean/{HCC,Hemangioma}/` |
-| `"val"`   | `data_root/val_clean/{HCC,Hemangioma}/`   |
-| `"test"`  | `data_root/test_clean/{HCC,Hemangioma}/`  |
-
----
-
-### Label Convention
-
 | 클래스 | 레이블 |
 |--------|--------|
 | Hemangioma (혈관종) | `0` |
@@ -99,249 +74,418 @@ DATA_ROOT = "/path/to/clean_ver_for_train"
 
 ---
 
-### 1. Supervised Dataloader (`build_dataset`)
+## Installation
 
-학습·검증·테스트용 `tf.data.Dataset` 세 개를 한번에 반환한다.  
-Train split에만 data augmentation이 적용되고, Val/Test는 rescale만 수행한다.
+```bash
+pip install keras tensorflow numpy matplotlib
+```
+
+- **Keras 3** (backend-agnostic), Python 3.11+, single consumer GPU (≤16 GB VRAM)
+
+---
+
+## Dataloader
+
+### Directory to Provide
+
+```python
+DATA_ROOT = "/path/to/clean_ver_for_train"
+```
+
+### 1. Supervised Dataloader (`build_dataset`)
 
 ```python
 from dataloader import build_dataset
 
 ds_train, ds_val, ds_test = build_dataset(
-    data_root   = "/path/to/clean_ver_for_train",
-    img_size    = (224, 224),   # 모든 이미지를 이 크기로 resize
-    batch_size  = 32,
-    use_augmentation = True,    # Train에만 base augmentation 적용
-    seed        = 42,
+    data_root        = "/path/to/clean_ver_for_train",
+    img_size         = (224, 224),
+    batch_size       = 32,
+    use_augmentation = True,
+    seed             = 42,
 )
-
-# 사용 예시
-for imgs, labels in ds_train:
-    # imgs  : tf.float32  shape [32, 224, 224, 3],  range [0, 1]
-    # labels: tf.int32    shape [32],  {0=Hemangioma, 1=HCC}
-    print(imgs.shape, labels.numpy())
-    break
-
-# 검증 루프
-for imgs, labels in ds_val:
-    predictions = model(imgs, training=False)
-
-# 최종 평가
-for imgs, labels in ds_test:
-    ...
 ```
 
----
-
-### 2. Multi-View — Global Only (`local_views=0`)
-
-`local_views=0` 이면 **global view 2개만** 반환한다.  
-두 뷰 모두 `img_size` 그대로 (원본 해상도 유지), strong augmentation 적용.
+### 2. Multi-View SSL Dataset
 
 ```python
 from dataloader import MultiViewDataset
 
-multiview_ds = MultiViewDataset(
+# Global-only (BYOL / MoCo)
+mv_ds = MultiViewDataset(
     data_root   = "/path/to/clean_ver_for_train",
-    split       = "train",       # "train" / "val" / "test"
+    split       = "train",
     img_size    = (224, 224),
     batch_size  = 16,
-    local_views = 0,             # ← 0: global view 2개만 반환
-    shuffle     = True,
-    seed        = 42,
+    local_views = 0,        # 0 = 2 global views only
 )
 
-for g1, g2 in multiview_ds:
-    # g1, g2 : tf.float32  shape [16, 224, 224, 3]  (동일 해상도)
-    # teacher=g1, student=g2 or vice versa
-    loss = ssl_loss(teacher(g1), student(g2))
-    break
-```
-
----
-
-### 3. Multi-View — Global + Local Crops
-
-`local_views=N` (N ≥ 1) 이면 **global 2개 + local N개** 를 list로 반환한다.  
-Local view는 RandomCrop → resize → `img_size // 2` 해상도.
-
-```python
-from dataloader import MultiViewDataset
-
-multiview_ds = MultiViewDataset(
+# Global + Local (DINO)
+mv_ds = MultiViewDataset(
     data_root        = "/path/to/clean_ver_for_train",
     split            = "train",
     img_size         = (224, 224),
     batch_size       = 16,
-    local_views      = 6,                    # ← global 2 + local 6 = 총 8개 뷰
-    local_crop_scale = (0.05, 0.40),         # 이미지 면적의 5~40% crop
-    local_output_size= (96, 96),             # 원하면 직접 지정 (기본: img_size // 2)
-    shuffle          = True,
-    seed             = 42,
+    local_views      = 6,   # global 2 + local 6
+    local_crop_scale = (0.05, 0.40),
 )
-
-for views in multiview_ds:
-    # views: Python list, len = 2 + local_views = 8
-    g1, g2         = views[0], views[1]   # float32 [16, 224, 224, 3]
-    local_crops    = views[2:]             # list of 6 × float32 [16, 96, 96, 3]
-
-    # 예: self-supervised multi-view 손실
-    global_feats   = [teacher(g1), teacher(g2)]
-    student_feats  = [student(v) for v in views]
-    break
 ```
 
----
-
 ### Augmentation Pipelines
-
-세 가지 Keras Sequential augmentation layer가 내장돼 있다.  
-모두 **Keras 3 `layers.*` API만** 사용하며 외부 라이브러리(cv2, scipy 등)에 의존하지 않는다.
 
 | 함수 | 용도 | 강도 |
 |------|------|------|
 | `build_base_augmentation(img_size)` | Supervised train | 중간 |
-| `build_strong_augmentation(img_size)` | global view | 강 |
-| `build_local_crop_augmentation(parent_size, crop_scale, output_size)` | local crop | 강 + crop |
-
-**적용된 augmentation 목록 (B-mode US 도메인 근거)**
-
-| Transform | 파라미터 | 근거 |
-|-----------|----------|------|
-| `RandomFlip` (H+V) | — | 초음파 방향성 제한 없음 |
-| `RandomRotation` | ±15° | 탐촉자 각도 변이 시뮬레이션 |
-| `RandomZoom` | ±15~20% | 병변 크기 variability |
-| `RandomTranslation` | 5~8% | 병변 위치 variability |
-| `RandomBrightness` | 0.15~0.25 | US gain / depth attenuation 변동 |
-| `RandomContrast` | 0.20~0.35 | TGC 변동 |
-| `GaussianNoise` | std 0.025~0.04 | Speckle noise 시뮬레이션 |
-| `Rescaling` | ÷255 | uint8 → float32 [0,1] |
-
-> Blur는 Keras 3 stable API에 없으므로 GaussianNoise로 대체함.
+| `build_strong_augmentation(img_size)` | SSL global view | 강 |
+| `build_local_crop_augmentation(...)` | SSL local crop | 강+crop |
 
 ---
 
-## Smoke-Test
+## Stage 1 — DINO + SimMIM SSL Trainer
 
-데이터셋 경로를 인자로 넘겨 전체 파이프라인을 검증한다.
+`build_stage1_dino_simmim_trainer()` 는 **DINO self-distillation + SimMIM masked reconstruction** 을 동시에 학습하는 Stage 1 trainer를 반환한다.  
+Teacher network는 EMA 기반 weight averaging이고, student는 두 global view + N local crop을 모두 본다.
 
-```bash
-python dataloader.py /path/to/clean_ver_for_train
-```
+### Parameters
 
-정상 실행 시 아래와 같은 출력이 나온다.
+| 파라미터 | 타입 | 기본값 | 설명 |
+|---|---|---|---|
+| `encoder_name` | str | `"vit"` | `"vit"` / `"swin"` / `"convnext"` / `"efficientnet"` |
+| `input_shape` | tuple | `(224,224,3)` | 이미지 입력 크기 |
+| `projection_dim` | int | `256` | DINO projection head output dim |
+| `n_local` | int | `4` | local crop 수 (MultiViewDataset의 `local_views`와 일치) |
+| `mask_ratio` | float | `0.75` | SimMIM masked patch 비율 |
+| `lambda_mim` | float | `0.1` | SimMIM reconstruction loss weight |
+| `temperature` | float | `0.1` | student softmax temperature |
+| `teacher_temp` | float | `0.04` | teacher softmax temperature |
+| `teacher_temp_warmup_start` | float | `0.04` | teacher temp warmup 시작값 |
+| `teacher_temp_target` | float | `0.07` | teacher temp warmup 목표값 |
+| `warmup_epochs` | int | `10` | teacher temp warm-up epochs |
+| `center_momentum` | float | `0.9` | teacher centering EMA momentum |
+| `ema_momentum` | float | `0.996` | teacher weight EMA momentum |
+| `alpha_final` | float | `0.996` | EMA decay 최종값 (cosine schedule) |
+| `lr` | float | `1e-4` | Adam learning rate |
 
-```
-[build_dataset] Collecting samples ...
-  [train] Hemangioma= 2134  HCC= 2172  total= 4306
-  [val  ] Hemangioma=  267  HCC=  272  total=  539
-  [test ] Hemangioma=  268  HCC=  272  total=  540
-
-Smoke-test 1: build_dataset (supervised)
-  imgs  : (4, 224, 224, 3)  dtype=float32
-  labels: [0 1 1 0]  (0=Hemangioma, 1=HCC)
-  pixel range: [0.000, 1.000]
-
-Smoke-test 2: MultiViewDataset (local_views=0)
-  global_view_1 : (4, 224, 224, 3)  dtype=float32
-  global_view_2 : (4, 224, 224, 3)  dtype=float32
-  PASS: global-only mode
-
-Smoke-test 3: MultiViewDataset (local_views=6)
-  Total views returned : 8  (expected 8)
-    [global view 0] shape=(4, 224, 224, 3)  dtype=float32
-    [global view 1] shape=(4, 224, 224, 3)  dtype=float32
-    [local  view 2] shape=(4, 112, 112, 3)  dtype=float32
-    ...
-  PASS: multi-crop mode
-```
-
-
-## Stage 1 SSL Training
-
-Stage 1 supports selectable SSL modes in `training/stage1_ssl.py`: `moco`, `byol`, and `dino`.
-For Stage 2 initialization, use the **teacher encoder weights by default** because the EMA teacher is a temporal ensemble and typically more stable.
+### Quickstart
 
 ```python
 from dataloader import MultiViewDataset
-from training.stage1_ssl import build_stage1_trainer
+from training.stage1_dino import build_stage1_dino_simmim_trainer
+from training.ssl_callbacks import AlphaWarmupCallback, TeacherTempWarmupCallback
 
-ssl_ds = MultiViewDataset(
-    data_root="./clean_ver_for_train",
-    split="train",
-    img_size=(224, 224),
-    batch_size=16,
-    local_views=6,
+# 1. Multi-view dataset: global 2 + local n_local
+mv_ds = MultiViewDataset(
+    data_root   = "./clean_ver_for_train",
+    split       = "train",
+    img_size    = (224, 224),
+    batch_size  = 16,
+    local_views = 4,            # must match n_local below
 ).as_dataset()
 
-ssl_model = build_stage1_trainer(
-    encoder_name="vit",
-    input_shape=(224, 224, 3),
-    projection_dim=256,
-    temperature=0.1,
-    ema_momentum=0.996,
-    lr=1e-4,
-    ssl_mode="moco",  # "moco" | "byol" | "dino"
-    predictor_dim=256,  # used by BYOL
-    teacher_temp=0.04,  # used by DINO
-    teacher_temp_warmup_start=0.04,
-    teacher_temp_target=0.07,
-    warmup_epochs=10,
-    center_momentum=0.9,
+# 2. Build trainer
+ssl_model = build_stage1_dino_simmim_trainer(
+    encoder_name                = "vit",
+    input_shape                 = (224, 224, 3),
+    projection_dim              = 256,
+    n_local                     = 4,
+    mask_ratio                  = 0.75,
+    lambda_mim                  = 0.1,
+    temperature                 = 0.1,
+    teacher_temp                = 0.04,
+    teacher_temp_warmup_start   = 0.04,
+    teacher_temp_target         = 0.07,
+    warmup_epochs               = 10,
+    center_momentum             = 0.9,
+    ema_momentum                = 0.996,
+    alpha_final                 = 0.996,
+    lr                          = 1e-4,
 )
 
-ssl_model.fit(ssl_ds, epochs=10)
+# 3. Callbacks
+callbacks = [
+    AlphaWarmupCallback(
+        model         = ssl_model,
+        alpha_start   = 0.996,
+        alpha_final   = 0.9999,
+        total_epochs  = 100,
+    ),
+    TeacherTempWarmupCallback(
+        model         = ssl_model,
+        temp_start    = 0.04,
+        temp_final    = 0.07,
+        warmup_epochs = 10,
+    ),
+]
 
-# recommended for Stage 2
-teacher_encoder = ssl_model.get_stage2_encoder(use_teacher=True)
-teacher_encoder.save_weights("output/vit_stage1_teacher_encoder.weights.h5")
+# 4. Train
+ssl_model.fit(mv_ds, epochs=100, callbacks=callbacks)
+
+# 5. Export teacher encoder for Stage 2
+teacher_enc = ssl_model.get_stage2_encoder(use_teacher=True)
+teacher_enc.save_weights("output/vit_stage1_teacher.weights.h5")
 ```
+
+### Outputs during SSL training
+
+```
+loss          — total = DINO loss + lambda_mim * MIM loss
+loss_dino     — cross-entropy distillation loss
+loss_mim      — pixel/patch reconstruction MSE
+```
+
+---
+
+## Stage 1 — Other SSL Modes
+
+```python
+from training.stage1_ssl import build_stage1_trainer
+
+# MoCo
+moco_model = build_stage1_trainer(
+    encoder_name="vit", input_shape=(224,224,3),
+    projection_dim=256, temperature=0.1, ema_momentum=0.996,
+    lr=1e-4, ssl_mode="moco",
+)
+
+# BYOL
+byol_model = build_stage1_trainer(
+    encoder_name="vit", input_shape=(224,224,3),
+    projection_dim=256, predictor_dim=256, ema_momentum=0.996,
+    lr=1e-4, ssl_mode="byol",
+)
+
+# DINO (via router — uses stage1_dino.py internally)
+dino_model = build_stage1_trainer(
+    encoder_name="vit", input_shape=(224,224,3),
+    projection_dim=256, temperature=0.1,
+    teacher_temp=0.04, teacher_temp_warmup_start=0.04,
+    teacher_temp_target=0.07, warmup_epochs=10,
+    center_momentum=0.9, ema_momentum=0.996,
+    lr=1e-4, ssl_mode="dino",
+)
+```
+
+---
 
 ## Stage 2 Supervised + SupCon Training
 
-Stage 2 can initialize the encoder directly from the **Stage 1 teacher weights**.
-
 ```python
 from dataloader import build_dataset
-from training.stage2_supcon import build_stage2_trainer, stage2_encoder_recommendation
-
-print(stage2_encoder_recommendation())
+from training.stage2_supcon import build_stage2_trainer
 
 ds_train, ds_val, ds_test = build_dataset(
     data_root="./clean_ver_for_train",
-    img_size=(224, 224),
-    batch_size=16,
-    use_augmentation=True,
-    shuffle_train=True,
-    shuffle_val=True,
-    shuffle_test=True,
+    img_size=(224,224), batch_size=16, use_augmentation=True,
 )
 
-stage2_model = build_stage2_trainer(
-    encoder_name="vit",
-    input_shape=(224, 224, 3),
-    num_classes=2,
-    supcon_weight=0.3,
-    lr=1e-4,
-    teacher_encoder_weights="output/vit_stage1_teacher_encoder.weights.h5",
+stage2 = build_stage2_trainer(
+    encoder_name              = "vit",
+    input_shape               = (224, 224, 3),
+    num_classes               = 2,
+    supcon_weight             = 0.3,
+    projection_dim            = 128,
+    classifier_hidden_dim     = 256,
+    dropout_rate              = 0.2,
+    lr                        = 1e-4,
+    teacher_encoder_weights   = "output/vit_stage1_teacher.weights.h5",
 )
 
-stage2_model.fit(ds_train, validation_data=ds_val, epochs=20)
+stage2.fit(ds_train, validation_data=ds_val, epochs=50)
+stage2.model.save_weights("output/vit_stage2.weights.h5")
 ```
+
+---
+
+## Supervised Benchmark Baseline
+
+**No pretraining. No regularizer. No dropout. Scratch supervised binary classification.**  
+Goal: establish a clean lower-bound to compare against SSL-pretrained models.
+
+### Python API
+
+```python
+from training.benchmark_supervised import run_supervised_benchmark
+
+result = run_supervised_benchmark(
+    data_root          = "./clean_ver_for_train",
+    encoder_name       = "vit",       # "vit" | "swin" | "convnext" | "efficientnet"
+    input_shape        = (224, 224, 3),
+    batch_size         = 32,
+    epochs             = 100,
+    lr                 = 1e-4,
+    # ── benchmark mode (default: all False) ──
+    use_augmentation   = False,       # True for augmented ablation
+    use_pretrained     = False,       # CNN only — ImageNet weights
+    use_dropout        = False,
+    use_weight_decay   = False,
+    # ── output ──
+    output_dir         = "outputs/benchmark_vit",
+    seed               = 42,
+    viz_every_n_epochs = 5,           # Grad-CAM + attention every 5 epochs
+    max_viz_samples    = 8,
+)
+
+print(result)  # dict: accuracy, roc_auc, sensitivity, specificity, ppv, npv, ...
+```
+
+### CLI
+
+```bash
+# Minimal (pure scratch, no augmentation)
+python training/benchmark_supervised.py \
+    --data_root ./clean_ver_for_train \
+    --encoder   vit \
+    --epochs    100 \
+    --batch_size 32 \
+    --output_dir outputs/benchmark_vit
+
+# With base augmentation (ablation)
+python training/benchmark_supervised.py \
+    --data_root ./clean_ver_for_train \
+    --encoder   convnext \
+    --epochs    100 \
+    --use_augmentation \
+    --output_dir outputs/benchmark_convnext_aug
+
+# Full regularizer ablation (NOT the benchmark; for comparison)
+python training/benchmark_supervised.py \
+    --data_root ./clean_ver_for_train \
+    --encoder   vit \
+    --use_pretrained \
+    --use_dropout \
+    --use_weight_decay \
+    --output_dir outputs/benchmark_vit_full
+```
+
+### Output Artifacts
+
+```
+outputs/benchmark_vit/
+├── checkpoints/
+│   └── best.weights.h5          ← best val_accuracy checkpoint
+├── metrics/
+│   ├── metrics_epoch_001.json   ← per-epoch metrics JSON
+│   ├── metrics_epoch_002.json
+│   ├── ...
+│   └── metrics_all.csv          ← all epochs in one CSV
+├── roc/
+│   ├── roc_epoch_001.png        ← ROC curve (per epoch)
+│   └── ...
+├── gradcam/
+│   ├── epoch_001_sample_00.png  ← Grad-CAM overlay (CNN only)
+│   └── ...
+├── attention/
+│   ├── epoch_001_sample_00.png  ← ViT/Swin attention overlay
+│   └── ...
+└── test_report.json             ← final test-set metrics
+```
+
+### Metrics computed
+
+| Metric | Formula |
+|---|---|
+| Accuracy | (TP + TN) / N |
+| ROC-AUC | Trapezoidal rule |
+| Sensitivity | TP / (TP + FN) |
+| Specificity | TN / (TN + FP) |
+| PPV | TP / (TP + FP) |
+| NPV | TN / (TN + FN) |
+| F1 | 2 × PPV × Sensitivity / (PPV + Sensitivity) |
+| Youden threshold | argmax(sensitivity + specificity − 1) |
+
+### Encoder compatibility
+
+| Encoder | Grad-CAM | Attention map | Scratch supported |
+|---|---|---|---|
+| `vit` | — | ✅ CLS-to-patch | ✅ |
+| `swin` | — | ✅ GAP attention | ✅ |
+| `convnext` | ✅ last Conv2D | — | ✅ |
+| `efficientnet` | ✅ last Conv2D | — | ✅ |
+
+> CNN Grad-CAM requires the last Conv2D layer to be automatically detected.  
+> If detection fails, Grad-CAM is silently skipped and a warning is printed.
+
+### `build_supervised_benchmark_model` API
+
+```python
+from training.benchmark_supervised import build_supervised_benchmark_model
+
+model = build_supervised_benchmark_model(
+    encoder_name     = "vit",
+    input_shape      = (224, 224, 3),
+    use_pretrained   = False,   # CNN only
+    use_dropout      = False,
+    dropout_rate     = 0.3,
+    use_weight_decay = False,
+    weight_decay     = 1e-4,
+)
+
+# model.call() returns dict with keys:
+#   'logit'       : (B, 1)  raw logit
+#   'probability' : (B, 1)  sigmoid(logit)
+#   'embedding'   : (B, D)  encoder embedding
+#   'feature_map' : (B, H, W, C)  CNN feature map (or None for ViT)
+#   'last_encoder_layer_attentional_weights' : ViT attention (or None for CNN)
+```
+
+### `EpochMetricsAndVisualizationCallback` standalone usage
+
+```python
+from callbacks.epoch_visualization import EpochMetricsAndVisualizationCallback
+
+# Grab a fixed sample batch for visualization
+sample_imgs, sample_lbls = next(iter(ds_val))
+
+callback = EpochMetricsAndVisualizationCallback(
+    val_dataset          = ds_val,
+    output_dir           = "outputs/my_run",
+    last_conv_layer_name = "block5c_project_conv",  # EfficientNet example
+    core_model           = my_core_model,
+    sample_images        = sample_imgs.numpy()[:8],
+    sample_labels        = sample_lbls.numpy()[:8],
+    viz_every_n_epochs   = 5,
+    max_viz_samples      = 8,
+    threshold            = 0.5,
+)
+
+fit_model.fit(
+    ds_train,
+    validation_data = ds_val,
+    epochs          = 100,
+    callbacks       = [callback],
+)
+```
+
+---
 
 ## Prototype Bank Construction
 
-The prototype bank is now built from the **train split only** and supports a **dual bank**:
-- `hemangioma_prototypes.npy`
-- `hcc_prototypes.npy`
-
 ```bash
-python inference/build_prototype_bank.py   --data_root ./clean_ver_for_train   --encoder vit   --weights output/stage2_classifier.weights.h5   --n_prototypes 8   --output_dir output/prototype_bank
+python inference/build_prototype_bank.py \
+  --data_root ./clean_ver_for_train \
+  --encoder   vit \
+  --weights   output/stage2_classifier.weights.h5 \
+  --n_prototypes 8 \
+  --output_dir   output/prototype_bank
 ```
 
-## Inference and Scoring
+```python
+from inference.build_prototype_bank import build_dual_prototype_bank
 
-Dual-bank inference returns both **hemangioma score** and **HCC score**, as well as global/patch-level scores and heatmaps.
+result = build_dual_prototype_bank(
+    data_root     = "./clean_ver_for_train",
+    encoder       = "vit",
+    weights       = "output/stage2_classifier.weights.h5",
+    n_prototypes  = 8,
+    output_dir    = "output/prototype_bank",
+)
+hema_bank = result["hemangioma_prototypes"]
+hcc_bank  = result["hcc_prototypes"]
+```
+
+---
+
+## Inference and Scoring
 
 ```python
 import numpy as np
@@ -351,443 +495,61 @@ from visualization.interpret import infer_with_prototypes
 model = build_classifier("vit", input_shape=(224, 224, 3))
 model.load_weights("output/stage2_classifier.weights.h5")
 
-hema_bank = np.load("output/prototype_bank/hemangioma_prototypes.npy")
-hcc_bank = np.load("output/prototype_bank/hcc_prototypes.npy")
-
 result = infer_with_prototypes(
-    classifier_model=model,
-    image=image_np,
-    hemangioma_prototypes=hema_bank,
-    hcc_prototypes=hcc_bank,
+    classifier_model       = model,
+    image                  = image_np,   # (224, 224, 3) float32
+    hemangioma_prototypes  = hema_bank,
+    hcc_prototypes         = hcc_bank,
+)
+print(result["p_hcc"], result["malignancy_score"])
+```
+
+---
+
+## W&B Visualization
+
+```python
+import wandb
+from visualization.wandb_viz import init_wandb, get_wandb_callbacks, WandbStage2Visualizer, WandbVisualizationConfig
+
+init_wandb(project="hcc-vs-hemangioma", run_name="stage2-vit-supcon")
+
+vis_cfg = WandbVisualizationConfig(
+    test_dir="./clean_ver_for_train/test_clean",
+    num_images=8, image_size=(224, 224),
+    log_every_n_epochs=1, stage="stage2",
 )
 
-print("P(Hemangioma):", result["p_hemangioma"])
-print("P(HCC):", result["p_hcc"])
-print("Hemangioma score:", result["hemangioma_score"])
-print("HCC score:", result["hcc_score"])
-print("Global HCC score:", result["hcc_global_score"])
-print("Patch HCC score:", result["hcc_patch_score"])
-print("Malignancy score:", result["malignancy_score"])
-
-overlay = result["overlay_image"]
-proto_overlay = result["prototype_overlay_image"]
+clf_model.fit(
+    ds_train, validation_data=ds_val, epochs=50,
+    callbacks=get_wandb_callbacks() + [WandbStage2Visualizer(vis_cfg)],
+)
 ```
+
+---
+
+## Smoke-Test
+
+```bash
+python dataloader.py /path/to/clean_ver_for_train
+```
+
+정상 실행 시 Train/Val/Test split 확인 + shape/dtype/range 검증 출력.
+
+---
 
 ## Notes on Outputs
 
-- Transformer encoders return: `cls_token`, `encoded_patches`, `last_encoder_layer_attentional_weights`
-- CNN encoders return: `gap_vector`, `feature_map`
-- `overlay_image`: Grad-CAM for CNNs, attention overlay for Transformer-family encoders
+- **Transformer encoders** return: `cls_token`, `encoded_patches`, `last_encoder_layer_attentional_weights`
+- **CNN encoders** return: `gap_vector`, `feature_map`
+- `overlay_image`: Grad-CAM (CNN) or attention overlay (Transformer)
 - `prototype_overlay_image`: patch-level prototype similarity heatmap
 
-
-## Prototype Bank Construction
-
-The prototype bank is built from the **train split only** and supports a **dual bank**:
-- `hemangioma_prototypes.npy`
-- `hcc_prototypes.npy`
-
-### CLI usage
-
-```bash
-python inference/build_prototype_bank.py \
-  --data_root ./clean_ver_for_train \
-  --encoder vit \
-  --weights output/stage2_classifier.weights.h5 \
-  --n_prototypes 8 \
-  --output_dir output/prototype_bank
-```
-
-### Python / notebook usage
-
-You can also import the script in a `.ipynb` notebook and build/save the dual prototype bank directly.
-
-```python
-from inference.build_prototype_bank import build_dual_prototype_bank
-
-result = build_dual_prototype_bank(
-    data_root="./clean_ver_for_train",
-    encoder="vit",
-    weights="output/stage2_classifier.weights.h5",
-    n_prototypes=8,
-    output_dir="output/prototype_bank",
-    img_size=224,
-    batch_size=16,
-)
-
-hema_bank = result["hemangioma_prototypes"]
-hcc_bank = result["hcc_prototypes"]
-
-print(result["hemangioma_path"])
-print(result["hcc_path"])
-print(hema_bank.shape, hcc_bank.shape)
-```
-
-This returns in-memory numpy arrays and also saves both prototype files to disk.
-
-
-
-## Full Pipeline Example
-
-The example below shows the intended end-to-end workflow:
-1. Stage 1 SSL pretraining with EMA teacher-student learning
-2. Export teacher encoder weights
-3. Stage 2 supervised + SupCon training initialized from the teacher
-4. Build dual prototype banks from the **train split**
-5. Run prototype-based inference and obtain malignancy-related scores and heatmaps
-
-```python
-import numpy as np
-from dataloader import MultiViewDataset, build_dataset
-from training.stage1_ssl import build_stage1_trainer
-from training.stage2_supcon import build_stage2_trainer
-from inference.build_prototype_bank import build_dual_prototype_bank
-from visualization.interpret import infer_with_prototypes
-from models.encoder import build_classifier
-
-# -----------------------------
-# 1) Stage 1 SSL pretraining
-# -----------------------------
-ssl_ds = MultiViewDataset(
-    data_root="./clean_ver_for_train",
-    split="train",
-    img_size=(224, 224),
-    batch_size=16,
-    local_views=6,
-).as_dataset()
-
-ssl_model = build_stage1_trainer(
-    encoder_name="vit",
-    input_shape=(224, 224, 3),
-    projection_dim=256,
-    temperature=0.1,
-    ema_momentum=0.996,
-    lr=1e-4,
-)
-
-ssl_model.fit(ssl_ds, epochs=10)
-
-# Export the EMA teacher encoder for Stage 2 initialization
-teacher_encoder = ssl_model.get_stage2_encoder(use_teacher=True)
-teacher_encoder.save_weights("output/vit_stage1_teacher_encoder.weights.h5")
-
-# -----------------------------
-# 2) Stage 2 supervised training
-# -----------------------------
-ds_train, ds_val, ds_test = build_dataset(
-    data_root="./clean_ver_for_train",
-    img_size=(224, 224),
-    batch_size=16,
-    use_augmentation=True,
-    shuffle_train=True,
-    shuffle_val=False,
-    shuffle_test=False,
-)
-
-stage2_model = build_stage2_trainer(
-    encoder_name="vit",
-    input_shape=(224, 224, 3),
-    num_classes=2,
-    supcon_weight=0.3,
-    lr=1e-4,
-    teacher_encoder_weights="output/vit_stage1_teacher_encoder.weights.h5",
-)
-
-stage2_model.fit(ds_train, validation_data=ds_val, epochs=20)
-stage2_model.model.save_weights("output/vit_stage2_classifier.weights.h5")
-
-# -----------------------------
-# 3) Build dual prototype banks
-# -----------------------------
-proto_result = build_dual_prototype_bank(
-    data_root="./clean_ver_for_train",
-    encoder="vit",
-    weights="output/vit_stage2_classifier.weights.h5",
-    n_prototypes=8,
-    output_dir="output/prototype_bank",
-    img_size=224,
-    batch_size=16,
-)
-
-hema_bank = proto_result["hemangioma_prototypes"]
-hcc_bank = proto_result["hcc_prototypes"]
-
-print(proto_result["hemangioma_path"])
-print(proto_result["hcc_path"])
-
-# -----------------------------
-# 4) Prototype-based inference
-# -----------------------------
-classifier_model = build_classifier("vit", input_shape=(224, 224, 3))
-classifier_model.load_weights("output/vit_stage2_classifier.weights.h5")
-
-# Replace this with a real preprocessed image array of shape [H, W, 3]
-image_np = np.zeros((224, 224, 3), dtype=np.float32)
-
-result = infer_with_prototypes(
-    classifier_model=classifier_model,
-    image=image_np,
-    hemangioma_prototypes=hema_bank,
-    hcc_prototypes=hcc_bank,
-)
-
-print("P(Hemangioma):", result["p_hemangioma"])
-print("P(HCC):", result["p_hcc"])
-print("Hemangioma score:", result["hemangioma_score"])
-print("HCC score:", result["hcc_score"])
-print("HCC global score:", result["hcc_global_score"])
-print("HCC patch score:", result["hcc_patch_score"])
-print("Malignancy score:", result["malignancy_score"])
-
-# Heatmaps
-overlay_image = result["overlay_image"]  # Grad-CAM / attention-based explanation
-hcc_proto_overlay = result["prototype_overlay_image"]  # HCC prototype-only heatmap
-margin_proto_overlay = result["prototype_margin_overlay_image"]  # (HCC - Hemangioma) dual-bank margin heatmap
-```
-
-### Expected artifacts
-
-- `output/vit_stage1_teacher_encoder.weights.h5`
-- `output/vit_stage2_classifier.weights.h5`
-- `output/prototype_bank/hemangioma_prototypes.npy`
-- `output/prototype_bank/hcc_prototypes.npy`
-
-### Recommended order
-
-- Use the **EMA teacher encoder** from Stage 1 to initialize Stage 2.
-- Build prototype banks **after Stage 2**, not before.
-- Build prototype banks from the **train split only**.
-- Use the HCC bank (and the dual-bank margin) for malignancy-oriented prototype heatmaps.
-
-
-- `output/vit_stage1_teacher_encoder.weights.h5`
-- `output/vit_stage2_classifier.weights.h5`
-- `output/prototype_bank/hemangioma_prototypes.npy`
-- `output/prototype_bank/hcc_prototypes.npy`
-
-### Recommended order
-
-- Use the **EMA teacher encoder** from Stage 1 to initialize Stage 2.
-- Build prototype banks **after Stage 2**, not before.
-- Build prototype banks from the **train split only**.
-- Use the HCC bank for malignancy-oriented prototype heatmaps.
-
-
-### Stage 1 SSL modes
-
-```python
-from training.stage1_ssl import build_stage1_trainer
-
-# MoCo-like EMA contrastive SSL
-moco_model = build_stage1_trainer(
-    encoder_name="vit",
-    input_shape=(224, 224, 3),
-    projection_dim=256,
-    temperature=0.1,
-    ema_momentum=0.996,
-    lr=1e-4,
-    ssl_mode="moco",
-)
-
-# BYOL
-byol_model = build_stage1_trainer(
-    encoder_name="vit",
-    input_shape=(224, 224, 3),
-    projection_dim=256,
-    predictor_dim=256,
-    ema_momentum=0.996,
-    lr=1e-4,
-    ssl_mode="byol",
-)
-
-# DINO
-# local_views>0 in MultiViewDataset is recommended for DINO.
-dino_model = build_stage1_trainer(
-    encoder_name="vit",
-    input_shape=(224, 224, 3),
-    projection_dim=256,
-    temperature=0.1,
-    teacher_temp=0.04,
-    teacher_temp_warmup_start=0.04,
-    teacher_temp_target=0.07,
-    warmup_epochs=10,
-    center_momentum=0.9,
-    ema_momentum=0.996,
-    lr=1e-4,
-    ssl_mode="dino",
-)
-```
-
-Implementation files:
-- `training/stage1_moco.py`
-- `training/stage1_byol.py`
-- `training/stage1_dino.py`
-- `training/stage1_ssl.py` (router)
-
-
-### DINO stabilization options
-
-The DINO implementation now includes the following stabilization components:
-- **Teacher centering** via a running center vector updated with `center_momentum`
-- **Sharpening** through the teacher temperature
-- **Temperature scheduling** with `teacher_temp_warmup_start`, `teacher_temp_target`, and `warmup_epochs`
-
-Recommended DINO snippet:
-
-```python
-ssl_model = build_stage1_trainer(
-    encoder_name="vit",
-    input_shape=(224, 224, 3),
-    projection_dim=256,
-    temperature=0.1,
-    ema_momentum=0.996,
-    lr=1e-4,
-    ssl_mode="dino",
-    teacher_temp=0.04,
-    teacher_temp_warmup_start=0.04,
-    teacher_temp_target=0.07,
-    warmup_epochs=10,
-    center_momentum=0.9,
-)
-```
-
-For DINO, use `MultiViewDataset(..., local_views>0)` so the student sees both global and local crops while the teacher uses the two global views.
-
-
-### Stage 2 projection head
-
-Stage 2 now uses a dedicated **projection head** for the supervised contrastive loss and a separate **classifier head** for cross-entropy.
-This better matches standard SupCon practice: contrastive geometry is learned in the projection space, while classification logits are predicted from the base encoder embedding.
-
-```python
-stage2_model = build_stage2_trainer(
-    encoder_name="vit",
-    input_shape=(224, 224, 3),
-    num_classes=2,
-    supcon_weight=0.3,
-    projection_dim=128,
-    classifier_hidden_dim=256,
-    dropout_rate=0.2,
-    lr=1e-4,
-)
-```
-
-
-For DINO training with graph mode, you can explicitly pass the number of local views:
-
-```python
-ssl_model = build_stage1_trainer(
-    encoder_name="vit",
-    input_shape=(384, 384, 3),
-    projection_dim=256,
-    ssl_mode="dino",
-    n_local=4,
-)
-```
-
-
-
-## W&B visualization
-
-The repository includes a W&B helper module for both SSL Stage 1 and Stage 2 visualization. W&B Keras metric logging is supported through the official Keras integration, and prediction/image tables can be logged with a custom callback built on `wandb.log()` and `wandb.Table()` [web:230][web:235]. Grad-CAM generation follows the standard Keras pattern of building a model that returns both the target feature map and logits, then differentiating the class score with respect to the feature map [web:236].
-
-### Stage 1 SSL
-
-```python
-import wandb
-from visualization.wandb_viz import (
-    init_wandb,
-    get_wandb_callbacks,
-    WandbAttentionVisualizer,
-    WandbVisualizationConfig,
-)
-
-init_wandb(
-    project="hcc-vs-hemangioma",
-    run_name="stage1-dino-vit",
-    config={"stage": 1, "ssl_mode": "dino", "n_local": 4},
-    tags=["stage1", "ssl", "attention"],
-)
-
-vis_cfg = WandbVisualizationConfig(
-    test_dir="./data/test",
-    num_images=8,
-    image_size=(224, 224),
-    log_every_n_epochs=1,
-    stage="stage1",
-)
-
-callbacks = get_wandb_callbacks() + [
-    WandbAttentionVisualizer(vis_cfg),
-]
-
-history = ssl_model.fit(
-    ssl_train_ds,
-    validation_data=ssl_val_ds,
-    epochs=100,
-    callbacks=callbacks,
-)
-```
-
-For each selected raw test image, the callback logs:
-- Raw image.
-- Merged last-layer CLS-to-patch attention heatmap.
-- Overlay of merged attention on the raw image.
-- Per-head overlay for every attention head.
-- Normal scalar metrics already emitted by `fit()` such as loss and temperature.
-
-### Stage 2 supervised / SupCon
-
-```python
-import wandb
-from visualization.wandb_viz import (
-    init_wandb,
-    get_wandb_callbacks,
-    WandbStage2Visualizer,
-    WandbVisualizationConfig,
-)
-
-init_wandb(
-    project="hcc-vs-hemangioma",
-    run_name="stage2-vit-supcon",
-    config={"stage": 2, "task": "hcc_vs_hemangioma"},
-    tags=["stage2", "supcon", "gradcam"],
-)
-
-vis_cfg = WandbVisualizationConfig(
-    test_dir="./data/test",
-    num_images=8,
-    image_size=(224, 224),
-    log_every_n_epochs=1,
-    stage="stage2",
-    gradcam_layer_name=None,
-)
-
-callbacks = get_wandb_callbacks() + [
-    WandbStage2Visualizer(vis_cfg),
-]
-
-history = clf_model.fit(
-    train_ds,
-    validation_data=val_ds,
-    epochs=50,
-    callbacks=callbacks,
-)
-```
-
-For each selected test image, the Stage 2 callback logs:
-- Raw image.
-- Ground-truth label and predicted label.
-- Merged last-layer attention heatmap and overlay.
-- Per-head attention overlays.
-- Grad-CAM overlay for class 0 and Grad-CAM overlay for class 1.
-
+---
 
 ### Updated augmentation strategy
 
 The training augmentation pipeline now includes stronger ultrasound-oriented photometric perturbation with:
-- `RandomContrast`
-- `RandomBrightness`
-- custom Keras `RandomGamma`
+- `RandomContrast`, `RandomBrightness`, custom `RandomGamma`
 
-This is intended to reduce shortcut learning toward only bright echogenic regions and improve robustness to hypoechoic lesion interiors and gain/TGC variability.
+This reduces shortcut learning toward only bright echogenic regions and improves robustness to hypoechoic lesion interiors and gain/TGC variability.
