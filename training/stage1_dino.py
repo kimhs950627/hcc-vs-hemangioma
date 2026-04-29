@@ -200,17 +200,11 @@ class DINOSimMIMModel(keras.Model):
         views[3] = aug_global       : DINO student global view
         views[4:] = local_i         : DINO student local crops
 
-    Local crops have smaller spatial resolution than global views
-    (e.g. 192x192 vs 384x384).  They are resized to global resolution
-    inside _student_cls() before passing to the ViT/CNN encoder,
-    which expects a fixed input size.
-
     Loss:
         L = alpha * L_dino + (1 - alpha) * lambda_mim * L_simmim
 
     Alpha warm-up:
         alpha: 1.0 -> alpha_final  (linear over alpha_warmup_epochs)
-        pure DINO first, SimMIM gradually introduced.
     """
 
     def __init__(
@@ -239,16 +233,12 @@ class DINOSimMIMModel(keras.Model):
         self.patch_size           = patch_size
 
         H, W, C = input_shape
-        self._global_h   = H
-        self._global_w   = W
-        self._n_patches  = (H // patch_size) * (W // patch_size)
-        self._patch_dim  = patch_size * patch_size * C
+        self._n_patches = (H // patch_size) * (W // patch_size)
+        self._patch_dim = patch_size * patch_size * C
 
-        # Encoders
         self.online_encoder  = build_encoder(encoder_name, input_shape=input_shape)
         self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape)
 
-        # DINO heads
         self.projector = keras.Sequential([
             layers.Dense(projection_dim, activation='gelu'),
             layers.Dense(projection_dim),
@@ -258,12 +248,8 @@ class DINOSimMIMModel(keras.Model):
             layers.Dense(projection_dim),
         ], name='dino_teacher_head')
 
-        # SimMIM pixel reconstruction head
-        # [B, N, D_enc] -> [B, N, P*P*C]
         self.pixel_pred_head = layers.Dense(
-            self._patch_dim,
-            use_bias=True,
-            name='pixel_pred_head',
+            self._patch_dim, use_bias=True, name='pixel_pred_head',
         )
 
         self.center = tf.Variable(
@@ -285,10 +271,6 @@ class DINOSimMIMModel(keras.Model):
     def compile(self, optimizer, **kwargs):
         super().compile(jit_compile=False, **kwargs)
         self.optimizer = optimizer
-
-    # -------------------------------------------------------------------------
-    # Internal helpers
-    # -------------------------------------------------------------------------
 
     def _init_teacher(self):
         if self._teacher_initialized:
@@ -317,162 +299,74 @@ class DINOSimMIMModel(keras.Model):
         centered = logits - self.center
         return tf.nn.softmax(centered / tf.maximum(self.teacher_temp_var, 1e-6), axis=-1)
 
-    def _maybe_resize(self, x: tf.Tensor) -> tf.Tensor:
-        """Resize x to global resolution if its spatial dims differ.
-
-        ViT / CNN encoders are built with a fixed input_shape.
-        Local crops (e.g. 192x192) must be upsampled to match before
-        being forwarded through the encoder.
-
-        Args:
-            x : [B, H_in, W_in, C]  float32
-
-        Returns:
-            [B, H_global, W_global, C]  (unchanged if already correct size)
-        """
-        h_in = tf.shape(x)[1]
-        w_in = tf.shape(x)[2]
-        if h_in != self._global_h or w_in != self._global_w:
-            x = tf.image.resize(
-                x,
-                (self._global_h, self._global_w),
-                method='bilinear',
-            )
-        return x
-
     def _student_cls(self, x: tf.Tensor, training: bool = True) -> tf.Tensor:
-        """Student encoder CLS + DINO head.
-
-        Resizes local crops to global resolution before encoder forward.
-        Shape path:
-            local  : [B, h_local, w_local, 3] -> resize -> [B, H, W, 3]
-            global : [B, H, W, 3]  (unchanged)
-            out['embedding'] : [B, D_enc]
-            projector output : [B, projection_dim]
-        """
-        x = self._maybe_resize(x)                             # [B, H, W, 3]
         out = self.online_encoder(x, training=training)
-        return self.projector(out['embedding'], training=training)  # [B, D_proj]
+        return self.projector(out['embedding'], training=training)
 
     def _teacher_cls(self, x: tf.Tensor) -> tf.Tensor:
-        """Teacher encoder CLS + DINO head (stop_gradient applied externally)."""
         out = self.teacher_encoder(x, training=False)
         return self.teacher_projector(out['embedding'], training=False)
 
     def _student_patch_tokens(self, x: tf.Tensor, training: bool = True) -> tf.Tensor:
-        """Extract patch token sequence from student encoder.
-
-        Returns:
-            patch_tokens : [B, N, D_enc]  float32
-
-        ViT:  uses 'last_hidden_state' [B, N+1, D] -> drops CLS -> [B, N, D]
-        CNN:  reshapes feature_map [B, h_f, w_f, D] -> [B, h_f*w_f, D]
-
-        Note: x must already be at global resolution (masked_clean from
-        MaskedMultiViewDataset is already (H, W, 3)).
-        """
         out = self.online_encoder(x, training=training)
-
         if 'last_hidden_state' in out:
-            tokens = out['last_hidden_state'][:, 1:, :]  # [B, N, D]
-        else:
-            feat = out.get('feature_map', out.get('embedding', None))
-            if feat is None:
-                raise KeyError(
-                    "Encoder must output 'last_hidden_state' (ViT) or "
-                    "'feature_map' (CNN) for SimMIM patch token extraction."
-                )
-            B = tf.shape(feat)[0]
-            H = tf.shape(feat)[1]
-            W = tf.shape(feat)[2]
-            D = feat.shape[-1]
-            tokens = tf.reshape(feat, [B, H * W, D])
-
-        return tokens  # [B, N, D_enc]
-
-    # -------------------------------------------------------------------------
-    # Alpha warm-up
-    # -------------------------------------------------------------------------
+            return out['last_hidden_state'][:, 1:, :]
+        feat = out.get('feature_map', None)
+        if feat is None:
+            raise KeyError("Encoder must output 'last_hidden_state' or 'feature_map'.")
+        B = tf.shape(feat)[0]
+        H = tf.shape(feat)[1]
+        W = tf.shape(feat)[2]
+        D = feat.shape[-1]
+        return tf.reshape(feat, [B, H * W, D])
 
     def update_alpha(self, epoch: int) -> None:
-        """Update alpha for DINO/SimMIM loss balance. Call at epoch start.
-
-        alpha linearly decays 1.0 -> alpha_final over alpha_warmup_epochs.
-        """
         if self.alpha_warmup_epochs <= 0:
             self.alpha_var.assign(self.alpha_final)
             return
         progress = min(1.0, epoch / self.alpha_warmup_epochs)
-        alpha = 1.0 + progress * (self.alpha_final - 1.0)
-        self.alpha_var.assign(alpha)
+        self.alpha_var.assign(1.0 + progress * (self.alpha_final - 1.0))
         self.epoch_counter.assign(epoch)
 
-    # -------------------------------------------------------------------------
-    # Train step
-    # -------------------------------------------------------------------------
-
     def train_step(self, data):
-        """DINO + SimMIM joint training step.
-
-        Data layout (MaskedMultiViewDataset):
-            views[0] = original_clean  [B, H, W, 3]
-            views[1] = masked_clean    [B, H, W, 3]
-            views[2] = patch_mask      [B, N]
-            views[3] = aug_global      [B, H, W, 3]
-            views[4:]= local_i         [B, h_local, w_local, 3]  <- smaller!
-
-        Local crops are automatically resized to (H, W) inside _student_cls.
-        """
-        views = tf.nest.flatten(data)
-        original_clean = views[0]              # [B, H, W, 3]
-        masked_clean   = views[1]              # [B, H, W, 3]
-        patch_mask     = views[2]              # [B, N]
-        aug_global     = views[3]              # [B, H, W, 3]
-        locals_        = views[4:4 + self.n_local]  # each [B, h_local, w_local, 3]
+        views          = tf.nest.flatten(data)
+        original_clean = views[0]
+        masked_clean   = views[1]
+        patch_mask     = views[2]
+        aug_global     = views[3]
+        locals_        = views[4:4 + self.n_local]
 
         with tf.GradientTape() as tape:
-            # -------- Teacher (clean, no grad) --------
-            t_logits = self._teacher_cls(original_clean)                  # [B, D]
-            t_probs  = tf.stop_gradient(self._teacher_probs(t_logits))    # [B, D]
+            t_logits = self._teacher_cls(original_clean)
+            t_probs  = tf.stop_gradient(self._teacher_probs(t_logits))
 
-            # -------- DINO loss --------
-            # global-global
-            s_global_cls = self._student_cls(aug_global, training=True)   # [B, D]
+            s_global_cls  = self._student_cls(aug_global, training=True)
             l_dino_global = dino_cross_entropy(
-                s_global_cls,
-                tf.math.log(t_probs + 1e-8),
-                self.student_temp, 1.0,
+                s_global_cls, tf.math.log(t_probs + 1e-8), self.student_temp, 1.0,
             )
 
-            # local-global  (each local resized inside _student_cls)
             l_dino_local_terms: list[tf.Tensor] = []
             for local_v in locals_:
-                # _student_cls calls _maybe_resize internally
-                s_local_cls = self._student_cls(local_v, training=True)   # [B, D]
+                s_local_cls = self._student_cls(local_v, training=True)
                 l_dino_local_terms.append(
                     dino_cross_entropy(
-                        s_local_cls,
-                        tf.math.log(t_probs + 1e-8),
-                        self.student_temp, 1.0,
+                        s_local_cls, tf.math.log(t_probs + 1e-8), self.student_temp, 1.0,
                     )
                 )
 
+            l_dino = l_dino_global
             if l_dino_local_terms:
-                l_dino = l_dino_global + tf.add_n(l_dino_local_terms) / tf.cast(
+                l_dino = l_dino + tf.add_n(l_dino_local_terms) / tf.cast(
                     len(l_dino_local_terms), tf.float32
                 )
-            else:
-                l_dino = l_dino_global
 
-            # -------- SimMIM loss --------
-            patch_tokens  = self._student_patch_tokens(masked_clean, training=True)
-            pred_pixels   = self.pixel_pred_head(patch_tokens)            # [B, N, P*P*C]
+            patch_tokens   = self._student_patch_tokens(masked_clean, training=True)
+            pred_pixels    = self.pixel_pred_head(patch_tokens)
             target_patches = patchify_images(
                 tf.stop_gradient(original_clean), self.patch_size
-            )                                                              # [B, N, P*P*C]
+            )
             l_simmim = simmim_l1_loss(pred_pixels, target_patches, patch_mask)
 
-            # -------- Combined --------
             alpha = self.alpha_var
             loss  = alpha * l_dino + (1.0 - alpha) * self.lambda_mim * l_simmim
 
@@ -489,11 +383,8 @@ class DINOSimMIMModel(keras.Model):
         self._update_center([t_logits])
 
         return {
-            'loss':         loss,
-            'l_dino':       l_dino,
-            'l_simmim':     l_simmim,
-            'alpha':        alpha,
-            'teacher_temp': self.teacher_temp_var,
+            'loss': loss, 'l_dino': l_dino, 'l_simmim': l_simmim,
+            'alpha': alpha, 'teacher_temp': self.teacher_temp_var,
         }
 
     def test_step(self, data):
@@ -509,7 +400,6 @@ class DINOSimMIMModel(keras.Model):
         l_dino    = dino_cross_entropy(
             s_global, tf.math.log(t_probs + 1e-8), self.student_temp, 1.0
         )
-
         patch_tokens   = self._student_patch_tokens(masked_clean, training=False)
         pred_pixels    = self.pixel_pred_head(patch_tokens)
         target_patches = patchify_images(tf.stop_gradient(original_clean), self.patch_size)
@@ -525,10 +415,6 @@ class DINOSimMIMModel(keras.Model):
     def get_stage2_encoder(self, use_teacher: bool = True):
         return self.teacher_encoder if use_teacher else self.online_encoder
 
-
-# ===========================================================================
-# Builder functions
-# ===========================================================================
 
 def build_stage1_dino_simmim_trainer(
     encoder_name: str,
@@ -548,11 +434,7 @@ def build_stage1_dino_simmim_trainer(
     clipvalue: float | None = None,
     weight_decay: float = 1e-4,
 ) -> DINOSimMIMModel:
-    """Build DINOSimMIMModel with AdamW optimizer.
-
-    Pairs with MaskedMultiViewDataset.
-    Local crops are automatically resized to global resolution inside the model.
-    """
+    """Build DINOSimMIMModel. encoder.py handles dynamic pos_embed interpolation."""
     model = DINOSimMIMModel(
         encoder_name=encoder_name,
         input_shape=input_shape,
@@ -578,16 +460,8 @@ def build_stage1_dino_simmim_trainer(
     return model
 
 
-# ===========================================================================
-# AlphaWarmupCallback
-# ===========================================================================
-
 class AlphaWarmupCallback(keras.callbacks.Callback):
-    """Linearly warm-up the DINO/SimMIM alpha blend ratio.
-
-    Calls model.update_alpha(epoch) at each epoch start.
-    alpha: 1.0 (pure DINO) -> alpha_final over alpha_warmup_epochs.
-    """
+    """Linearly warm-up the DINO/SimMIM alpha blend ratio."""
 
     def on_epoch_begin(self, epoch, logs=None):
         if hasattr(self.model, 'update_alpha'):
