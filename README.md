@@ -165,7 +165,7 @@ mv_ds = MultiViewDataset(
 
 - **DINO branch**: `original_clean`을 teacher global1로, `aug_global2`를 teacher/student global2로 사용한다. local crops(`views[4:]`)는 student 전용이며, **global view와 동일한 `online_encoder` 호출 경로**를 공유한다.
 - **SimMIM branch**: `masked_clean`을 student encoder에 통과시켜 patch token을 추출하고, `pixel_pred_head`로 원본 pixel patch(`original_clean`)를 복원한다. `patch_mask`가 지정한 위치만 L1 loss에 반영된다.
-- **Alpha warm-up**: 학습 초기에는 `alpha=1.0` (DINO 전용), `alpha_warmup_epochs`에 걸쳐 `alpha_final`까지 선형 감소 → 이후 DINO + SimMIM 균형 최적화.
+- **Alpha warm-up**: 학습 초기에는 `alpha=1.0` (DINO 전용), `warmup_steps` 동안 **step(batch) 기준**으로 `alpha_final`까지 선형 감소 → 이후 DINO + SimMIM 균형 최적화. `TeacherTempWarmupCallback`과 동일하게 `on_train_batch_end` 기반.
 
 ### Input View 순서 (MaskedMultiViewDataset)
 
@@ -192,7 +192,7 @@ mv_ds = MultiViewDataset(
 | `n_local` | int | `4` | local crop 수 (`MaskedMultiViewDataset.local_views`와 일치) |
 | `lambda_mim` | float | `1.0` | SimMIM reconstruction loss weight |
 | `alpha_final` | float | `0.7` | alpha warm-up 완료 후 DINO 가중치 |
-| `alpha_warmup_epochs` | int | `20` | alpha warm-up 길이 (epoch) |
+| `alpha_warmup_epochs` | int | `20` | model 내부 목표 warm-up epoch 수 (router 전달용) |
 | `temperature` | float | `0.1` | student softmax temperature |
 | `teacher_temp` | float | `0.04` | teacher softmax temperature (초기값) |
 | `center_momentum` | float | `0.9` | teacher center EMA momentum |
@@ -241,7 +241,7 @@ ssl_model = build_stage1_trainer(
     n_local              = 4,           # DINO local crops
     lambda_mim           = 1.0,         # SimMIM loss weight
     alpha_final          = 0.7,         # DINO weight after warm-up
-    alpha_warmup_epochs  = 20,
+    alpha_warmup_epochs  = 20,          # model target (router 전달용)
     temperature          = 0.1,
     teacher_temp         = 0.04,
     center_momentum      = 0.9,
@@ -252,13 +252,21 @@ ssl_model = build_stage1_trainer(
     ssl_mode             = 'dino_simmim',   # ← 핵심 인자
 )
 
-# 3. Callbacks
+# 3. Callbacks  ── 두 callback 모두 step(batch) 기준으로 동작
+steps_per_epoch          = 116   # len(mv_ds)  (dataset 크기 / batch_size)
+alpha_warmup_epochs      = 20
+teacher_temp_warmup_epochs = 10
+
 callbacks = [
-    AlphaWarmupCallback(),                  # alpha 1.0 → alpha_final
+    AlphaWarmupCallback(
+        warmup_steps = alpha_warmup_epochs * steps_per_epoch,   # 2320 steps
+        verbose      = True,
+    ),
     TeacherTempWarmupCallback(
-        temp_start    = 0.04,
-        temp_final    = 0.07,
-        warmup_epochs = 10,
+        start_value  = 0.04,
+        end_value    = 0.07,
+        warmup_steps = teacher_temp_warmup_epochs * steps_per_epoch,  # 1160 steps
+        verbose      = True,
     ),
 ]
 
@@ -276,7 +284,7 @@ teacher_enc.save_weights("output/vit_stage1_dino_simmim.weights.h5")
 loss          — total: alpha*L_dino + (1-alpha)*lambda_mim*L_simmim
 l_dino        — DINO cross-entropy distillation loss
 l_simmim      — SimMIM masked-patch L1 reconstruction loss
-alpha         — current alpha blend ratio (1.0 → alpha_final)
+alpha         — current alpha blend ratio (step-wise: 1.0 → alpha_final)
 teacher_temp  — current teacher softmax temperature
 ```
 
