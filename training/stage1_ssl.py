@@ -22,7 +22,7 @@ def build_stage1_trainer(
     teacher_temp: float = 0.04,
     teacher_temp_warmup_start: float = 0.04,
     teacher_temp_target: float = 0.04,
-    warmup_epochs: int = 10,
+    warmup_steps: int = 10,
     center_momentum: float = 0.9,
     n_local: int = 0,
     teacher_temperature: TemperatureInput | None = None,
@@ -39,7 +39,7 @@ def build_stage1_trainer(
         teacher_temp_schedule = LinearWarmupSchedule(
             start_value=teacher_temp_warmup_start,
             end_value=teacher_temp_target,
-            warmup_steps=warmup_epochs,
+            warmup_steps=warmup_steps,
         )
     elif teacher_temp_schedule is None:
         teacher_temp_schedule = teacher_temp
