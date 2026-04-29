@@ -273,7 +273,8 @@ class DINOSimMIMModel(keras.Model):
         L = alpha * L_dino + (1 - alpha) * lambda_mim * L_simmim
 
     Alpha warm-up:
-        alpha: 1.0 -> alpha_final  (linear over alpha_warmup_epochs)
+        alpha: 1.0 -> alpha_final  (linear over warmup_steps, step-based)
+        Updated by AlphaWarmupCallback via update_alpha_by_step().
 
     Key design invariants:
         - DINO forward path is NOT re-implemented here; _compute_dino_loss() is used.
@@ -337,8 +338,8 @@ class DINOSimMIMModel(keras.Model):
         self.alpha_var = tf.Variable(
             1.0, trainable=False, dtype=tf.float32, name='alpha_var',
         )
-        self.epoch_counter = tf.Variable(
-            0, trainable=False, dtype=tf.int32, name='epoch_counter',
+        self.step_counter = tf.Variable(
+            0, trainable=False, dtype=tf.int32, name='step_counter',
         )
         self._teacher_initialized = False
 
@@ -420,13 +421,15 @@ class DINOSimMIMModel(keras.Model):
 
         return simmim_l1_loss(pred_pixels, target_patches, patch_mask)
 
-    def update_alpha(self, epoch: int) -> None:
-        if self.alpha_warmup_epochs <= 0:
+    def update_alpha_by_step(self, global_step: int, warmup_steps: int) -> None:
+        """Step-based alpha warm-up: 1.0 → alpha_final over warmup_steps batches."""
+        if warmup_steps <= 0:
             self.alpha_var.assign(self.alpha_final)
             return
-        progress = min(1.0, epoch / self.alpha_warmup_epochs)
+        step = max(int(global_step), 0)
+        progress = min(1.0, step / max(int(warmup_steps), 1))
         self.alpha_var.assign(1.0 + progress * (self.alpha_final - 1.0))
-        self.epoch_counter.assign(epoch)
+        self.step_counter.assign(step)
 
     def train_step(self, data):
         views          = tf.nest.flatten(data)
@@ -547,10 +550,38 @@ def build_stage1_dino_simmim_trainer(
 
 
 class AlphaWarmupCallback(keras.callbacks.Callback):
-    """Linearly warm-up the DINO/SimMIM alpha blend ratio."""
+    """Step-based alpha warm-up for DINOSimMIMModel.
 
-    def on_epoch_begin(self, epoch, logs=None):
-        if hasattr(self.model, 'update_alpha'):
-            self.model.update_alpha(epoch)
-            alpha = float(self.model.alpha_var.numpy())
-            print(f"  [AlphaWarmup] epoch={epoch}  alpha={alpha:.4f}")
+    Mirrors TeacherTempWarmupCallback — both operate on on_train_batch_end.
+    alpha linearly transitions 1.0 → alpha_final over warmup_steps batches.
+
+    Args:
+        warmup_steps: total training steps for warm-up.
+                      Typical usage: alpha_warmup_epochs * steps_per_epoch.
+        verbose:      print log every 20 steps when True.
+    """
+
+    def __init__(self, warmup_steps: int, verbose: bool = False):
+        super().__init__()
+        self.warmup_steps = max(int(warmup_steps), 1)
+        self.verbose = verbose
+        self._global_step = 0
+
+    def on_train_begin(self, logs=None):
+        self._global_step = 0
+        if hasattr(self.model, 'alpha_var'):
+            self.model.alpha_var.assign(1.0)
+        if self.verbose:
+            print(f"\n[AlphaWarmup] init  alpha = {float(self.model.alpha_var.numpy()):.6f}")
+
+    def on_train_batch_end(self, batch, logs=None):
+        self._global_step += 1
+        if hasattr(self.model, 'update_alpha_by_step'):
+            self.model.update_alpha_by_step(self._global_step, self.warmup_steps)
+            if self.verbose and self._global_step % 20 == 0:
+                alpha = float(self.model.alpha_var.numpy())
+                ratio = min(self._global_step / self.warmup_steps, 1.0)
+                print(
+                    f"\n[AlphaWarmup] step={self._global_step:5d}  "
+                    f"ratio={ratio:.4f}  alpha={alpha:.6f}"
+                )
