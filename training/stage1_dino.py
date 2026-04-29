@@ -10,6 +10,91 @@ from training.ssl_schedules import LrInput
 
 
 # ===========================================================================
+# Shared DINO forward helpers  (DO NOT duplicate – both models use these)
+# ===========================================================================
+
+def _compute_teacher_logits(
+    teacher_encoder,
+    teacher_projector,
+    x: tf.Tensor,
+) -> tf.Tensor:
+    """Teacher forward pass → raw projection logits (no softmax)."""
+    out = teacher_encoder(x, training=False)
+    return teacher_projector(out['embedding'], training=False)
+
+
+def _compute_student_cls(
+    online_encoder,
+    projector,
+    x: tf.Tensor,
+    training: bool = True,
+) -> tf.Tensor:
+    """Student forward pass → raw projection logits."""
+    out = online_encoder(x, training=training)
+    return projector(out['embedding'], training=training)
+
+
+def _teacher_probs(
+    logits: tf.Tensor,
+    center: tf.Variable,
+    teacher_temp_var: tf.Variable,
+) -> tf.Tensor:
+    """Center-subtract + temperature softmax → teacher probability."""
+    centered = logits - center
+    return tf.nn.softmax(centered / tf.maximum(teacher_temp_var, 1e-6), axis=-1)
+
+
+def _compute_dino_loss(
+    online_encoder,
+    projector,
+    teacher_encoder,
+    teacher_projector,
+    center: tf.Variable,
+    teacher_temp_var: tf.Variable,
+    student_temp: float,
+    global1: tf.Tensor,
+    global2: tf.Tensor,
+    locals_: list[tf.Tensor],
+    training: bool = True,
+) -> tuple[tf.Tensor, list[tf.Tensor]]:
+    """Pure DINO loss helper shared by DINOPretrainModel and DINOSimMIMModel.
+
+    Returns:
+        loss        : scalar DINO loss (mean over all cross-entropy pairs)
+        t_logits_list : raw teacher logits for both global views
+                        (used to update the center after gradient step)
+    """
+    t1_logits = _compute_teacher_logits(teacher_encoder, teacher_projector, global1)
+    t2_logits = _compute_teacher_logits(teacher_encoder, teacher_projector, global2)
+    t1 = tf.stop_gradient(_teacher_probs(t1_logits, center, teacher_temp_var))
+    t2 = tf.stop_gradient(_teacher_probs(t2_logits, center, teacher_temp_var))
+
+    s1 = _compute_student_cls(online_encoder, projector, global1, training=training)
+    s2 = _compute_student_cls(online_encoder, projector, global2, training=training)
+
+    loss_terms = [
+        dino_cross_entropy(s1, tf.math.log(t1 + 1e-8), student_temp, 1.0),
+        dino_cross_entropy(s1, tf.math.log(t2 + 1e-8), student_temp, 1.0),
+        dino_cross_entropy(s2, tf.math.log(t1 + 1e-8), student_temp, 1.0),
+        dino_cross_entropy(s2, tf.math.log(t2 + 1e-8), student_temp, 1.0),
+    ]
+    for local_v in locals_:
+        # Local views are encoded with the SAME online_encoder call path as globals
+        s_local = _compute_student_cls(
+            online_encoder, projector, local_v, training=training
+        )
+        loss_terms.append(
+            dino_cross_entropy(s_local, tf.math.log(t1 + 1e-8), student_temp, 1.0)
+        )
+        loss_terms.append(
+            dino_cross_entropy(s_local, tf.math.log(t2 + 1e-8), student_temp, 1.0)
+        )
+
+    loss = tf.add_n(loss_terms) / tf.cast(len(loss_terms), tf.float32)
+    return loss, [t1_logits, t2_logits]
+
+
+# ===========================================================================
 # Legacy DINO-only model  (backward compat)
 # ===========================================================================
 
@@ -20,7 +105,9 @@ class DINOPretrainModel(keras.Model):
     (TeacherTempWarmupCallback) update on_train_batch_end.  The model
     itself never touches teacher_temp_var except to read it.
 
-    For new training, prefer DINOSimMIMModel (\uad8c\uc7a5 B+ \uc2e4\ud5d8 \ud22c\uc601).
+    For new training, prefer DINOSimMIMModel (권장 B+ 실험 투영).
+
+    NOTE: train_step now delegates to the shared _compute_dino_loss helper.
     """
 
     def __init__(
@@ -65,14 +152,6 @@ class DINOPretrainModel(keras.Model):
         super().compile(jit_compile=False, **kwargs)
         self.optimizer = optimizer
 
-    def _student_logits(self, x, training=True):
-        out = self.online_encoder(x, training=training)
-        return self.projector(out['embedding'], training=training)
-
-    def _teacher_logits(self, x):
-        out = self.teacher_encoder(x, training=False)
-        return self.teacher_projector(out['embedding'], training=False)
-
     def _init_teacher(self):
         if self._teacher_initialized:
             return
@@ -95,36 +174,21 @@ class DINOPretrainModel(keras.Model):
             self.center_momentum * self.center + (1.0 - self.center_momentum) * batch_center
         )
 
-    def _teacher_probs(self, logits):
-        centered = logits - self.center
-        return tf.nn.softmax(centered / tf.maximum(self.teacher_temp_var, 1e-6), axis=-1)
-
     def train_step(self, data):
         views   = tf.nest.flatten(data)
         global1 = views[0]
         global2 = views[1]
+        locals_ = views[2:2 + self.n_local]
 
         with tf.GradientTape() as tape:
-            t1_logits = self._teacher_logits(global1)
-            t2_logits = self._teacher_logits(global2)
-            t1 = tf.stop_gradient(self._teacher_probs(t1_logits))
-            t2 = tf.stop_gradient(self._teacher_probs(t2_logits))
-
-            s1 = self._student_logits(global1, training=True)
-            s2 = self._student_logits(global2, training=True)
-
-            loss_terms = [
-                dino_cross_entropy(s1, tf.math.log(t1 + 1e-8), self.student_temp, 1.0),
-                dino_cross_entropy(s1, tf.math.log(t2 + 1e-8), self.student_temp, 1.0),
-                dino_cross_entropy(s2, tf.math.log(t1 + 1e-8), self.student_temp, 1.0),
-                dino_cross_entropy(s2, tf.math.log(t2 + 1e-8), self.student_temp, 1.0),
-            ]
-            for local in views[2:2 + self.n_local]:
-                s_local = self._student_logits(local, training=True)
-                loss_terms.append(dino_cross_entropy(s_local, tf.math.log(t1 + 1e-8), self.student_temp, 1.0))
-                loss_terms.append(dino_cross_entropy(s_local, tf.math.log(t2 + 1e-8), self.student_temp, 1.0))
-
-            loss = tf.add_n(loss_terms) / tf.cast(len(loss_terms), tf.float32)
+            loss, t_logits_list = _compute_dino_loss(
+                self.online_encoder, self.projector,
+                self.teacher_encoder, self.teacher_projector,
+                self.center, self.teacher_temp_var,
+                self.student_temp,
+                global1, global2, locals_,
+                training=True,
+            )
 
         vars_ = self.online_encoder.trainable_weights + self.projector.trainable_weights
         grads = tape.gradient(loss, vars_)
@@ -132,7 +196,7 @@ class DINOPretrainModel(keras.Model):
 
         self._init_teacher()
         self._ema_update()
-        self._update_center([t1_logits, t2_logits])
+        self._update_center(t_logits_list)
 
         return {'loss': loss, 'teacher_temp': self.teacher_temp_var}
 
@@ -140,9 +204,13 @@ class DINOPretrainModel(keras.Model):
         views   = tf.nest.flatten(data)
         global1 = views[0]
         global2 = views[1]
-        t1_logits = self._teacher_logits(global1)
-        t1 = self._teacher_probs(t1_logits)
-        s2 = self._student_logits(global2, training=False)
+        t1_logits = _compute_teacher_logits(
+            self.teacher_encoder, self.teacher_projector, global1
+        )
+        t1 = _teacher_probs(t1_logits, self.center, self.teacher_temp_var)
+        s2 = _compute_student_cls(
+            self.online_encoder, self.projector, global2, training=False
+        )
         loss = dino_cross_entropy(s2, tf.math.log(t1 + 1e-8), self.student_temp, 1.0)
         return {'loss': loss, 'teacher_temp': self.teacher_temp_var}
 
@@ -187,24 +255,30 @@ def build_stage1_dino_trainer(
 
 
 # ===========================================================================
-# DINO + SimMIM hybrid model  (\uad8c\uc7a5 B+ \uad6c\uc870)
+# DINO + SimMIM hybrid model  (권장 B+ 구조)
 # ===========================================================================
 
 class DINOSimMIMModel(keras.Model):
     """DINO + SimMIM hybrid SSL pretraining model.
 
     Views (from MaskedMultiViewDataset):
-        views[0] = original_clean   : teacher input + SimMIM target
-        views[1] = masked_clean     : SimMIM student input
-        views[2] = patch_mask       : [B, N]  1=masked, 0=visible
-        views[3] = aug_global       : DINO student global view
+        views[0] = original_clean   : teacher global1 input + SimMIM target
+        views[1] = aug_global2      : teacher/student global2 (DINO)
+        views[2] = masked_clean     : SimMIM student input
+        views[3] = patch_mask       : [B, N]  1=masked, 0=visible
         views[4:] = local_i         : DINO student local crops
+                                      (encoded with SAME path as global views)
 
     Loss:
         L = alpha * L_dino + (1 - alpha) * lambda_mim * L_simmim
 
     Alpha warm-up:
         alpha: 1.0 -> alpha_final  (linear over alpha_warmup_epochs)
+
+    Key design invariants:
+        - DINO forward path is NOT re-implemented here; _compute_dino_loss() is used.
+        - Local crops use the identical online_encoder call path as global views.
+        - patch_mask.shape[1] == pred_tokens.shape[1] is asserted at graph build time.
     """
 
     def __init__(
@@ -295,30 +369,56 @@ class DINOSimMIMModel(keras.Model):
             self.center_momentum * self.center + (1.0 - self.center_momentum) * batch_center
         )
 
-    def _teacher_probs(self, logits: tf.Tensor) -> tf.Tensor:
-        centered = logits - self.center
-        return tf.nn.softmax(centered / tf.maximum(self.teacher_temp_var, 1e-6), axis=-1)
-
-    def _student_cls(self, x: tf.Tensor, training: bool = True) -> tf.Tensor:
-        out = self.online_encoder(x, training=training)
-        return self.projector(out['embedding'], training=training)
-
-    def _teacher_cls(self, x: tf.Tensor) -> tf.Tensor:
-        out = self.teacher_encoder(x, training=False)
-        return self.teacher_projector(out['embedding'], training=False)
-
     def _student_patch_tokens(self, x: tf.Tensor, training: bool = True) -> tf.Tensor:
+        """Extract per-patch token sequence from the online encoder.
+
+        Supports ViT (last_hidden_state, strips CLS) and CNN (feature_map reshape).
+        """
         out = self.online_encoder(x, training=training)
         if 'last_hidden_state' in out:
-            return out['last_hidden_state'][:, 1:, :]
+            tokens = out['last_hidden_state'][:, 1:, :]   # strip CLS token
+            return tokens
         feat = out.get('feature_map', None)
         if feat is None:
             raise KeyError("Encoder must output 'last_hidden_state' or 'feature_map'.")
         B = tf.shape(feat)[0]
         H = tf.shape(feat)[1]
         W = tf.shape(feat)[2]
-        D = feat.shape[-1]
-        return tf.reshape(feat, [B, H * W, D])
+        return tf.reshape(feat, [B, H * W, feat.shape[-1]])
+
+    def _simmim_forward(
+        self,
+        masked_clean: tf.Tensor,
+        original_clean: tf.Tensor,
+        patch_mask: tf.Tensor,
+        training: bool = True,
+    ) -> tf.Tensor:
+        """SimMIM branch: masked encoder → pixel head → L1 loss.
+
+        Asserts patch_mask token count matches pred_tokens at runtime.
+        """
+        patch_tokens = self._student_patch_tokens(masked_clean, training=training)
+        pred_pixels  = self.pixel_pred_head(patch_tokens)
+        target_patches = patchify_images(
+            tf.stop_gradient(original_clean), self.patch_size
+        )
+
+        # ----- shape assertion: mask dimension must match token count -----
+        n_pred   = tf.shape(pred_pixels)[1]
+        n_mask   = tf.shape(patch_mask)[1]
+        check_op = tf.debugging.assert_equal(
+            n_pred, n_mask,
+            message=(
+                "patch_mask token count mismatch: "
+                "pred_pixels.shape[1] != patch_mask.shape[1]. "
+                "Check patch_size vs encoder token count."
+            ),
+        )
+        with tf.control_dependencies([check_op]):
+            pred_pixels = tf.identity(pred_pixels)
+        # ------------------------------------------------------------------
+
+        return simmim_l1_loss(pred_pixels, target_patches, patch_mask)
 
     def update_alpha(self, epoch: int) -> None:
         if self.alpha_warmup_epochs <= 0:
@@ -330,42 +430,28 @@ class DINOSimMIMModel(keras.Model):
 
     def train_step(self, data):
         views          = tf.nest.flatten(data)
-        original_clean = views[0]
-        masked_clean   = views[1]
-        patch_mask     = views[2]
-        aug_global     = views[3]
+        original_clean = views[0]   # teacher global1 + SimMIM target
+        aug_global2    = views[1]   # teacher/student global2 (DINO)
+        masked_clean   = views[2]   # SimMIM student input
+        patch_mask     = views[3]   # [B, N]
         locals_        = views[4:4 + self.n_local]
 
         with tf.GradientTape() as tape:
-            t_logits = self._teacher_cls(original_clean)
-            t_probs  = tf.stop_gradient(self._teacher_probs(t_logits))
-
-            s_global_cls  = self._student_cls(aug_global, training=True)
-            l_dino_global = dino_cross_entropy(
-                s_global_cls, tf.math.log(t_probs + 1e-8), self.student_temp, 1.0,
+            # --- DINO loss: delegated entirely to shared helper ---
+            # Local crops are passed in; helper uses identical encoder path for all views
+            l_dino, t_logits_list = _compute_dino_loss(
+                self.online_encoder, self.projector,
+                self.teacher_encoder, self.teacher_projector,
+                self.center, self.teacher_temp_var,
+                self.student_temp,
+                original_clean, aug_global2, locals_,
+                training=True,
             )
 
-            l_dino_local_terms: list[tf.Tensor] = []
-            for local_v in locals_:
-                s_local_cls = self._student_cls(local_v, training=True)
-                l_dino_local_terms.append(
-                    dino_cross_entropy(
-                        s_local_cls, tf.math.log(t_probs + 1e-8), self.student_temp, 1.0,
-                    )
-                )
-
-            l_dino = l_dino_global
-            if l_dino_local_terms:
-                l_dino = l_dino + tf.add_n(l_dino_local_terms) / tf.cast(
-                    len(l_dino_local_terms), tf.float32
-                )
-
-            patch_tokens   = self._student_patch_tokens(masked_clean, training=True)
-            pred_pixels    = self.pixel_pred_head(patch_tokens)
-            target_patches = patchify_images(
-                tf.stop_gradient(original_clean), self.patch_size
+            # --- SimMIM loss: separate branch with patch_mask shape assert ---
+            l_simmim = self._simmim_forward(
+                masked_clean, original_clean, patch_mask, training=True
             )
-            l_simmim = simmim_l1_loss(pred_pixels, target_patches, patch_mask)
 
             alpha = self.alpha_var
             loss  = alpha * l_dino + (1.0 - alpha) * self.lambda_mim * l_simmim
@@ -380,7 +466,7 @@ class DINOSimMIMModel(keras.Model):
 
         self._init_teacher()
         self._ema_update()
-        self._update_center([t_logits])
+        self._update_center(t_logits_list)
 
         return {
             'loss': loss, 'l_dino': l_dino, 'l_simmim': l_simmim,
@@ -390,21 +476,21 @@ class DINOSimMIMModel(keras.Model):
     def test_step(self, data):
         views          = tf.nest.flatten(data)
         original_clean = views[0]
-        masked_clean   = views[1]
-        patch_mask     = views[2]
-        aug_global     = views[3]
+        aug_global2    = views[1]
+        masked_clean   = views[2]
+        patch_mask     = views[3]
 
-        t_logits  = self._teacher_cls(original_clean)
-        t_probs   = self._teacher_probs(t_logits)
-        s_global  = self._student_cls(aug_global, training=False)
-        l_dino    = dino_cross_entropy(
-            s_global, tf.math.log(t_probs + 1e-8), self.student_temp, 1.0
+        l_dino, _ = _compute_dino_loss(
+            self.online_encoder, self.projector,
+            self.teacher_encoder, self.teacher_projector,
+            self.center, self.teacher_temp_var,
+            self.student_temp,
+            original_clean, aug_global2, [],   # no locals in val
+            training=False,
         )
-        patch_tokens   = self._student_patch_tokens(masked_clean, training=False)
-        pred_pixels    = self.pixel_pred_head(patch_tokens)
-        target_patches = patchify_images(tf.stop_gradient(original_clean), self.patch_size)
-        l_simmim       = simmim_l1_loss(pred_pixels, target_patches, patch_mask)
-
+        l_simmim = self._simmim_forward(
+            masked_clean, original_clean, patch_mask, training=False
+        )
         alpha = self.alpha_var
         loss  = alpha * l_dino + (1.0 - alpha) * self.lambda_mim * l_simmim
         return {
