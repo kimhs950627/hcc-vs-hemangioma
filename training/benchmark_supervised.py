@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import random
 from typing import Any
@@ -68,6 +69,7 @@ except ImportError:
 from models.encoder import build_encoder
 from utils.metrics import binary_classification_metrics, save_metrics_json, plot_roc_curve
 from callbacks.epoch_visualization import EpochMetricsAndVisualizationCallback
+from visualization.wandb_viz import WandbBenchmarkVisualizer, WandbVisualizationConfig
 
 
 # ─────────────────────────────────────────────────────────────────────────────

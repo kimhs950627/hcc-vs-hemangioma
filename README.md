@@ -493,3 +493,8 @@ The training augmentation pipeline includes ultrasound-oriented photometric pert
 - `RandomContrast`, `RandomBrightness`, custom `RandomGamma`, `GaussianNoise`
 
 This reduces shortcut learning toward only bright echogenic regions and improves robustness to hypoechoic lesion interiors and gain/TGC variability.
+
+
+### Benchmark W&B visualization
+
+`WandbBenchmarkVisualizer` logs a classification heatmap (confusion-matrix style) and sklearn classification report to Weights & Biases at each configured epoch.

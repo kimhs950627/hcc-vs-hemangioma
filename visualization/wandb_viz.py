@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from sklearn.metrics import classification_report, confusion_matrix
+
 import numpy as np
 import tensorflow as tf
 import keras
@@ -205,6 +207,57 @@ def make_gradcam_heatmap(model: keras.Model, image_batch: tf.Tensor, class_index
     return heatmap.numpy()
 
 
+def _render_classification_heatmap(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    class_names: tuple[str, ...],
+) -> np.ndarray:
+    import matplotlib.pyplot as plt
+
+    cm = confusion_matrix(y_true, y_pred, labels=list(range(len(class_names))))
+    fig, ax = plt.subplots(figsize=(5, 4), dpi=160)
+    im = ax.imshow(cm, cmap="Blues")
+    ax.set_xticks(np.arange(len(class_names)), labels=class_names, rotation=20, ha='right')
+    ax.set_yticks(np.arange(len(class_names)), labels=class_names)
+    ax.set_xlabel('Predicted label')
+    ax.set_ylabel('True label')
+    ax.set_title('Classification heatmap')
+    thresh = cm.max() / 2.0 if cm.size else 0.0
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, f'{cm[i, j]}', ha='center', va='center', color='white' if cm[i, j] > thresh else 'black')
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    fig.tight_layout()
+    fig.canvas.draw()
+    image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close(fig)
+    return image
+
+
+def _classification_summary(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    class_names: tuple[str, ...],
+) -> tuple[str, dict[str, Any]]:
+    report_text = classification_report(
+        y_true,
+        y_pred,
+        target_names=list(class_names),
+        digits=4,
+        zero_division=0,
+    )
+    report_dict = classification_report(
+        y_true,
+        y_pred,
+        target_names=list(class_names),
+        digits=4,
+        zero_division=0,
+        output_dict=True,
+    )
+    return report_text, report_dict
+
+
 class WandbAttentionVisualizer(keras.callbacks.Callback):
     def __init__(self, vis_cfg: WandbVisualizationConfig):
         super().__init__()
@@ -338,3 +391,52 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
         for row in rows:
             table.add_data(*[row[c] for c in columns])
         wandb.log({"stage2_visualization_table": table}, commit=False)
+
+
+class WandbBenchmarkVisualizer(keras.callbacks.Callback):
+    def __init__(self, vis_cfg: WandbVisualizationConfig, test_dataset: tf.data.Dataset):
+        super().__init__()
+        self.cfg = vis_cfg
+        self.test_dataset = test_dataset
+
+    def on_epoch_end(self, epoch: int, logs: dict[str, Any] | None = None):
+        if wandb is None or wandb.run is None:
+            return
+        if (epoch + 1) % self.cfg.log_every_n_epochs != 0:
+            return
+
+        y_true_parts: list[np.ndarray] = []
+        y_prob_parts: list[np.ndarray] = []
+        for images, labels in self.test_dataset:
+            outputs = self.model(images, training=False)
+            if isinstance(outputs, dict):
+                probs = outputs.get('probability', outputs.get('probabilities'))
+            else:
+                probs = outputs
+            probs_np = tf.reshape(tf.convert_to_tensor(probs), (-1,)).numpy()
+            y_true_parts.append(tf.reshape(labels, (-1,)).numpy())
+            y_prob_parts.append(probs_np)
+
+        if not y_true_parts:
+            return
+
+        y_true_np = np.concatenate(y_true_parts).astype(np.int32)
+        y_prob_np = np.concatenate(y_prob_parts).astype(np.float32)
+        y_pred_np = (y_prob_np >= 0.5).astype(np.int32)
+
+        heatmap_img = _render_classification_heatmap(y_true_np, y_pred_np, self.cfg.class_names)
+        report_text, report_dict = _classification_summary(y_true_np, y_pred_np, self.cfg.class_names)
+
+        flat_metrics: dict[str, float] = {}
+        for key, value in report_dict.items():
+            if isinstance(value, dict):
+                for sub_key, sub_val in value.items():
+                    flat_metrics[f'benchmark_report/{key}/{sub_key}'] = float(sub_val)
+            elif isinstance(value, (int, float)):
+                flat_metrics[f'benchmark_report/{key}'] = float(value)
+
+        wandb.log({
+            'benchmark/classification_heatmap': wandb.Image(heatmap_img, caption=f'Epoch {epoch + 1}'),
+            'benchmark/classification_report_text': wandb.Html(f'<pre>{report_text}</pre>'),
+            **flat_metrics,
+        }, commit=False)
