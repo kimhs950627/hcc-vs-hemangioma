@@ -367,6 +367,58 @@ stage2.model.save_weights("output/vit_stage2.weights.h5")
 **No pretraining. No regularizer. No dropout. Scratch supervised binary classification.**  
 Goal: establish a clean lower-bound to compare against SSL-pretrained models.
 
+
+### Practical benchmark training examples
+
+**1) ViT scratch benchmark**
+```bash
+python training/benchmark_supervised.py \
+    --data_root ./clean_ver_for_train \
+    --encoder vit \
+    --epochs 100 \
+    --batch_size 32 \
+    --lr 1e-4 \
+    --output_dir outputs/benchmark_vit_scratch
+```
+
+**2) ConvNeXt benchmark with ImageNet pretrained encoder**
+```bash
+python training/benchmark_supervised.py \
+    --data_root ./clean_ver_for_train \
+    --encoder convnext \
+    --epochs 100 \
+    --batch_size 16 \
+    --lr 1e-4 \
+    --use_pretrained \
+    --output_dir outputs/benchmark_convnext_pretrained
+```
+
+**3) EfficientNet benchmark with augmentation and dropout**
+```bash
+python training/benchmark_supervised.py \
+    --data_root ./clean_ver_for_train \
+    --encoder efficientnet \
+    --epochs 100 \
+    --batch_size 32 \
+    --lr 3e-4 \
+    --use_augmentation \
+    --use_dropout \
+    --dropout_rate 0.3 \
+    --output_dir outputs/benchmark_effnet_aug_dropout
+```
+
+**4) W&B logging enabled benchmark**
+```bash
+export WANDB_API_KEY=your_wandb_api_key
+python training/benchmark_supervised.py \
+    --data_root ./clean_ver_for_train \
+    --encoder vit \
+    --epochs 50 \
+    --batch_size 32 \
+    --output_dir outputs/benchmark_vit_wandb
+```
+
+These examples cover scratch training, pretrained encoder ablation, regularized training, and W&B-based benchmark monitoring.
 ### Python API
 
 ```python
