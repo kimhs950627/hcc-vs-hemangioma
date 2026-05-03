@@ -24,6 +24,64 @@ B-mode 간 초음파 이미지에서 **간세포암종(HCC)** 과 **혈관종(He
 
 ---
 
+## 🔑 Resolution Contract — 가장 중요한 규칙
+
+> **이 프로젝트의 모든 에러 중 가장 흔한 원인은 resolution(해상도) 불일치다.**
+
+`MaskedMultiViewDataset`의 `img_size`, `build_stage1_trainer`의 `input_shape`, 각 view의 해상도 세 가지가 **항상 일치**해야 한다. 이 계약(contract)을 지키지 않으면 첫 step에서 crash한다.
+
+### Resolution Contract 한눈에 보기
+
+```
+INPUT_SHAPE = (224, 224, 3)   ← 이 단 하나의 상수가 아래 모든 것을 결정한다
+                 │
+    ┌────────────┴────────────────────────────────────┐
+    │                                                 │
+MaskedMultiViewDataset                    build_stage1_trainer
+    img_size = (224, 224)    ←──────────→  input_shape = (224, 224, 3)
+    │
+    ├── views[0]  original_clean   (224×224) → Teacher encoder  ✅
+    ├── views[1]  masked_clean     (224×224) → Student encoder (SimMIM)  ✅
+    ├── views[2]  patch_mask       [B, 196]  → SimMIM mask target  ✅
+    ├── views[3]  aug_global       (224×224) → Student encoder (DINO)  ✅
+    └── views[4+] local_i          (96×96)  → Student encoder only  ✅
+                                             (teacher에는 절대 들어가지 않음)
+```
+
+### View별 해상도 규칙
+
+| 인덱스 | 텐서 | 해상도 | 수신자 |
+|--------|------|--------|--------|
+| `views[0]` | `original_clean` | **= `img_size`** | Teacher encoder **only** |
+| `views[1]` | `masked_clean`   | **= `img_size`** | Student encoder (SimMIM) |
+| `views[2]` | `patch_mask`     | `[B, N_patches]` | SimMIM loss |
+| `views[3]` | `aug_global`     | **= `img_size`** | Student encoder (DINO global) |
+| `views[4+]`| `local_i`        | **< `img_size`** | Student encoder only |
+
+> **Teacher encoder는 `original_clean`(= `img_size`) 하나만 받는다.**  
+> Local crop은 student encoder에만 들어간다. 절대로 teacher에 전달하지 않는다.
+
+### 코드에서 올바르게 적용하는 법
+
+```python
+INPUT_SHAPE = (224, 224, 3)   # ★ 이 상수 하나로 dataloader와 model을 동기화
+LOCAL_VIEWS = 4               # ★ dataloader local_views = model n_local
+
+mv_ds = MaskedMultiViewDataset(
+    img_size    = INPUT_SHAPE[:2],   # (224, 224)
+    local_views = LOCAL_VIEWS,
+    ...
+)
+
+ssl_model = build_stage1_trainer(
+    input_shape = INPUT_SHAPE,       # (224, 224, 3)
+    n_local     = LOCAL_VIEWS,
+    ...
+)
+```
+
+---
+
 ## 🚨 Critical Rules Before Training
 
 ### Rule 1 — `ssl_mode`와 Dataset은 반드시 짝을 맞춰야 한다
@@ -35,54 +93,19 @@ B-mode 간 초음파 이미지에서 **간세포암종(HCC)** 과 **혈관종(He
 | `'dino'` | `MultiViewDataset` | `MaskedMultiViewDataset` ❌ |
 | `'dino_simmim'` | **`MaskedMultiViewDataset`** | `MultiViewDataset` ❌ |
 
-잘못 짝지으면 첫 step에서 **view unpacking mismatch → shape 에러**로 crash한다.
+### Rule 2 — Resolution: 모든 global view는 `input_shape`과 동일해야 한다
 
-### Rule 2 — Resolution: Teacher/Student global view는 항상 `input_shape`과 동일해야 한다
-
-`TrainablePositionalEmbedding`은 **처음 call되는 input의 sequence length**를 기준으로 `pos` weight를 build한다.  
-build 이후에 **다른 해상도의 입력이 들어오면 `pos`와 sequence length가 불일치**하여 브로드캐스트 불가 → crash한다.
-
-**Resolution 규칙 요약**:
-
-| View | 해상도 | 누가 받는가 |
-|---|---|---|
-| `original_clean` | **= `input_shape`** (e.g. 224×224) | Teacher encoder ✅ |
-| `masked_clean` | **= `input_shape`** (e.g. 224×224) | Student encoder (SimMIM) ✅ |
-| `aug_global` | **= `input_shape`** (e.g. 224×224) | Student encoder (DINO) ✅ |
-| `local_i` | **< `input_shape`** (e.g. 96×96) | Student encoder only ✅ |
-
-> **Local crop은 절대 teacher encoder에 들어가면 안 된다.**  
-> Teacher는 `original_clean` 하나만 받는다 (`stage1_dino.py`의 `DINOSimMIMModel.train_step` 참조).
-
-#### 에러 예시 (Resolution mismatch)
-
-```
-ValueError: Exception encountered when calling TrainablePositionalEmbedding.call().
-Cannot reshape a tensor with 221184 elements to shape [1,14,14,384]
-Arguments received by TrainablePositionalEmbedding.call():
-  x=tf.Tensor(shape=(16, 577, 384), dtype=float32)
-```
-
-**원인 분석:**  
-`pos`가 224×224 (196 patches + 1 CLS = 197 tokens, 14×14 grid)로 build됐는데  
-runtime에 **384×384 이미지** (576 patches + 1 CLS = 577 tokens)가 들어왔다.  
-→ `MaskedMultiViewDataset.img_size`가 `(384, 384)`로 잘못 설정됐거나  
-→ `build_stage1_trainer(input_shape=(224,224,3))`과 dataloader의 `img_size`가 불일치하는 것.
-
-**해결:**
+`views[0]`, `views[1]`, `views[3]`은 **전부 `img_size`** 와 동일한 해상도로 출력돼야 한다.  
+`views[4+]` local crop만 더 작은 해상도를 가져도 된다.
 
 ```python
-# ✅ 반드시 input_shape과 dataloader img_size를 일치시킨다
-mv_ds = MaskedMultiViewDataset(
-    ....
-    img_size = (224, 224),   # ← build_stage1_trainer input_shape과 동일
-    ....
-)
-ssl_model = build_stage1_trainer(
-    ....
-    input_shape = (224, 224, 3),  # ← dataloader img_size와 동일
-    ....
-)
+# ✅ 올바른 예
+mv_ds = MaskedMultiViewDataset(img_size=(224, 224), ...)
+ssl_model = build_stage1_trainer(input_shape=(224, 224, 3), ...)
+
+# ❌ 잘못된 예 — resolution 불일치 → crash
+mv_ds = MaskedMultiViewDataset(img_size=(384, 384), ...)
+ssl_model = build_stage1_trainer(input_shape=(224, 224, 3), ...)
 ```
 
 ### Rule 3 — `n_local`은 `MaskedMultiViewDataset.local_views`와 반드시 일치해야 한다
@@ -277,9 +300,9 @@ mv_ds = MultiViewDataset(
           └────────────────────────────────────────────────────┘
 ```
 
-- **Teacher**: `original_clean` (224×224) **만** 받는다. local crop은 절대 teacher에 들어가지 않는다.
+- **Teacher**: `original_clean` (= `img_size`) **만** 받는다. local crop은 절대 teacher에 들어가지 않는다.
 - **Student**: `masked_clean`, `aug_global`, `local_i` 모두 받는다.
-  - `masked_clean` / `aug_global`은 224×224, local crop은 더 작은 해상도.
+  - `masked_clean` / `aug_global`은 `img_size`, local crop은 더 작은 해상도.
 - **Alpha warm-up**: 초기 `alpha=1.0` (DINO 전용) → `warmup_steps` 동안 `alpha_final`까지 선형 감소.
 
 ### Total Loss
@@ -578,44 +601,42 @@ python dataloader.py /path/to/clean_ver_for_train
 
 ## Known Issues & Debugging
 
-### `TrainablePositionalEmbedding` — resolution mismatch crash
+### Resolution mismatch crash — 가장 흔한 에러
 
 **증상**:
 ```
-ValueError: Exception encountered when calling TrainablePositionalEmbedding.call().
+ValueError: Exception encountered when calling PositionalEmbedding.call().
 Cannot reshape a tensor with 221184 elements to shape [1,14,14,384]
-Arguments received by TrainablePositionalEmbedding.call():
   x=tf.Tensor(shape=(16, 577, 384), dtype=float32)
 ```
 
-**원인**: `pos_embed`는 처음 call되는 input의 sequence length로 build되는 `TrainablePositionalEmbedding`이다.  
-build 이후 다른 크기의 입력이 들어오면 `x + self.pos` 브로드캐스트가 불가능하다.  
-이 에러는 **encoder.py 문제가 아니라 dataloader / model resolution 불일치 문제다.**
+**에러 해석**:
 
-에러 메시지 해석:
-- `x=tf.Tensor(shape=(16, 577, 384))` → 577 = 576 patches + 1 CLS → **입력 이미지가 384×384** (24×24 grid)
-- pos_embed는 `[1, 14, 14, 384]`로 reshape 시도 → 14×14 = 196 patches → **224×224로 build됨**
-- 두 해상도가 불일치 → crash
+| 관찰 값 | 의미 |
+|---|---|
+| `shape=(16, 577, 384)` | 577 = 576 patches + 1 CLS → **입력이 384×384** (24×24 grid) |
+| `[1,14,14,384]` reshape 시도 | 14×14 = 196 patches → **pos_embed는 224×224로 build됨** |
+| 결론 | dataloader `img_size=(384,384)` vs model `input_shape=(224,224,3)` 불일치 |
 
 **해결 체크리스트**:
 
 ```python
-# ✅ 1. dataloader img_size와 model input_shape을 반드시 일치시킨다
+# ✅ 1. INPUT_SHAPE 상수 하나로 통일
 INPUT_SHAPE = (224, 224, 3)
 
 mv_ds = MaskedMultiViewDataset(
-    img_size = INPUT_SHAPE[:2],  # (224, 224)
+    img_size    = INPUT_SHAPE[:2],   # (224, 224)
     ...
 )
 ssl_model = build_stage1_trainer(
-    input_shape = INPUT_SHAPE,   # (224, 224, 3)
+    input_shape = INPUT_SHAPE,       # (224, 224, 3)
     ...
 )
 
-# ✅ 2. local crop 해상도 확인 — local crop은 student encoder에만 들어간다
-#    teacher encoder에는 original_clean (= img_size) 만 들어간다
-#    DINOSimMIMModel.train_step 확인:
-#      t_out = self.teacher_encoder(original_clean, training=False)  # 224×224 only
+# ✅ 2. Teacher encoder 수신 view 확인
+# DINOSimMIMModel.train_step 에서:
+#   teacher → original_clean (= img_size, 224×224) 만 받음
+#   local crop (96×96) 은 student encoder 에만 들어감
 ```
 
 ### `n_local` mismatch → `train_step` view unpacking 오류
