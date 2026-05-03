@@ -68,100 +68,15 @@ class LearnableCLSToken(layers.Layer):
 
 
 class TrainablePositionalEmbedding(layers.Layer):
-    """Learnable positional embedding with bilinear interpolation.
-
-    At build time the embedding is created for the input length N_train.
-    At runtime, if the sequence length N_run differs (e.g. local crops
-    have fewer patches than the global view), the patch tokens are
-    bilinearly interpolated assuming a square grid, so:
-
-        N_train = h_t * w_t + 1   (1 CLS token)
-        N_run   = h_r * w_r + 1
-
-    The CLS token embedding is never interpolated — it is reused as-is.
-
-    IMPORTANT: always warm-up the encoder with a canonical-resolution
-    dummy forward pass *before* the first training step so that
-    _h_built / _w_built reflect the intended resolution:
-
-        dummy = tf.zeros([1, 224, 224, 3])
-        _ = encoder(dummy, training=False)
-    """
-
     def build(self, input_shape):
-        n = int(input_shape[1])   # N_patches + 1 CLS
+        n = int(input_shape[1])
         d = int(input_shape[2])
         self.pos = self.add_weight(
-            shape=(1, n, d), initializer='random_normal',
-            trainable=True, name='pos_embed',
+            shape=(1, n, d), initializer='random_normal', trainable=True, name='pos_embed'
         )
-        # Store the *patch* grid dimensions (excluding CLS token).
-        # We derive h_t / w_t from the *static* stored weight shape so
-        # that tf.reshape inside _interpolate_pos always gets constant
-        # integers — this avoids the shape-mismatch crash when
-        # the runtime sequence length differs from the build-time length.
-        n_patches = n - 1  # exclude CLS
-        h_t = int(round(n_patches ** 0.5))
-        assert h_t * h_t == n_patches, (
-            f"TrainablePositionalEmbedding: n_patches={n_patches} is not a "
-            f"perfect square — cannot infer 2-D grid. "
-            f"Make sure the encoder is first called with the canonical "
-            f"square-resolution input (e.g. 224x224)."
-        )
-        self._h_built = h_t
-        self._w_built = h_t  # square grid assumed
-        self._n_train = n    # full sequence length incl. CLS
-
-    def _interpolate_pos(self, n_run: int, d: int) -> tf.Tensor:
-        """Bilinear-interpolate patch positional embeddings to n_run tokens.
-
-        Args:
-            n_run : target total sequence length (incl. CLS token)
-            d     : embedding dimension
-
-        Returns:
-            pos : (1, n_run, d)
-        """
-        cls_pos   = self.pos[:, :1, :]   # (1, 1, D) — not interpolated
-        patch_pos = self.pos[:, 1:, :]   # (1, h_t*w_t, D)
-
-        # Use *static* h_t / w_t recorded at build time — never dynamic.
-        h_t = self._h_built
-        w_t = self._w_built
-
-        # Target grid size from runtime sequence length
-        n_patches_run = n_run - 1
-        h_r = tf.cast(
-            tf.math.round(tf.sqrt(tf.cast(n_patches_run, tf.float32))),
-            tf.int32,
-        )
-        w_r = tf.cast(
-            tf.math.ceil(
-                tf.cast(n_patches_run, tf.float32) / tf.cast(h_r, tf.float32)
-            ),
-            tf.int32,
-        )
-
-        # (1, h_t*w_t, D) -> (1, h_t, w_t, D) -> bilinear -> (1, h_r*w_r, D)
-        # h_t and w_t are Python ints so tf.reshape gets a constant shape.
-        patch_pos_2d = tf.reshape(patch_pos, [1, h_t, w_t, d])
-        patch_pos_2d = tf.image.resize(patch_pos_2d, [h_r, w_r], method='bilinear')
-        patch_pos_1d = tf.reshape(patch_pos_2d, [1, h_r * w_r, d])
-
-        return tf.concat([cls_pos, patch_pos_1d], axis=1)  # (1, n_run, D)
 
     def call(self, x: tf.Tensor) -> tf.Tensor:
-        """Add positional embedding; interpolate if runtime length != build length."""
-        n_run   = tf.shape(x)[1]         # runtime sequence length (dynamic)
-        d       = tf.shape(x)[2]         # embedding dim (dynamic, used for resize)
-        n_train = self._n_train          # build-time length (Python int)
-
-        pos = tf.cond(
-            tf.equal(n_run, n_train),
-            true_fn=lambda: self.pos,
-            false_fn=lambda: self._interpolate_pos(n_run, d),
-        )
-        return x + pos
+        return x + self.pos
 
 
 class TransformerBlock(layers.Layer):
