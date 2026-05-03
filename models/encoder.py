@@ -45,40 +45,42 @@ class TrainablePositionalEmbedding(layers.Layer):
     """Learnable 1-D positional embedding with dynamic interpolation.
 
     At build time, the weight shape is fixed to (1, N_train, D) where
-    N_train is the sequence length seen during the first call (or build).
+    N_train = h_train * w_train + 1 (CLS included), determined by
+    h_train / w_train passed at construction time (NOT deferred to first call).
 
     At call time, if the runtime sequence length N_run differs from
-    N_train, the embedding is bilinearly interpolated:
+    N_train, the patch embeddings are bilinearly interpolated:
         pos  : (1, N_train, D)  ->  reshape to (1, h_t, w_t, D)
                bilinear resize  ->  (1, h_r, w_r, D)
                reshape          ->  (1, N_run, D)
 
-    This is exactly the approach used in original ViT and DINOv1/v2
-    for handling arbitrary resolution at inference / local-crop training.
+    *** h_train / w_train are REQUIRED. Passing None raises ValueError. ***
+    This prevents the pos_embed from being built at the wrong resolution
+    when a local-crop view is the first tensor to flow through the model.
 
-    Assumption: the sequence represents a 2-D grid of patches, so
-    sqrt(N_train) and sqrt(N_run) must be integers (square grids).
-    For non-square grids, pass h_train / w_train at build time.
+    References:
+        Dosovitskiy et al. (2020) ViT -- positional embedding interpolation
+        Caron et al. (2021) DINO -- local-crop resolution independence
     """
 
-    def __init__(self, h_train: int | None = None, w_train: int | None = None, **kwargs):
+    def __init__(self, h_train: int, w_train: int, **kwargs):
+        if h_train is None or w_train is None:
+            raise ValueError(
+                "TrainablePositionalEmbedding requires h_train and w_train to be "
+                "set explicitly at construction time. "
+                "Pass h_train=H//patch_size, w_train=W//patch_size from the backbone."
+            )
         super().__init__(**kwargs)
-        self._h_train = h_train
-        self._w_train = w_train
+        self._h_train = int(h_train)
+        self._w_train = int(w_train)
+        self._n_train = self._h_train * self._w_train + 1  # +1 for CLS
 
     def build(self, input_shape):
-        n = int(input_shape[1])  # sequence length at build time
-        d = int(input_shape[2])  # embedding dim
-        # Infer (h, w) of the patch grid
-        if self._h_train is not None and self._w_train is not None:
-            h, w = self._h_train, self._w_train
-        else:
-            # Assumes square grid; CLS token is already prepended so N=N_patches+1
-            # We store ALL positions including CLS (position 0).
-            h = w = int((n - 1) ** 0.5) if n > 1 else 1
-        self._n_train = n
-        self._h_built  = h
-        self._w_built  = w
+        d = int(input_shape[-1])
+        # Always build with the training-resolution shape, IGNORING input_shape[1].
+        # This is the key fix: pos_embed size is determined by h_train/w_train,
+        # not by the first tensor that flows through (which could be a local crop).
+        n = self._n_train
         self.pos = self.add_weight(
             shape=(1, n, d),
             initializer='random_normal',
@@ -92,23 +94,29 @@ class TrainablePositionalEmbedding(layers.Layer):
 
         Args:
             n_run : runtime sequence length (including CLS token)
-            d     : embedding dim
+            d     : embedding dim (static int, not tensor)
         Returns:
             Tensor of shape (1, n_run, d)
         """
-        # Split CLS and patch positions
-        cls_pos   = self.pos[:, :1, :]                  # (1, 1, D)
-        patch_pos = self.pos[:, 1:, :]                   # (1, N_patches_train, D)
+        cls_pos   = self.pos[:, :1, :]   # (1, 1, D)
+        patch_pos = self.pos[:, 1:, :]   # (1, h_train*w_train, D)
 
-        h_t = self._h_built
-        w_t = self._w_built
+        # Use STATIC h_train / w_train -- guaranteed correct by __init__
+        h_t = self._h_train
+        w_t = self._w_train
 
-        # N_patches_run (excluding CLS)
         n_patches_run = n_run - 1
-        h_r = tf.cast(tf.math.round(tf.sqrt(tf.cast(n_patches_run, tf.float32))), tf.int32)
-        w_r = tf.cast(tf.math.ceil(tf.cast(n_patches_run, tf.float32) / tf.cast(h_r, tf.float32)), tf.int32)
+        h_r = tf.cast(
+            tf.math.round(tf.sqrt(tf.cast(n_patches_run, tf.float32))), tf.int32
+        )
+        w_r = tf.cast(
+            tf.math.ceil(
+                tf.cast(n_patches_run, tf.float32) / tf.cast(h_r, tf.float32)
+            ),
+            tf.int32,
+        )
 
-        # (1, h_t*w_t, D) -> (1, h_t, w_t, D) -> bilinear -> (1, h_r, w_r, D) -> (1, h_r*w_r, D)
+        # Reshape to 2-D spatial grid using STATIC dims -> no shape mismatch
         patch_pos_2d = tf.reshape(patch_pos, [1, h_t, w_t, d])
         patch_pos_2d = tf.image.resize(patch_pos_2d, [h_r, w_r], method='bilinear')
         patch_pos_1d = tf.reshape(patch_pos_2d, [1, h_r * w_r, d])
@@ -116,17 +124,21 @@ class TrainablePositionalEmbedding(layers.Layer):
         return tf.concat([cls_pos, patch_pos_1d], axis=1)  # (1, n_run, D)
 
     def call(self, x: tf.Tensor) -> tf.Tensor:
-        n_run = tf.shape(x)[1]    # runtime sequence length (int32 tensor)
-        d     = x.shape[-1]       # static dim (needed for reshape in interpolation)
+        n_run   = tf.shape(x)[1]   # runtime length (int32 tensor)
+        d       = x.shape[-1]      # static dim for reshape in interpolation
+        n_train = self._n_train    # static Python int
 
-        # Fast path: runtime length == trained length
-        n_train = self._n_train
         pos = tf.cond(
             tf.equal(n_run, n_train),
             true_fn=lambda: self.pos,
             false_fn=lambda: self._interpolate_pos(n_run, d),
         )
         return x + pos
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg.update({'h_train': self._h_train, 'w_train': self._w_train})
+        return cfg
 
 
 class TransformerBlock(layers.Layer):
@@ -164,13 +176,9 @@ class TransformerBlock(layers.Layer):
 class VisionTransformerBackbone(keras.Model):
     """Vision Transformer backbone with dynamic positional embedding interpolation.
 
-    input_shape may be (None, None, 3) for fully flexible resolution,
-    or a fixed tuple like (224, 224, 3) to pre-infer N_train for pos_embed.
-
-    When local crops (e.g. 96 x 96) are passed at training time, the
-    TrainablePositionalEmbedding layer automatically interpolates the
-    stored pos_embed to match the runtime patch-grid size.
-    No upscaling of the input image is needed.
+    pos_embed is always built at the training resolution (h_train, w_train)
+    regardless of which view (global or local) arrives first at runtime.
+    Local crops trigger bilinear interpolation in TrainablePositionalEmbedding.
     """
 
     def __init__(
@@ -185,21 +193,20 @@ class VisionTransformerBackbone(keras.Model):
         name: str = 'vit_backbone',
     ):
         super().__init__(name=name)
-        # NOTE: input_spec intentionally removed so model accepts arbitrary (H, W).
         self._patch_size = patch_size
 
-        # Pre-compute training-resolution patch grid for pos_embed initialisation
         H, W, _ = input_shape
-        if H is not None and W is not None:
-            h_train = H // patch_size
-            w_train = W // patch_size
-        else:
-            h_train = w_train = None   # resolved lazily on first forward pass
+        if H is None or W is None:
+            raise ValueError(
+                "VisionTransformerBackbone requires a concrete input_shape (no None dims). "
+                f"Got {input_shape}. Pass (224, 224, 3) or similar."
+            )
+        h_train = H // patch_size
+        w_train = W // patch_size
 
         self.patch_extract     = PatchExtract(patch_size)
         self.patch_proj        = layers.Dense(embed_dim)
         self.cls_token_layer   = LearnableCLSToken()
-        # Pass h/w so pos_embed knows the trained grid shape for interpolation.
         self.pos_embed         = TrainablePositionalEmbedding(
             h_train=h_train, w_train=w_train, name='pos_embed'
         )
@@ -228,7 +235,7 @@ class VisionTransformerBackbone(keras.Model):
         return {
             'cls_token':    cls_token,
             'encoded_patches': encoded_patches,
-            'last_hidden_state': x,        # (B, N+1, D)  --  used by SimMIM head
+            'last_hidden_state': x,
             'last_encoder_layer_attentional_weights': attn_all[-1] if attn_all else None,
             'attention_weights': attn_all,
             'embedding':    cls_token,
@@ -251,11 +258,12 @@ class SwinLikeBackbone(keras.Model):
     ):
         super().__init__(name=name)
         H, W, _ = input_shape
-        if H is not None and W is not None:
-            h_train = H // patch_size
-            w_train = W // patch_size
-        else:
-            h_train = w_train = None
+        if H is None or W is None:
+            raise ValueError(
+                f"SwinLikeBackbone requires concrete input_shape, got {input_shape}"
+            )
+        h_train = H // patch_size
+        w_train = W // patch_size
 
         self.proj    = layers.Conv2D(embed_dim, kernel_size=patch_size, strides=patch_size, padding='valid')
         self.flatten = layers.Reshape((-1, embed_dim))
@@ -410,8 +418,10 @@ def build_encoder(
 ) -> keras.Model:
     """Build an encoder backbone.
 
-    input_shape may be (None, None, 3) for resolution-agnostic ViT.
-    For CNN backbones, a concrete shape is still required by Keras applications.
+    input_shape MUST be a concrete tuple -- (None, None, 3) is rejected for ViT/Swin
+    because TrainablePositionalEmbedding needs h_train / w_train at construction time.
+    CNN backbones (convnext, efficientnet) still require a concrete shape for
+    Keras applications.
     """
     name = name.lower()
     if name in {'vit', 'vanilla_vit'}:
