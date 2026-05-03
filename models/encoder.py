@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from typing import Any
@@ -7,6 +6,36 @@ import tensorflow as tf
 import keras
 from keras import layers
 
+
+# ---------------------------------------------------------------------------
+# Patch Utilities
+# ---------------------------------------------------------------------------
+
+def patchify(images: tf.Tensor, patch_size: int = 16) -> tf.Tensor:
+    """Extract non-overlapping patches from images for SimMIM target.
+
+    Args:
+        images     : (B, H, W, C) float32  in [0, 1]
+        patch_size : ViT patch size (must divide H and W evenly)
+
+    Returns:
+        patches : (B, N, patch_size^2 * C)  where N = (H//P) * (W//P)
+    """
+    patches = tf.image.extract_patches(
+        images=images,
+        sizes=[1, patch_size, patch_size, 1],
+        strides=[1, patch_size, patch_size, 1],
+        rates=[1, 1, 1, 1],
+        padding='VALID',
+    )  # (B, n_h, n_w, patch_size^2 * C)
+    B = tf.shape(images)[0]
+    patch_dim = patch_size * patch_size * int(images.shape[-1])
+    return tf.reshape(patches, [B, -1, patch_dim])  # (B, N, patch_dim)
+
+
+# ---------------------------------------------------------------------------
+# Core ViT Layers
+# ---------------------------------------------------------------------------
 
 class PatchExtract(layers.Layer):
     def __init__(self, patch_size: int = 16, **kwargs):
@@ -81,6 +110,45 @@ class TransformerBlock(layers.Layer):
             return x, attn_scores
         return x
 
+
+# ---------------------------------------------------------------------------
+# SimMIM Decoder
+# ---------------------------------------------------------------------------
+
+class PixelReconstructionHead(layers.Layer):
+    """SimMIM linear pixel decoder: encoded_patches -> pixel predictions.
+
+    Single Dense layer sufficient — Xie et al. (2022) Table 4 shows
+    linear decoder outperforms MLP decoder on reconstruction quality.
+
+    Input  : encoded_patches  (B, N, embed_dim)      from VisionTransformerBackbone
+    Output : pixel_pred       (B, N, patch_size^2*C)  pixel-space predictions
+
+    Args:
+        patch_size  : ViT patch size matching encoder. Default 16.
+        in_channels : Image channels. Default 3.
+    """
+
+    def __init__(self, patch_size: int = 16, in_channels: int = 3, **kwargs):
+        super().__init__(**kwargs)
+        self.patch_size  = patch_size
+        self.in_channels = in_channels
+        self.out_dim     = patch_size * patch_size * in_channels  # 16^2 * 3 = 768
+        self.proj        = layers.Dense(self.out_dim, name='mim_pixel_proj')
+
+    def call(self, encoded_patches: tf.Tensor, training: bool = False) -> tf.Tensor:
+        """(B, N, embed_dim) -> (B, N, patch_size^2 * C)"""
+        return self.proj(encoded_patches, training=training)
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg.update({'patch_size': self.patch_size, 'in_channels': self.in_channels})
+        return cfg
+
+
+# ---------------------------------------------------------------------------
+# Backbone Models
+# ---------------------------------------------------------------------------
 
 class VisionTransformerBackbone(keras.Model):
     def __init__(
@@ -249,11 +317,6 @@ def build_encoder(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), 
     if name in {'efficientnet', 'efficientnet_b0'}:
         return CNNBackbone(_make_efficientnet(input_shape), name='efficientnet_backbone')
     raise ValueError(f'Unsupported encoder: {name}')
-
-
-def build_classifier(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), num_classes: int = 2) -> ClassifierWithEncoder:
-    encoder = build_encoder(name=name, input_shape=input_shape)
-    return ClassifierWithEncoder(encoder=encoder, num_classes=num_classes, name=f'{name}_classifier')
 
 
 class Classifier(keras.Model):
