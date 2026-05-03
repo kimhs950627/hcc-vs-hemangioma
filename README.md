@@ -7,6 +7,65 @@ B-mode 간 초음파 이미지에서 **간세포암종(HCC)** 과 **혈관종(He
 
 ---
 
+## ⭐ Recommended Default: DINO + SimMIM (`dino_simmim`)
+
+> **이 repo에서 SSL pretraining의 기본 권장 mode는 `dino_simmim`이다.**
+
+### Why `dino_simmim`?
+
+| 특성 | DINO 단독 | SimMIM 단독 | **DINO + SimMIM (권장)** |
+|---|---|---|---|
+| Global representation | ✅ 강함 | ❌ 약함 | ✅ 강함 |
+| Local structure | ❌ 약함 | ✅ 강함 | ✅ 강함 |
+| Ultrasound 적합성 | 보통 | 보통 | **높음** |
+| Required dataloader | `MultiViewDataset` | — | `MaskedMultiViewDataset` |
+
+초음파 간 병변은 **전역 lesion semantics(DINO)** 와 **국소 텍스처 / 패치 구조(SimMIM)** 를 동시에 필요로 하기 때문에 joint training이 유리하다.
+
+---
+
+## 🚨 Critical Rules Before Training
+
+### Rule 1 — `ssl_mode`와 Dataset은 반드시 짝을 맞춰야 한다
+
+이 repo에서 가장 흔한 실수다. 아래 표를 반드시 확인하라.
+
+| `ssl_mode` | **반드시 사용할 Dataset** | 잘못된 조합 |
+|---|---|---|
+| `'moco'` | `MultiViewDataset` | `MaskedMultiViewDataset` ❌ |
+| `'byol'` | `MultiViewDataset` | `MaskedMultiViewDataset` ❌ |
+| `'dino'` | `MultiViewDataset` | `MaskedMultiViewDataset` ❌ |
+| `'dino_simmim'` | **`MaskedMultiViewDataset`** | `MultiViewDataset` ❌ |
+
+잘못 짝지으면 첫 step에서 **view unpacking mismatch → shape 에러**로 crash한다.
+
+### Rule 2 — Encoder는 반드시 `(224, 224, 3)` input으로 먼저 build해야 한다
+
+`TrainablePositionalEmbedding`은 **처음 call되는 input shape**을 기준으로 `pos` weight를 build한다.  
+만약 local crop (e.g. 112×112)이 teacher encoder에 먼저 들어오면 `pos_embed`가 49-patch 기준으로 build되고,  
+이후 224×224 global view (196 patches)가 들어올 때 `_interpolate_pos`에서 reshape mismatch로 crash한다.
+
+```python
+# DINOSimMIMModel.__init__ 마지막 또는 trainer build 직후 반드시 실행
+dummy = tf.zeros([1, 224, 224, 3])
+_ = self.online_encoder(dummy, training=False)
+_ = self.teacher_encoder(dummy, training=False)
+```
+
+### Rule 3 — `n_local`은 `MaskedMultiViewDataset.local_views`와 반드시 일치해야 한다
+
+```python
+# ✅ 올바른 예
+mv_ds = MaskedMultiViewDataset(..., local_views=4, ...)
+ssl_model = build_stage1_trainer(..., n_local=4, ssl_mode='dino_simmim')
+
+# ❌ 잘못된 예 → train_step view unpacking 오류
+mv_ds = MaskedMultiViewDataset(..., local_views=2, ...)
+ssl_model = build_stage1_trainer(..., n_local=4, ssl_mode='dino_simmim')
+```
+
+---
+
 ## Table of Contents
 
 1. [Repository Structure](#repository-structure)
@@ -17,11 +76,12 @@ B-mode 간 초음파 이미지에서 **간세포암종(HCC)** 과 **혈관종(He
 6. [Stage 1 — Unified Router (`ssl_mode`)](#stage-1--unified-router-ssl_mode)
 7. [Stage 1 — Other SSL Modes](#stage-1--other-ssl-modes)
 8. [Stage 2 Supervised + SupCon](#stage-2-supervised--supcon-training)
-9. [**Supervised Benchmark Baseline**](#supervised-benchmark-baseline)
+9. [Supervised Benchmark Baseline](#supervised-benchmark-baseline)
 10. [Prototype Bank Construction](#prototype-bank-construction)
 11. [Inference and Scoring](#inference-and-scoring)
 12. [W&B Visualization](#wb-visualization)
 13. [Smoke-Test](#smoke-test)
+14. [Known Issues & Debugging](#known-issues--debugging)
 
 ---
 
@@ -107,27 +167,45 @@ ds_train, ds_val, ds_test = build_dataset(
 )
 ```
 
-### 2. Multi-View SSL Dataset
+### 2. `MaskedMultiViewDataset` — `dino_simmim` 전용 (권장)
+
+`dino_simmim` mode에서는 반드시 이 dataloader를 사용해야 한다.
 
 ```python
-from dataloader import MultiViewDataset
+from dataloader import MaskedMultiViewDataset
 
-# Global-only (BYOL / MoCo)
-mv_ds = MultiViewDataset(
+mv_ds = MaskedMultiViewDataset(
     data_root   = "/path/to/clean_ver_for_train",
     split       = "train",
     img_size    = (224, 224),
     batch_size  = 16,
-    local_views = 0,        # 0 = 2 global views only
-)
+    local_views = 4,       # n_local과 반드시 일치
+    mask_ratio  = 0.75,    # SimMIM masking ratio
+).as_dataset()
+```
 
-# Global + Local (DINO)
+반환 view 순서 (train_step이 기대하는 순서):
+
+| 인덱스 | 텐서 | 역할 |
+|--------|------|------|
+| `views[0]` | `original_clean` | Teacher global1 / SimMIM reconstruction target |
+| `views[1]` | `aug_global2` | Teacher global2 / Student global2 (DINO) |
+| `views[2]` | `masked_clean` | SimMIM student input |
+| `views[3]` | `patch_mask` | `[B, N_patches]`, 1=masked 0=visible |
+| `views[4:]` | `local_i × n` | DINO student local crops |
+
+### 3. `MultiViewDataset` — legacy (dino / byol / moco 전용)
+
+```python
+from dataloader import MultiViewDataset
+
+# DINO (global + local)
 mv_ds = MultiViewDataset(
     data_root        = "/path/to/clean_ver_for_train",
     split            = "train",
     img_size         = (224, 224),
     batch_size       = 16,
-    local_views      = 6,   # global 2 + local 6
+    local_views      = 6,
     local_crop_scale = (0.05, 0.40),
 )
 ```
@@ -144,7 +222,8 @@ mv_ds = MultiViewDataset(
 
 ## Stage 1 — DINO + SimMIM SSL Trainer
 
-`DINOSimMIMModel` 은 **DINO self-distillation** 과 **SimMIM masked image reconstruction** 을 단일 `train_step` 안에서 **동시에(jointly)** 최적화한다.
+`DINOSimMIMModel`은 **DINO self-distillation**과 **SimMIM masked image reconstruction**을  
+단일 `train_step` 안에서 **동시에(jointly)** 최적화한다.
 
 ### 동작 원리
 
@@ -159,27 +238,23 @@ mv_ds = MultiViewDataset(
   view[2] masked_clean  ──► Student Encoder ──► Pixel Head    │
   view[3] patch_mask    ──────────────────────► SimMIM loss    │
           │                                                    │
-          │   loss = alpha * L_dino + (1-alpha) * λ * L_simmim│
+          │   L_total = alpha * L_dino + (1-alpha)*λ*L_simmim │
           └────────────────────────────────────────────────────┘
 ```
 
-- **DINO branch**: `original_clean`을 teacher global1로, `aug_global2`를 teacher/student global2로 사용한다. local crops(`views[4:]`)는 student 전용이며, **global view와 동일한 `online_encoder` 호출 경로**를 공유한다.
-- **SimMIM branch**: `masked_clean`을 student encoder에 통과시켜 patch token을 추출하고, `pixel_pred_head`로 원본 pixel patch(`original_clean`)를 복원한다. `patch_mask`가 지정한 위치만 L1 loss에 반영된다.
-- **Alpha warm-up**: 학습 초기에는 `alpha=1.0` (DINO 전용), `warmup_steps` 동안 **step(batch) 기준**으로 `alpha_final`까지 선형 감소 → 이후 DINO + SimMIM 균형 최적화. `TeacherTempWarmupCallback`과 동일하게 `on_train_batch_end` 기반.
+- **DINO branch**: `original_clean`을 teacher global1로, `aug_global2`를 teacher/student global2로 사용.  
+  local crops(`views[4:]`)는 student 전용이며 `online_encoder` 호출 경로를 공유한다.
+- **SimMIM branch**: `masked_clean`을 student encoder에 통과시켜 patch token 추출 →  
+  `pixel_pred_head`로 원본(`original_clean`) pixel 복원. `patch_mask` 위치만 L1 loss에 반영.
+- **Alpha warm-up**: 초기 `alpha=1.0` (DINO 전용) → `warmup_steps` 동안 `alpha_final`까지 선형 감소.  
+  `AlphaWarmupCallback`의 `on_train_batch_end`에서 step 단위로 갱신됨.
 
-### Input View 순서 (MaskedMultiViewDataset)
+### Total Loss
 
-| 인덱스 | 텐서 | 역할 |
-|--------|------|------|
-| `views[0]` | `original_clean` | Teacher global1 / SimMIM reconstruction target |
-| `views[1]` | `aug_global2` | Teacher global2 / Student global2 (DINO) |
-| `views[2]` | `masked_clean` | SimMIM student input (patch들이 masking된 버전) |
-| `views[3]` | `patch_mask` | `[B, N_patches]`, 1=masked 0=visible |
-| `views[4:]` | `local_i` × n | DINO student local crops |
+$$L_{total} = \alpha \cdot L_{dino} + (1 - \alpha) \cdot \lambda_{mim} \cdot L_{simmim}$$
 
-> **주의**: `patch_mask.shape[1]`은 encoder가 생성하는 patch token 수와 반드시 일치해야 한다.  
-> `patch_size=16, input_shape=(224,224,3)` → `N = (224/16)^2 = 196` 토큰.  
-> 불일치 시 `_simmim_forward()` 내 `tf.debugging.assert_equal`이 런타임 에러를 발생시킨다.
+- `alpha`: warm-up 중 `1.0 → alpha_final` 선형 감소
+- `lambda_mim`: SimMIM reconstruction loss weight (기본 `1.0`)
 
 ### Parameters
 
@@ -188,11 +263,11 @@ mv_ds = MultiViewDataset(
 | `encoder_name` | str | — | `"vit"` / `"swin"` / `"convnext"` / `"efficientnet"` |
 | `input_shape` | tuple | `(224,224,3)` | 이미지 입력 크기 |
 | `projection_dim` | int | `256` | DINO projection head output dim |
-| `patch_size` | int | `16` | SimMIM patch 크기 (encoder와 일치해야 함) |
+| `patch_size` | int | `16` | SimMIM patch 크기 (encoder와 일치) |
 | `n_local` | int | `4` | local crop 수 (`MaskedMultiViewDataset.local_views`와 일치) |
 | `lambda_mim` | float | `1.0` | SimMIM reconstruction loss weight |
-| `alpha_final` | float | `0.7` | alpha warm-up 완료 후 DINO 가중치 |
-| `alpha_warmup_epochs` | int | `20` | model 내부 목표 warm-up epoch 수 (router 전달용) |
+| `alpha_final` | float | `0.7` | warm-up 완료 후 DINO 가중치 |
+| `alpha_warmup_epochs` | int | `20` | router 전달용 목표 warm-up epoch |
 | `temperature` | float | `0.1` | student softmax temperature |
 | `teacher_temp` | float | `0.04` | teacher softmax temperature (초기값) |
 | `center_momentum` | float | `0.9` | teacher center EMA momentum |
@@ -205,43 +280,45 @@ mv_ds = MultiViewDataset(
 
 ## Stage 1 — Unified Router (`ssl_mode`)
 
-`build_stage1_trainer()` 는 `ssl_mode` 인자 하나로 모든 SSL 방식을 라우팅하는 **통합 진입점**이다.
+`build_stage1_trainer()`는 `ssl_mode` 인자 하나로 모든 SSL 방식을 라우팅하는 **통합 진입점**이다.
+
+### 🔑 `ssl_mode='dino_simmim'` — Full DINO + SimMIM Training (권장)
 
 ```python
-from training.stage1_ssl import build_stage1_trainer
-```
-
-### `ssl_mode='dino_simmim'` — DINO + SimMIM 동시 학습
-
-> **`ssl_mode='dino_simmim'`로 지정하면 DINO와 SimMIM이 단일 `train_step` 안에서 동시에(jointly) 최적화된다.**
-
-```python
-from dataloader import MaskedMultiViewDataset          # masked view 제공
+from dataloader import MaskedMultiViewDataset
 from training.stage1_ssl import build_stage1_trainer
 from training.stage1_dino import AlphaWarmupCallback
 from training.ssl_callbacks import TeacherTempWarmupCallback
 
-# 1. Masked multi-view dataset
-#    views: [original_clean, aug_global2, masked_clean, patch_mask, local_0, ..., local_(n-1)]
+# ── Step 1: Dataset ──────────────────────────────────────────────────────
 mv_ds = MaskedMultiViewDataset(
     data_root   = "./clean_ver_for_train",
     split       = "train",
     img_size    = (224, 224),
     batch_size  = 16,
-    local_views = 4,        # must equal n_local below
+    local_views = 4,      # ← must equal n_local below
     mask_ratio  = 0.75,
 ).as_dataset()
 
-# 2. Build trainer via unified router
+mv_val_ds = MaskedMultiViewDataset(
+    data_root   = "./clean_ver_for_train",
+    split       = "val",
+    img_size    = (224, 224),
+    batch_size  = 16,
+    local_views = 4,
+    mask_ratio  = 0.75,
+).as_dataset()
+
+# ── Step 2: Build model ──────────────────────────────────────────────────
 ssl_model = build_stage1_trainer(
     encoder_name         = "vit",
     input_shape          = (224, 224, 3),
     projection_dim       = 256,
-    patch_size           = 16,          # SimMIM patch size
-    n_local              = 4,           # DINO local crops
-    lambda_mim           = 1.0,         # SimMIM loss weight
-    alpha_final          = 0.7,         # DINO weight after warm-up
-    alpha_warmup_epochs  = 20,          # model target (router 전달용)
+    patch_size           = 16,
+    n_local              = 4,         # ← must equal local_views above
+    lambda_mim           = 1.0,
+    alpha_final          = 0.7,
+    alpha_warmup_epochs  = 20,
     temperature          = 0.1,
     teacher_temp         = 0.04,
     center_momentum      = 0.9,
@@ -249,36 +326,48 @@ ssl_model = build_stage1_trainer(
     lr                   = 1e-4,
     clipnorm             = 1.0,
     weight_decay         = 1e-4,
-    ssl_mode             = 'dino_simmim',   # ← 핵심 인자
+    ssl_mode             = "dino_simmim",   # ← 핵심 인자
 )
 
-# 3. Callbacks  ── 두 callback 모두 step(batch) 기준으로 동작
-steps_per_epoch          = 116   # len(mv_ds)  (dataset 크기 / batch_size)
-alpha_warmup_epochs      = 20
-teacher_temp_warmup_epochs = 10
+# ── Step 3: Warm-up pos_embed build (필수!) ──────────────────────────────
+# 반드시 224×224 dummy로 먼저 build해야 pos_embed shape이 올바르게 설정됨
+import tensorflow as tf
+dummy = tf.zeros([1, 224, 224, 3])
+_ = ssl_model.online_encoder(dummy, training=False)
+_ = ssl_model.teacher_encoder(dummy, training=False)
+
+# ── Step 4: Callbacks ────────────────────────────────────────────────────
+steps_per_epoch = 116   # = ceil(train_size / batch_size)
 
 callbacks = [
     AlphaWarmupCallback(
-        warmup_steps = alpha_warmup_epochs * steps_per_epoch,   # 2320 steps
+        warmup_steps = 20 * steps_per_epoch,   # 20 epochs
         verbose      = True,
     ),
     TeacherTempWarmupCallback(
         start_value  = 0.04,
         end_value    = 0.07,
-        warmup_steps = teacher_temp_warmup_epochs * steps_per_epoch,  # 1160 steps
+        warmup_steps = 10 * steps_per_epoch,   # 10 epochs
         verbose      = True,
     ),
 ]
 
-# 4. Train
-ssl_model.fit(mv_ds, epochs=100, callbacks=callbacks)
+# ── Step 5: Train ────────────────────────────────────────────────────────
+ssl_model.fit(
+    mv_ds,
+    validation_data = mv_val_ds,
+    epochs          = 100,
+    callbacks       = callbacks,
+)
 
-# 5. Export teacher encoder for Stage 2
+# ── Step 6: Export teacher encoder for Stage 2 ──────────────────────────
 teacher_enc = ssl_model.get_stage2_encoder(use_teacher=True)
 teacher_enc.save_weights("output/vit_stage1_dino_simmim.weights.h5")
 ```
 
 ### Loss 모니터링
+
+학습 중 다음 metric이 기록된다.
 
 ```
 loss          — total: alpha*L_dino + (1-alpha)*lambda_mim*L_simmim
@@ -297,9 +386,8 @@ teacher_temp  — current teacher softmax temperature
 | `'dino'` | `MultiViewDataset` (2 global + N local) | DINO cross-entropy | vit |
 | `'dino_simmim'` | `MaskedMultiViewDataset` (2 global + masked + N local) | DINO + SimMIM L1 | **vit 전용** |
 
-> CNN(`convnext`, `efficientnet`)은 `last_hidden_state` key를 반환하지 않으므로
-> `dino_simmim`의 SimMIM branch에서 `feature_map` reshape 경로를 탄다.
-> ViT 사용을 강력히 권장한다.
+> CNN (`convnext`, `efficientnet`)은 `last_hidden_state` key를 반환하지 않아  
+> SimMIM branch에서 `feature_map` reshape 경로를 탄다. **ViT 사용을 강력히 권장한다.**
 
 ---
 
@@ -367,109 +455,41 @@ stage2.model.save_weights("output/vit_stage2.weights.h5")
 **No pretraining. No regularizer. No dropout. Scratch supervised binary classification.**  
 Goal: establish a clean lower-bound to compare against SSL-pretrained models.
 
+### CLI
 
-### Practical benchmark training examples
-
-**1) ViT scratch benchmark**
 ```bash
+# ViT scratch
 python training/benchmark_supervised.py \
     --data_root ./clean_ver_for_train \
-    --encoder vit \
-    --epochs 100 \
-    --batch_size 32 \
-    --lr 1e-4 \
+    --encoder vit --epochs 100 --batch_size 32 --lr 1e-4 \
     --output_dir outputs/benchmark_vit_scratch
-```
 
-**2) ConvNeXt benchmark with ImageNet pretrained encoder**
-```bash
+# ConvNeXt with ImageNet pretrained encoder
 python training/benchmark_supervised.py \
     --data_root ./clean_ver_for_train \
-    --encoder convnext \
-    --epochs 100 \
-    --batch_size 16 \
-    --lr 1e-4 \
+    --encoder convnext --epochs 100 --batch_size 16 --lr 1e-4 \
     --use_pretrained \
     --output_dir outputs/benchmark_convnext_pretrained
 ```
 
-**3) EfficientNet benchmark with augmentation and dropout**
-```bash
-python training/benchmark_supervised.py \
-    --data_root ./clean_ver_for_train \
-    --encoder efficientnet \
-    --epochs 100 \
-    --batch_size 32 \
-    --lr 3e-4 \
-    --use_augmentation \
-    --use_dropout \
-    --dropout_rate 0.3 \
-    --output_dir outputs/benchmark_effnet_aug_dropout
-```
-
-**4) W&B logging enabled benchmark**
-```bash
-export WANDB_API_KEY=your_wandb_api_key
-python training/benchmark_supervised.py \
-    --data_root ./clean_ver_for_train \
-    --encoder vit \
-    --epochs 50 \
-    --batch_size 32 \
-    --output_dir outputs/benchmark_vit_wandb
-```
-
-These examples cover scratch training, pretrained encoder ablation, regularized training, and W&B-based benchmark monitoring.
 ### Python API
 
 ```python
 from training.benchmark_supervised import run_supervised_benchmark
 
 result = run_supervised_benchmark(
-    data_root          = "./clean_ver_for_train",
-    encoder_name       = "vit",
-    input_shape        = (224, 224, 3),
-    batch_size         = 32,
-    epochs             = 100,
-    lr                 = 1e-4,
-    use_augmentation   = False,
-    use_pretrained     = False,
-    use_dropout        = False,
-    use_weight_decay   = False,
-    output_dir         = "outputs/benchmark_vit",
-    seed               = 42,
-    viz_every_n_epochs = 5,
-    max_viz_samples    = 8,
+    data_root      = "./clean_ver_for_train",
+    encoder_name   = "vit",
+    input_shape    = (224, 224, 3),
+    batch_size     = 32,
+    epochs         = 100,
+    lr             = 1e-4,
+    output_dir     = "outputs/benchmark_vit",
 )
-
 print(result)
 ```
 
-### CLI
-
-```bash
-python training/benchmark_supervised.py \
-    --data_root ./clean_ver_for_train \
-    --encoder   vit \
-    --epochs    100 \
-    --batch_size 32 \
-    --output_dir outputs/benchmark_vit
-```
-
-### Output Artifacts
-
-```
-outputs/benchmark_vit/
-├── checkpoints/best.weights.h5
-├── metrics/metrics_all.csv
-├── roc/roc_epoch_*.png
-├── reports/
-│   ├── classification_report.json
-│   └── classification_report.txt
-├── attention/
-└── test_report.json
-```
-
-### Metrics computed
+### Metrics
 
 | Metric | Formula |
 |---|---|
@@ -500,7 +520,6 @@ python inference/build_prototype_bank.py \
 ## Inference and Scoring
 
 ```python
-import numpy as np
 from models.encoder import build_classifier
 
 model = build_classifier("vit", input_shape=(224, 224, 3))
@@ -530,6 +549,59 @@ python dataloader.py /path/to/clean_ver_for_train
 
 ---
 
+## Known Issues & Debugging
+
+### `TrainablePositionalEmbedding` — reshape mismatch crash
+
+**증상**:
+```
+ValueError: Cannot reshape a tensor with 221184 elements to shape [1,14,14,384]
+Arguments received by TrainablePositionalEmbedding.call():
+  x=tf.Tensor(shape=(16, 577, 384), dtype=float32)
+```
+
+**원인**: `pos_embed`가 224×224 (196 patches) 기준으로 build됐는데,  
+runtime에 384×384 (576 patches + CLS = 577) 입력이 teacher encoder에 들어감.
+
+**해결**:
+1. `DINOSimMIMModel.__init__` 이후 반드시 224×224 dummy warm-up 실행
+2. `_interpolate_pos`에서 `h_t`, `w_t`를 `self.pos.shape[1]-1`의 integer sqrt로 재계산
+
+```python
+# models/encoder.py — _interpolate_pos 수정 예시
+def _interpolate_pos(self, n_run: int, d: int) -> tf.Tensor:
+    cls_pos   = self.pos[:, :1, :]
+    patch_pos = self.pos[:, 1:, :]
+
+    # stored weight의 실제 patch 수에서 h_t, w_t를 재계산
+    n_stored = self.pos.shape[1] - 1      # static shape 사용
+    h_t = int(n_stored ** 0.5)
+    w_t = h_t
+
+    n_patches_run = n_run - 1
+    h_r = tf.cast(tf.math.round(tf.sqrt(tf.cast(n_patches_run, tf.float32))), tf.int32)
+    w_r = tf.cast(tf.math.ceil(tf.cast(n_patches_run, tf.float32) / tf.cast(h_r, tf.float32)), tf.int32)
+
+    patch_pos_2d = tf.reshape(patch_pos, [1, h_t, w_t, d])   # static shape → OK
+    patch_pos_2d = tf.image.resize(patch_pos_2d, [h_r, w_r], method='bilinear')
+    patch_pos_1d = tf.reshape(patch_pos_2d, [1, h_r * w_r, d])
+
+    return tf.concat([cls_pos, patch_pos_1d], axis=1)
+```
+
+### `n_local` mismatch → `train_step` view unpacking 오류
+
+**증상**: IndexError 또는 silent wrong-view feeding.  
+**해결**: `MaskedMultiViewDataset(local_views=N)` = `build_stage1_trainer(n_local=N)` 항상 동일하게.
+
+### patch_mask shape mismatch
+
+**증상**: `_simmim_forward()` 내 `tf.debugging.assert_equal` 실패.  
+**확인**: `patch_size=16`, `input_shape=(224,224,3)` → `N = (224/16)^2 = 196` patches.  
+`patch_mask.shape[1]` == 196 이어야 한다.
+
+---
+
 ## Notes on Outputs
 
 - **Transformer encoders** return: `embedding`, `last_hidden_state`, `last_encoder_layer_attentional_weights`
@@ -538,15 +610,10 @@ python dataloader.py /path/to/clean_ver_for_train
 
 ---
 
-### Augmentation strategy
+## Augmentation Strategy
 
-The training augmentation pipeline includes ultrasound-oriented photometric perturbation:
+초음파 특화 photometric perturbation pipeline:
 
 - `RandomContrast`, `RandomBrightness`, custom `RandomGamma`, `GaussianNoise`
 
-This reduces shortcut learning toward only bright echogenic regions and improves robustness to hypoechoic lesion interiors and gain/TGC variability.
-
-
-### Benchmark W&B visualization
-
-`WandbBenchmarkVisualizer` logs a classification heatmap (confusion-matrix style) and sklearn classification report to Weights & Biases at each configured epoch.
+Gain/TGC variability 및 hypoechoic lesion interior에 대한 shortcut learning을 억제한다.
