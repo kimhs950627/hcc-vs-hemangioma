@@ -221,6 +221,14 @@ class DINOSimMIMModel(keras.Model):
     Args:
         lambda_mim  : Weight for SimMIM loss term. Default 0.1.
         patch_size  : ViT patch size — must match encoder. Default 16.
+
+    Notes:
+        pos_embed warm-up: __init__ performs a dummy forward pass at the
+        canonical input_shape resolution so that TrainablePositionalEmbedding
+        stores _h_built/_w_built for the *intended* grid (e.g. 14x14 for
+        224px). Without this, the first real input (which may be a local crop
+        of a different resolution) would build pos_embed at the wrong size
+        and cause a reshape crash during bilinear interpolation.
     """
 
     def __init__(
@@ -276,6 +284,17 @@ class DINOSimMIMModel(keras.Model):
             dtype=tf.float32, name='teacher_temp_var'
         )
         self._teacher_initialized = False
+
+        # ── Warm-up: build pos_embed at canonical resolution ───────────────
+        # This ensures TrainablePositionalEmbedding._h_built / _w_built are
+        # set for the intended grid (e.g. 14×14 for 224px/patch_size=16)
+        # BEFORE any training batch arrives.  Without this, if the first
+        # real forward pass uses a local-crop (smaller resolution) the
+        # pos_embed gets built for the wrong grid size and the subsequent
+        # bilinear-interpolation reshape crashes.
+        _dummy = tf.zeros([1, *input_shape])
+        _ = self.online_encoder(_dummy, training=False)
+        _ = self.teacher_encoder(_dummy, training=False)
 
     def compile(self, optimizer, **kwargs):
         super().compile(jit_compile=False, **kwargs)
