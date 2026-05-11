@@ -7,6 +7,8 @@ import tensorflow as tf
 import keras
 from keras import layers
 
+from models.conv_hybrid_vit import ConvHybridViTBackbone
+
 
 class PatchExtract(layers.Layer):
     def __init__(self, patch_size: int = 16, **kwargs):
@@ -242,6 +244,24 @@ def build_encoder(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), 
     name = name.lower()
     if name in {'vit', 'vanilla_vit'}:
         return VisionTransformerBackbone(input_shape=input_shape, embed_dim=embed_dim)
+    if name in {'conv_hybrid_vit', 'hybrid_vit', 'convhybridvit'}:
+        base_grid = (14, 14)
+        if input_shape[0] is not None and input_shape[1] is not None:
+            base_grid = (max(1, input_shape[0] // 16), max(1, input_shape[1] // 16))
+        return ConvHybridViTBackbone(
+            input_shape=(None, None, input_shape[-1]),
+            patch_size=16,
+            embed_dim=embed_dim,
+            depth=8,
+            num_heads=6,
+            mlp_dim=embed_dim * 2,
+            dropout=0.1,
+            conv_stem_depth=2,
+            stem_kernel_size=3,
+            use_positional_encoding=False,
+            base_grid_size=base_grid,
+            pool_mode='gap',
+        )
     if name in {'swin', 'swin_transformer'}:
         return SwinLikeBackbone(input_shape=input_shape, embed_dim=min(embed_dim, 192))
     if name in {'convnext', 'convnext_tiny'}:
