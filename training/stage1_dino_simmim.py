@@ -123,7 +123,7 @@ class DINOSimMIMPretrainModel(keras.Model):
             self.center_momentum * self.center + (1.0 - self.center_momentum) * batch_center
         )
 
-    def _compute_dino_loss(self, original_clean, aug_global, locals_):
+    def _compute_dino_loss(self, original_clean, aug_global, local_views):
         t1 = tf.stop_gradient(
             tf.nn.softmax(
                 (self._teacher_logits(original_clean) - self.center) / self.teacher_temp_var,
@@ -138,8 +138,8 @@ class DINOSimMIMPretrainModel(keras.Model):
         )
 
         s_all = [self._student_logits(original_clean), self._student_logits(aug_global)]
-        for lv in locals_:
-            s_all.append(self._student_logits(lv))
+        for i in range(self.n_local):
+            s_all.append(self._student_logits(local_views[i]))
 
         loss = tf.constant(0.0, dtype=tf.float32)
         n_pairs = 0
@@ -169,12 +169,12 @@ class DINOSimMIMPretrainModel(keras.Model):
         masked_clean = views[1]
         patch_mask = views[2]
         aug_global = views[3]
-        locals_ = list(views[4:]) if len(views) > 4 else []
+        local_views = tuple(views[4 + i] for i in range(self.n_local))
 
         self._init_teacher()
 
         with tf.GradientTape() as tape:
-            dino_loss, t1, t2 = self._compute_dino_loss(original_clean, aug_global, locals_)
+            dino_loss, t1, t2 = self._compute_dino_loss(original_clean, aug_global, local_views)
             simmim_loss = self._compute_simmim_loss(original_clean, masked_clean, patch_mask)
             lambda_s = tf.cast(self.lambda_simmim, tf.float32)
             total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss
@@ -196,7 +196,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         masked_clean = views[1]
         patch_mask = views[2]
         aug_global = views[3]
-        locals_ = list(views[4:]) if len(views) > 4 else []
+        local_views = tuple(views[4 + i] for i in range(self.n_local))
 
         dino_loss, _, _ = self._compute_dino_loss(original_clean, aug_global, locals_)
         simmim_loss = self._compute_simmim_loss(original_clean, masked_clean, patch_mask)
