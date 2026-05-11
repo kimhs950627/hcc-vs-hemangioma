@@ -65,3 +65,62 @@ class TeacherTempWarmupCallback(keras.callbacks.Callback):
                 "Callback has no effect.",
                 stacklevel=2,
             )
+
+
+class LambdaSimmIMWarmupCallback(keras.callbacks.Callback):
+    """Warm up model.lambda_simmim over training batches.
+
+    Schedule:
+      - hold start_value until start_step
+      - linearly increase to end_value over warmup_steps
+      - hold end_value afterwards
+
+    Works with any model exposing a writable ``lambda_simmim`` attribute.
+    """
+
+    def __init__(
+        self,
+        start_value: float = 0.0,
+        end_value: float = 0.3,
+        start_step: int = 0,
+        warmup_steps: int = 1000,
+        verbose: bool = False,
+    ):
+        super().__init__()
+        self.start_value = float(start_value)
+        self.end_value = float(end_value)
+        self.start_step = max(int(start_step), 0)
+        self.warmup_steps = max(int(warmup_steps), 1)
+        self.verbose = verbose
+        self._global_batch = 0
+
+    def on_train_begin(self, logs=None):
+        self._global_batch = 0
+        self._set_lambda(self.start_value)
+        if self.verbose:
+            print(f"\n[LambdaSimmIMWarmup] init lambda_simmim = {self.start_value:.6f}")
+
+    def on_train_batch_end(self, batch, logs=None):
+        self._global_batch += 1
+        if self._global_batch <= self.start_step:
+            new_value = self.start_value
+        else:
+            prog = min((self._global_batch - self.start_step) / self.warmup_steps, 1.0)
+            new_value = self.start_value + prog * (self.end_value - self.start_value)
+        self._set_lambda(new_value)
+        if self.verbose and self._global_batch % 20 == 0:
+            print(
+                f"\n[LambdaSimmIMWarmup] step={self._global_batch:5d} "
+                f"lambda_simmim={new_value:.6f}"
+            )
+
+    def _set_lambda(self, value: float):
+        if hasattr(self.model, 'lambda_simmim'):
+            self.model.lambda_simmim = float(value)
+        else:
+            import warnings
+            warnings.warn(
+                'LambdaSimmIMWarmupCallback: model has no lambda_simmim attribute. '
+                'Callback has no effect.',
+                stacklevel=2,
+            )
