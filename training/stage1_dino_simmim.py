@@ -164,7 +164,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         return masked_patch_l1_loss(pred_patches, target_patches, patch_mask)
 
     def train_step(self, data):
-        views = data[0] if isinstance(data, (list, tuple)) else data
+        views = data
         original_clean = views[0]
         masked_clean = views[1]
         patch_mask = views[2]
@@ -191,14 +191,14 @@ class DINOSimMIMPretrainModel(keras.Model):
         }
 
     def test_step(self, data):
-        views = data[0] if isinstance(data, (list, tuple)) else data
+        views = data
         original_clean = views[0]
         masked_clean = views[1]
         patch_mask = views[2]
         aug_global = views[3]
         local_views = tuple(views[4 + i] for i in range(self.n_local))
 
-        dino_loss, _, _ = self._compute_dino_loss(original_clean, aug_global, locals_)
+        dino_loss, _, _ = self._compute_dino_loss(original_clean, aug_global, local_views)
         simmim_loss = self._compute_simmim_loss(original_clean, masked_clean, patch_mask)
         lambda_s = tf.cast(self.lambda_simmim, tf.float32)
         total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss
