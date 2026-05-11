@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from training.stage1_byol import BYOLPretrainModel, build_stage1_byol_trainer
 from training.stage1_dino import DINOPretrainModel, build_stage1_dino_trainer
+from training.stage1_dino_simmim import DINOSimMIMPretrainModel, build_stage1_dino_simmim_trainer
 from training.stage1_moco import MoCoPretrainModel, build_stage1_moco_trainer
 from training.ssl_schedules import LrInput
 
 
-SSL_MODES = ('moco', 'byol', 'dino')
+SSL_MODES = ('moco', 'byol', 'dino', 'dino_simmim')
 
 
 def build_stage1_trainer(
@@ -24,6 +25,9 @@ def build_stage1_trainer(
     clipnorm: float | None = None,
     clipvalue: float | None = None,
     weight_decay: float = 1e-4,
+    lambda_simmim: float = 0.3,
+    patch_size: int = 16,
+    simmim_norm_target: bool = True,
 ):
     """Build a stage-1 SSL trainer.
 
@@ -67,6 +71,24 @@ def build_stage1_trainer(
             center_momentum=center_momentum,
             ema_momentum=ema_momentum,
             n_local=n_local,
+            lr=lr,
+            clipnorm=clipnorm,
+            clipvalue=clipvalue,
+            weight_decay=weight_decay,
+        )
+    if mode == 'dino_simmim':
+        return build_stage1_dino_simmim_trainer(
+            encoder_name=encoder_name,
+            input_shape=input_shape,
+            projection_dim=projection_dim,
+            temperature=temperature,
+            teacher_temp=teacher_temp,
+            center_momentum=center_momentum,
+            ema_momentum=ema_momentum,
+            n_local=n_local,
+            lambda_simmim=lambda_simmim,
+            patch_size=patch_size,
+            simmim_norm_target=simmim_norm_target,
             lr=lr,
             clipnorm=clipnorm,
             clipvalue=clipvalue,

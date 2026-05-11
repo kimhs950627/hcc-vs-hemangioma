@@ -53,3 +53,35 @@ def dino_cross_entropy(student_logits: tf.Tensor, teacher_logits: tf.Tensor, stu
     t = tf.stop_gradient(tf.nn.softmax(teacher_logits / teacher_temp, axis=-1))
     logp = tf.nn.log_softmax(s, axis=-1)
     return -tf.reduce_mean(tf.reduce_sum(t * logp, axis=-1))
+
+
+
+def patchify_images(images: tf.Tensor, patch_size: int = 16) -> tf.Tensor:
+    patches = tf.image.extract_patches(
+        images=images,
+        sizes=[1, patch_size, patch_size, 1],
+        strides=[1, patch_size, patch_size, 1],
+        rates=[1, 1, 1, 1],
+        padding='VALID',
+    )
+    patch_dim = tf.shape(patches)[-1]
+    return tf.reshape(patches, [tf.shape(images)[0], -1, patch_dim])
+
+
+def normalize_patch_targets(patches: tf.Tensor, eps: float = 1e-6) -> tf.Tensor:
+    mean = tf.reduce_mean(patches, axis=-1, keepdims=True)
+    var = tf.reduce_mean(tf.square(patches - mean), axis=-1, keepdims=True)
+    return (patches - mean) / tf.sqrt(var + eps)
+
+
+def masked_patch_l1_loss(
+    pred_patches: tf.Tensor,
+    target_patches: tf.Tensor,
+    patch_mask: tf.Tensor,
+    eps: float = 1e-6,
+) -> tf.Tensor:
+    patch_mask = tf.cast(patch_mask, pred_patches.dtype)
+    per_patch_l1 = tf.reduce_mean(tf.abs(pred_patches - target_patches), axis=-1)
+    weighted = per_patch_l1 * patch_mask
+    denom = tf.reduce_sum(patch_mask) + eps
+    return tf.reduce_sum(weighted) / denom
