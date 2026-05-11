@@ -240,7 +240,12 @@ class ClassifierWithEncoder(keras.Model):
         return {'logits': logits, 'probabilities': probs}
 
 
-def build_encoder(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), embed_dim: int = 384) -> keras.Model:
+def build_encoder(
+    name: str,
+    input_shape: tuple[int, int, int] = (224, 224, 3),
+    embed_dim: int = 384,
+    use_pe: bool = False,
+) -> keras.Model:
     name = name.lower()
     if name in {'vit', 'vanilla_vit'}:
         return VisionTransformerBackbone(input_shape=input_shape, embed_dim=embed_dim)
@@ -258,7 +263,7 @@ def build_encoder(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), 
             dropout=0.1,
             conv_stem_depth=2,
             stem_kernel_size=3,
-            use_positional_encoding=False,
+            use_positional_encoding=use_pe,
             base_grid_size=base_grid,
             pool_mode='gap',
         )
@@ -271,8 +276,8 @@ def build_encoder(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), 
     raise ValueError(f'Unsupported encoder: {name}')
 
 
-def build_classifier(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), num_classes: int = 2) -> ClassifierWithEncoder:
-    encoder = build_encoder(name=name, input_shape=input_shape)
+def build_classifier(name: str, input_shape: tuple[int, int, int] = (224, 224, 3), num_classes: int = 2, use_pe: bool = False) -> ClassifierWithEncoder:
+    encoder = build_encoder(name=name, input_shape=input_shape, use_pe=use_pe)
     return ClassifierWithEncoder(encoder=encoder, num_classes=num_classes, name=f'{name}_classifier')
 
 

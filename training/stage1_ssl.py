@@ -28,6 +28,7 @@ def build_stage1_trainer(
     lambda_simmim: float = 0.3,
     patch_size: int = 16,
     simmim_norm_target: bool = True,
+    use_pe: bool = False,
 ):
     """Build a stage-1 SSL trainer.
 
@@ -89,6 +90,7 @@ def build_stage1_trainer(
             lambda_simmim=lambda_simmim,
             patch_size=patch_size,
             simmim_norm_target=simmim_norm_target,
+            use_pe=use_pe,
             lr=lr,
             clipnorm=clipnorm,
             clipvalue=clipvalue,

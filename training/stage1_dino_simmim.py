@@ -40,6 +40,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         lambda_simmim: float = 0.3,
         patch_size: int = 16,
         simmim_norm_target: bool = True,
+        use_pe: bool = False,
     ):
         super().__init__()
         self.student_temp = student_temp
@@ -49,6 +50,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         self.lambda_simmim = float(lambda_simmim)
         self.patch_size = int(patch_size)
         self.simmim_norm_target = bool(simmim_norm_target)
+        self.use_pe = bool(use_pe)
 
         if input_shape[0] % self.patch_size != 0 or input_shape[1] % self.patch_size != 0:
             raise ValueError(
@@ -56,8 +58,8 @@ class DINOSimMIMPretrainModel(keras.Model):
                 f"Got input_shape={input_shape}, patch_size={patch_size}"
             )
 
-        self.online_encoder = build_encoder(encoder_name, input_shape=input_shape)
-        self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape)
+        self.online_encoder = build_encoder(encoder_name, input_shape=input_shape, use_pe=self.use_pe)
+        self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape, use_pe=self.use_pe)
         self.projector = keras.Sequential([
             layers.Dense(projection_dim, activation='gelu'),
             layers.Dense(projection_dim),
@@ -226,6 +228,7 @@ def build_stage1_dino_simmim_trainer(
     lambda_simmim: float = 0.3,
     patch_size: int = 16,
     simmim_norm_target: bool = True,
+    use_pe: bool = False,
     lr: LrInput = 1e-4,
     clipnorm: float | None = None,
     clipvalue: float | None = None,
@@ -243,6 +246,7 @@ def build_stage1_dino_simmim_trainer(
         lambda_simmim=lambda_simmim,
         patch_size=patch_size,
         simmim_norm_target=simmim_norm_target,
+        use_pe=use_pe,
     )
     opt_kwargs: dict = dict(learning_rate=lr)
     if clipnorm is not None:
