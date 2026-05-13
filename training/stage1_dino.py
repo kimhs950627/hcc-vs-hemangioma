@@ -97,7 +97,7 @@ class DINOPretrainModel(keras.Model):
     # ── train_step ────────────────────────────────────────────────────────
 
     def train_step(self, data):
-        views = data[0] if isinstance(data, (list, tuple)) else data
+        views = tf.nest.flatten(data)
         g1 = views[0]
         g2 = views[1]
         locals_ = tuple(views[2 + i] for i in range(self.n_local)) if self.n_local > 0 else ()
