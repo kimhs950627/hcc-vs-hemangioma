@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from typing import Any
@@ -7,7 +6,7 @@ import tensorflow as tf
 import keras
 from keras import layers
 
-from models.conv_hybrid_vit import ConvHybridViTBackbone
+from models.conv_hybrid_vit import ConvHybridViTBackbone, OptionalAbsolutePositionalEmbedding
 
 
 class PatchExtract(layers.Layer):
@@ -15,16 +14,19 @@ class PatchExtract(layers.Layer):
         super().__init__(**kwargs)
         self.patch_size = patch_size
 
-    def call(self, images: tf.Tensor) -> tf.Tensor:
+    def call(self, images: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        p = self.patch_size
         patches = tf.image.extract_patches(
             images=images,
-            sizes=[1, self.patch_size, self.patch_size, 1],
-            strides=[1, self.patch_size, self.patch_size, 1],
+            sizes=[1, p, p, 1],
+            strides=[1, p, p, 1],
             rates=[1, 1, 1, 1],
             padding='VALID',
         )
+        gh = tf.shape(patches)[1]
+        gw = tf.shape(patches)[2]
         patch_dim = tf.shape(patches)[-1]
-        return tf.reshape(patches, [tf.shape(images)[0], -1, patch_dim])
+        return tf.reshape(patches, [tf.shape(images)[0], -1, patch_dim]), gh, gw
 
 
 class LearnableCLSToken(layers.Layer):
@@ -38,18 +40,6 @@ class LearnableCLSToken(layers.Layer):
         b = tf.shape(x)[0]
         cls = tf.repeat(self.cls, repeats=b, axis=0)
         return tf.concat([cls, x], axis=1)
-
-
-class TrainablePositionalEmbedding(layers.Layer):
-    def build(self, input_shape):
-        n = int(input_shape[1])
-        d = int(input_shape[2])
-        self.pos = self.add_weight(
-            shape=(1, n, d), initializer='random_normal', trainable=True, name='pos_embed'
-        )
-
-    def call(self, x: tf.Tensor) -> tf.Tensor:
-        return x + self.pos
 
 
 class TransformerBlock(layers.Layer):
@@ -85,6 +75,30 @@ class TransformerBlock(layers.Layer):
 
 
 class VisionTransformerBackbone(keras.Model):
+    """Pure ViT backbone with variable-resolution support.
+
+    Patch embedding
+    ---------------
+    tf.image.extract_patches (no Conv2D) -> Dense projection
+    → no spatial inductive bias, uniform treatment of all patch positions
+
+    Positional encoding
+    -------------------
+    OptionalAbsolutePositionalEmbedding (bicubic interpolation, shared with ConvHybridViT)
+    → learnable (1, base_gh, base_gw, D) grid, resized at runtime to actual (gh, gw)
+    → supports arbitrary input resolutions without shape errors
+
+    CLS token
+    ---------
+    prepended after patch projection, before PE
+    PE for CLS uses a dedicated learnable scalar (use_cls_token=True)
+
+    Shape contract
+    --------------
+    Input : (B, H, W, 3), H and W must be multiples of patch_size
+    Output: cls_token (B, D), encoded_patches (B, N, D)
+    """
+
     def __init__(
         self,
         input_shape: tuple[int, int, int] = (224, 224, 3),
@@ -94,14 +108,29 @@ class VisionTransformerBackbone(keras.Model):
         num_heads: int = 6,
         mlp_dim: int = 768,
         dropout: float = 0.1,
+        use_positional_encoding: bool = True,
+        base_grid_size: tuple[int, int] = (14, 14),
         name: str = 'vit_backbone',
     ):
         super().__init__(name=name)
-        self.input_spec = keras.layers.InputSpec(shape=(None, *input_shape))
-        self.patch_extract = PatchExtract(patch_size)
-        self.patch_proj = layers.Dense(embed_dim)
-        self.cls_token_layer = LearnableCLSToken()
-        self.pos_embed = TrainablePositionalEmbedding()
+        self.input_spec = keras.layers.InputSpec(ndim=4, axes={-1: input_shape[-1]})
+        self.patch_size = int(patch_size)
+        self.embed_dim = int(embed_dim)
+        self.use_positional_encoding = bool(use_positional_encoding)
+
+        self.patch_extract = PatchExtract(patch_size, name='patch_extract')
+        self.patch_proj    = layers.Dense(embed_dim, use_bias=True, name='patch_proj')
+        self.cls_token_layer = LearnableCLSToken(name='cls_token')
+
+        # Shared PE class with ConvHybridViT — bicubic interpolation at runtime
+        # use_cls_token=True: separate learnable scalar for the CLS position
+        self.pos_embed = OptionalAbsolutePositionalEmbedding(
+            embed_dim=embed_dim,
+            base_grid_size=base_grid_size,
+            use_cls_token=True,
+            name='pos_embed',
+        )
+
         self.blocks = [
             TransformerBlock(embed_dim, num_heads, mlp_dim, dropout, name=f'block_{i}')
             for i in range(depth)
@@ -109,21 +138,41 @@ class VisionTransformerBackbone(keras.Model):
         self.norm = layers.LayerNormalization(epsilon=1e-6)
 
     def call(self, x: tf.Tensor, training: bool = False, return_attention: bool = True) -> dict[str, Any]:
-        x = self.patch_extract(x)
-        x = self.patch_proj(x)
-        x = self.cls_token_layer(x)
-        x = self.pos_embed(x)
+        h = tf.shape(x)[1]
+        w = tf.shape(x)[2]
+        tf.debugging.assert_equal(
+            tf.math.floormod(h, self.patch_size), 0,
+            message='Input height must be divisible by patch_size.',
+        )
+        tf.debugging.assert_equal(
+            tf.math.floormod(w, self.patch_size), 0,
+            message='Input width must be divisible by patch_size.',
+        )
+
+        # (B,H,W,3) → extract → (B,N,p*p*3) → Dense → (B,N,D)
+        patches, gh, gw = self.patch_extract(x)
+        tokens = self.patch_proj(patches)
+
+        # prepend CLS: (B,N,D) → (B,N+1,D)
+        tokens = self.cls_token_layer(tokens)
+
+        # bicubic PE (gh, gw for patch grid; CLS gets its own learnable pos)
+        if self.use_positional_encoding:
+            tokens = self.pos_embed(tokens, grid_hw=(gh, gw))
+
         attn_all = []
+        y = tokens
         for i, block in enumerate(self.blocks):
             ret_attn = return_attention and (i == len(self.blocks) - 1)
             if ret_attn:
-                x, attn = block(x, training=training, return_attention=True)
+                y, attn = block(y, training=training, return_attention=True)
                 attn_all.append(attn)
             else:
-                x = block(x, training=training, return_attention=False)
-        x = self.norm(x)
-        cls_token = x[:, 0, :]
-        encoded_patches = x[:, 1:, :]
+                y = block(y, training=training, return_attention=False)
+        y = self.norm(y)
+
+        cls_token       = y[:, 0, :]
+        encoded_patches = y[:, 1:, :]
         return {
             'cls_token': cls_token,
             'encoded_patches': encoded_patches,
@@ -148,7 +197,12 @@ class SwinLikeBackbone(keras.Model):
         super().__init__(name=name)
         self.proj = layers.Conv2D(embed_dim, kernel_size=patch_size, strides=patch_size, padding='valid')
         self.flatten = layers.Reshape((-1, embed_dim))
-        self.pos_embed = TrainablePositionalEmbedding()
+        self.pos_embed = OptionalAbsolutePositionalEmbedding(
+            embed_dim=embed_dim,
+            base_grid_size=(56, 56),
+            use_cls_token=False,
+            name='pos_embed',
+        )
         self.blocks = [
             TransformerBlock(embed_dim, num_heads, mlp_dim, dropout, name=f'swin_block_{i}')
             for i in range(depth)
@@ -161,19 +215,19 @@ class SwinLikeBackbone(keras.Model):
         h = tf.shape(fmap)[1]
         w = tf.shape(fmap)[2]
         c = tf.shape(fmap)[3]
-        x = self.flatten(fmap)
-        x = self.pos_embed(x)
+        tokens = self.flatten(fmap)
+        tokens = self.pos_embed(tokens, grid_hw=(h, w))
         attn_all = []
         for i, block in enumerate(self.blocks):
             ret_attn = return_attention and (i == len(self.blocks) - 1)
             if ret_attn:
-                x, attn = block(x, training=training, return_attention=True)
+                tokens, attn = block(tokens, training=training, return_attention=True)
                 attn_all.append(attn)
             else:
-                x = block(x, training=training, return_attention=False)
-        x = self.norm(x)
-        gap_vector = tf.reduce_mean(x, axis=1)
-        encoded_patches = x
+                tokens = block(tokens, training=training, return_attention=False)
+        tokens = self.norm(tokens)
+        gap_vector = tf.reduce_mean(tokens, axis=1)
+        encoded_patches = tokens
         fmap_out = tf.reshape(encoded_patches, [b, h, w, c])
         return {
             'cls_token': gap_vector,
@@ -254,9 +308,15 @@ def build_encoder(
     name = name.lower()
     if name in {'vit', 'vanilla_vit'}:
         resolved_patch_size = 16 if patch_size is None else int(patch_size)
-        resolved_depth = 8 if depth is None else int(depth)
-        resolved_num_heads = 6 if num_heads is None else int(num_heads)
-        resolved_mlp_dim = embed_dim * 2 if mlp_dim is None else int(mlp_dim)
+        resolved_depth      = 8  if depth is None else int(depth)
+        resolved_num_heads  = 6  if num_heads is None else int(num_heads)
+        resolved_mlp_dim    = embed_dim * 2 if mlp_dim is None else int(mlp_dim)
+        base_grid = (14, 14)
+        if input_shape[0] is not None and input_shape[1] is not None:
+            base_grid = (
+                max(1, input_shape[0] // resolved_patch_size),
+                max(1, input_shape[1] // resolved_patch_size),
+            )
         return VisionTransformerBackbone(
             input_shape=input_shape,
             patch_size=resolved_patch_size,
@@ -265,15 +325,20 @@ def build_encoder(
             num_heads=resolved_num_heads,
             mlp_dim=resolved_mlp_dim,
             dropout=dropout,
+            use_positional_encoding=use_pe,
+            base_grid_size=base_grid,
         )
     if name in {'conv_hybrid_vit', 'hybrid_vit', 'convhybridvit'}:
         resolved_patch_size = 16 if patch_size is None else int(patch_size)
-        resolved_depth = 8 if depth is None else int(depth)
-        resolved_num_heads = 6 if num_heads is None else int(num_heads)
-        resolved_mlp_dim = embed_dim * 2 if mlp_dim is None else int(mlp_dim)
+        resolved_depth      = 8  if depth is None else int(depth)
+        resolved_num_heads  = 6  if num_heads is None else int(num_heads)
+        resolved_mlp_dim    = embed_dim * 2 if mlp_dim is None else int(mlp_dim)
         base_grid = (14, 14)
         if input_shape[0] is not None and input_shape[1] is not None:
-            base_grid = (max(1, input_shape[0] // resolved_patch_size), max(1, input_shape[1] // resolved_patch_size))
+            base_grid = (
+                max(1, input_shape[0] // resolved_patch_size),
+                max(1, input_shape[1] // resolved_patch_size),
+            )
         return ConvHybridViTBackbone(
             input_shape=(None, None, input_shape[-1]),
             patch_size=resolved_patch_size,
@@ -338,21 +403,3 @@ class Classifier(keras.Model):
             'tokens': enc.get('tokens', None),
             'features': enc.get('features', None),
         }
-
-
-def build_classifier(
-    encoder_name: str,
-    input_shape=(224, 224, 3),
-    num_classes: int = 2,
-    projection_dim: int = 128,
-    classifier_hidden_dim: int = 256,
-    dropout_rate: float = 0.2,
-):
-    return Classifier(
-        encoder_name=encoder_name,
-        input_shape=input_shape,
-        num_classes=num_classes,
-        projection_dim=projection_dim,
-        classifier_hidden_dim=classifier_hidden_dim,
-        dropout_rate=dropout_rate,
-    )

@@ -8,10 +8,11 @@ from keras import layers
 
 
 class OptionalAbsolutePositionalEmbedding(layers.Layer):
-    """Learnable absolute positional embedding for variable token lengths.
+    """Learnable absolute positional embedding with bicubic interpolation.
 
-    Stores a base grid and interpolates it at runtime to the current token grid.
-    If use_positional_encoding=False, this layer is skipped by the backbone.
+    Stores a base grid (1, base_gh, base_gw, embed_dim) and bicubic-resizes
+    it at runtime to the actual patch grid (gh, gw).
+    Supports arbitrary input resolutions without shape errors.
     """
 
     def __init__(
@@ -58,40 +59,58 @@ class OptionalAbsolutePositionalEmbedding(layers.Layer):
 
 
 class ConvTokenEmbedding(layers.Layer):
-    """Direct non-overlapping convolutional patch embedding for variable resolutions."""
+    """Patch embedding via extract_patches + Dense (no Conv2D).
+
+    Using tf.image.extract_patches instead of Conv2D eliminates the
+    spatial inductive bias that causes geographic activation patterns.
+    Mathematically equivalent to stride-p Conv2D but with uniform
+    treatment of all patch positions.
+
+    Shape contract:
+        input : (B, H, W, 3)
+        output: tokens (B, N, embed_dim), fmap_placeholder None, gh, gw
+                N = (H // patch_size) * (W // patch_size)
+    """
 
     def __init__(
         self,
         patch_size: int = 16,
         embed_dim: int = 384,
-        conv_stem_depth: int = 1,
-        stem_kernel_size: int = 3,
-        stem_activation: str = 'gelu',
+        conv_stem_depth: int = 1,       # kept for API compat, unused
+        stem_kernel_size: int = 3,      # kept for API compat, unused
+        stem_activation: str = 'gelu',  # kept for API compat, unused
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.patch_size = int(patch_size)
-        self.embed_dim = int(embed_dim)
-        self.conv_stem_depth = int(conv_stem_depth)
-        self.stem_kernel_size = int(stem_kernel_size)
-        self.stem_activation = stem_activation
-        self.patch_proj = layers.Conv2D(
-            filters=self.embed_dim,
-            kernel_size=self.patch_size,
-            strides=self.patch_size,
-            padding='valid',
-            use_bias=True,
-            name='patch_proj',
-        )
+        self.embed_dim  = int(embed_dim)
+        # Dense projection: weight (p*p*3, embed_dim) = (768, 384)
+        # Param count identical to Conv2D(384, 16, stride=16): 16*16*3*384 = 294,912
+        self.patch_proj = layers.Dense(embed_dim, use_bias=True, name='patch_proj')
 
-    def call(self, x: tf.Tensor, training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+    def call(self, x: tf.Tensor, training: bool = False) -> tuple[tf.Tensor, None, tf.Tensor, tf.Tensor]:
         x = tf.cast(x, tf.float32)
-        fmap = self.patch_proj(x)
-        gh = tf.shape(fmap)[1]
-        gw = tf.shape(fmap)[2]
-        c = tf.shape(fmap)[3]
-        tokens = tf.reshape(fmap, [tf.shape(fmap)[0], gh * gw, c])
-        return tokens, fmap, gh, gw
+        p = self.patch_size
+
+        # (B, H, W, 3) → (B, gh, gw, p*p*3)
+        patches = tf.image.extract_patches(
+            images=x,
+            sizes=[1, p, p, 1],
+            strides=[1, p, p, 1],
+            rates=[1, 1, 1, 1],
+            padding='VALID',
+        )
+        gh = tf.shape(patches)[1]
+        gw = tf.shape(patches)[2]
+
+        # (B, gh, gw, p*p*3) → (B, gh*gw, p*p*3) → Dense → (B, N, embed_dim)
+        B       = tf.shape(x)[0]
+        flat    = tf.reshape(patches, [B, gh * gw, p * p * 3])
+        tokens  = self.patch_proj(flat)   # (B, N, embed_dim)
+
+        # fmap=None: ConvHybridViTBackbone uses it only for visualization;
+        # callers must guard with `if fmap is not None`
+        return tokens, None, gh, gw
 
 
 class TransformerEncoderBlock(layers.Layer):
@@ -134,21 +153,17 @@ class TransformerEncoderBlock(layers.Layer):
 
 
 class ConvHybridViTBackbone(keras.Model):
-    """Variable-resolution Conv-Hybrid ViT backbone.
+    """Variable-resolution ViT backbone (no Conv2D in patch embedding).
 
     Shape contract
     --------------
-    Input : [B, H, W, 3], with H and W multiples of patch_size.
-    Patch : non-overlapping Conv2D(stride=patch_size) -> [B, H/p, W/p, D]
-    Token : reshape -> [B, N, D], N = (H/p) * (W/p)
+    Input : [B, H, W, 3], H and W multiples of patch_size.
+    Patch : extract_patches -> Dense -> [B, N, embed_dim]
+            N = (H/p) * (W/p)
+    PE    : OptionalAbsolutePositionalEmbedding (bicubic, variable resolution)
 
-    Positional encoding
-    -------------------
-    - use_positional_encoding=False: no positional encoding
-    - use_positional_encoding=True : interpolated learnable absolute 2D embedding
-                                     initialised with TruncatedNormal(mean=0.0, stddev=0.02)
-
-    This backbone is designed to accept multiple resolutions with a single set of weights.
+    No spatial inductive bias from Conv2D.
+    Param count of patch_proj identical to the former Conv2D (294,912).
     """
 
     def __init__(
@@ -170,9 +185,9 @@ class ConvHybridViTBackbone(keras.Model):
         super().__init__(name=name)
         self.input_spec = keras.layers.InputSpec(ndim=4, axes={-1: input_shape[-1]})
         self.patch_size = int(patch_size)
-        self.embed_dim = int(embed_dim)
+        self.embed_dim  = int(embed_dim)
         self.use_positional_encoding = bool(use_positional_encoding)
-        self.pool_mode = pool_mode
+        self.pool_mode  = pool_mode
 
         self.token_embed = ConvTokenEmbedding(
             patch_size=patch_size,
@@ -197,13 +212,11 @@ class ConvHybridViTBackbone(keras.Model):
         h = tf.shape(x)[1]
         w = tf.shape(x)[2]
         tf.debugging.assert_equal(
-            tf.math.floormod(h, self.patch_size),
-            0,
+            tf.math.floormod(h, self.patch_size), 0,
             message='Input height must be divisible by patch_size.',
         )
         tf.debugging.assert_equal(
-            tf.math.floormod(w, self.patch_size),
-            0,
+            tf.math.floormod(w, self.patch_size), 0,
             message='Input width must be divisible by patch_size.',
         )
 
@@ -231,7 +244,7 @@ class ConvHybridViTBackbone(keras.Model):
 
         return {
             'encoded_patches': y,
-            'feature_map': fmap,
+            'feature_map': fmap,   # None (kept for API compat)
             'patch_grid_size': tf.stack([gh, gw]),
             'last_encoder_layer_attentional_weights': attn_all[-1] if attn_all else None,
             'attention_weights': attn_all,
