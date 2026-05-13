@@ -98,8 +98,9 @@ class DINOPretrainModel(keras.Model):
 
     def train_step(self, data):
         views = data[0] if isinstance(data, (list, tuple)) else data
-        g1, g2   = views[0], views[1]
-        locals_  = list(views[2:])  if len(views) > 2 else []
+        g1 = views[0]
+        g2 = views[1]
+        locals_ = tuple(views[2 + i] for i in range(self.n_local)) if self.n_local > 0 else ()
 
         self._init_teacher()
 
