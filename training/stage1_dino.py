@@ -136,8 +136,15 @@ class DINOPretrainModel(keras.Model):
                     n_pairs += 1
             loss = loss / tf.cast(n_pairs, tf.float32)
 
-        grads = tape.gradient(loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        trainable_vars = (
+            list(self.online_encoder.trainable_variables)
+            + list(self.projector.trainable_variables)
+        )
+        grads = tape.gradient(loss, trainable_vars)
+        grads_and_vars = [(g, v) for g, v in zip(grads, trainable_vars) if g is not None]
+        if not grads_and_vars:
+            raise ValueError('No gradients found for online encoder/projector variables.')
+        self.optimizer.apply_gradients(grads_and_vars)
         self._ema_update()
         self._update_center(
             self._teacher_logits(g1),
