@@ -684,12 +684,12 @@ def _build_masked_multiview_dataset(
 
         # ── Student local crops ──────────────────────────────────────────
         if local_views == 0:
-            return (original_clean, masked_clean, patch_mask, aug_global)
+            return ((original_clean, masked_clean, patch_mask, aug_global),)
 
         views = [original_clean, masked_clean, patch_mask, aug_global]
         for _ in range(local_views):
             views.append(local_aug(imgs_uint8, training=True))
-        return tuple(views)
+        return (tuple(views),)
 
     return raw_ds.map(_to_views, num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)
 
@@ -860,11 +860,11 @@ def _build_multiview_dataset(
         g1 = global_aug_v1(imgs_uint8, training=True)
         g2 = global_aug_v2(imgs_uint8, training=True)
         if local_views == 0:
-            return g1, g2
+            return ((g1, g2),)
         views = [g1, g2]
         for _ in range(local_views):
             views.append(local_aug(imgs_uint8, training=True))
-        return tuple(views)
+        return (tuple(views),)
 
     return raw_ds.map(_to_views, num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)
 
