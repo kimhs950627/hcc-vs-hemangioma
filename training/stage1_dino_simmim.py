@@ -181,8 +181,16 @@ class DINOSimMIMPretrainModel(keras.Model):
             lambda_s = tf.cast(self.lambda_simmim, tf.float32)
             total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss
 
-        grads = tape.gradient(total_loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        trainable_vars = (
+            list(self.online_encoder.trainable_variables)
+            + list(self.projector.trainable_variables)
+            + list(self.simmim_head.trainable_variables)
+        )
+        grads = tape.gradient(total_loss, trainable_vars)
+        grads_and_vars = [(g, v) for g, v in zip(grads, trainable_vars) if g is not None]
+        if not grads_and_vars:
+            raise ValueError('No gradients found for online encoder/projector/simmim_head variables.')
+        self.optimizer.apply_gradients(grads_and_vars)
         self._ema_update()
         self._update_center(self._teacher_logits(original_clean), self._teacher_logits(aug_global))
         return {
