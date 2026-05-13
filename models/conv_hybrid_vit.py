@@ -58,7 +58,7 @@ class OptionalAbsolutePositionalEmbedding(layers.Layer):
 
 
 class ConvTokenEmbedding(layers.Layer):
-    """Non-overlapping convolutional token embedding for variable resolutions."""
+    """Direct non-overlapping convolutional patch embedding for variable resolutions."""
 
     def __init__(
         self,
@@ -75,21 +75,6 @@ class ConvTokenEmbedding(layers.Layer):
         self.conv_stem_depth = int(conv_stem_depth)
         self.stem_kernel_size = int(stem_kernel_size)
         self.stem_activation = stem_activation
-        self.stem_layers: list[layers.Layer] = []
-        stem_dim = max(self.embed_dim // 2, 32)
-        for i in range(max(self.conv_stem_depth - 1, 0)):
-            self.stem_layers.extend([
-                layers.Conv2D(
-                    filters=stem_dim,
-                    kernel_size=self.stem_kernel_size,
-                    strides=1,
-                    padding='same',
-                    use_bias=False,
-                    name=f'stem_conv_{i}',
-                ),
-                layers.BatchNormalization(name=f'stem_bn_{i}'),
-                layers.Activation(self.stem_activation, name=f'stem_act_{i}'),
-            ])
         self.patch_proj = layers.Conv2D(
             filters=self.embed_dim,
             kernel_size=self.patch_size,
@@ -101,11 +86,6 @@ class ConvTokenEmbedding(layers.Layer):
 
     def call(self, x: tf.Tensor, training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
         x = tf.cast(x, tf.float32)
-        for layer in self.stem_layers:
-            if isinstance(layer, (layers.BatchNormalization, layers.Dropout)):
-                x = layer(x, training=training)
-            else:
-                x = layer(x)
         fmap = self.patch_proj(x)
         gh = tf.shape(fmap)[1]
         gw = tf.shape(fmap)[2]
