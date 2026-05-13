@@ -192,7 +192,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         return masked_patch_l1_loss(pred_patches, target_patches, patch_mask)
 
     def train_step(self, data):
-        views = data
+        views = tf.nest.flatten(data)
         original_clean = views[0]
         masked_clean = views[1]
         patch_mask = views[2]
@@ -227,7 +227,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         }
 
     def test_step(self, data):
-        views = data
+        views = tf.nest.flatten(data)
         original_clean = views[0]
         masked_clean = views[1]
         patch_mask = views[2]
