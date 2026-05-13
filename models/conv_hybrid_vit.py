@@ -30,7 +30,7 @@ class OptionalAbsolutePositionalEmbedding(layers.Layer):
         gh, gw = self.base_grid_size
         self.pos_grid = self.add_weight(
             shape=(1, gh, gw, self.embed_dim),
-            initializer='random_normal',
+            initializer=keras.initializers.TruncatedNormal(mean=0.0, stddev=0.02),
             trainable=True,
             name='pos_grid',
         )
