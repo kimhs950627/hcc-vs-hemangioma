@@ -57,8 +57,70 @@ class OptionalAbsolutePositionalEmbedding(layers.Layer):
         return x + pos
 
 
+class LightweightInvertedBottleneck(layers.Layer):
+    """Lightweight inverted bottleneck stem before patch projection.
+
+    Applies a cheap local feature extractor at full resolution without OOM:
+        PW expand (1x1) -> DW conv (3x3) -> PW shrink (1x1)
+
+    in_channels=3, expand_ratio=8 -> hidden=24ch.
+    Memory at (B=16, 384x384): 16 * 384 * 384 * 24 * 4 ~ 0.23 GB.
+    No residual (in_channels=3 is RGB; residual would add no benefit here).
+
+    Shape:
+        input : (B, H, W, in_channels)
+        output: (B, H, W, in_channels)   # shape preserved
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        expand_ratio: int = 8,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        hidden_dim = in_channels * expand_ratio  # 3 * 8 = 24
+
+        # Step 1: pointwise expand — channel mixing, no spatial op
+        self.pw_expand = keras.Sequential([
+            layers.Conv2D(hidden_dim, kernel_size=1, use_bias=False, padding='same'),
+            layers.BatchNormalization(),
+            layers.Activation('gelu'),
+        ], name='pw_expand')
+
+        # Step 2: depthwise 3x3 — spatial feature extraction, cheap
+        self.dw_conv = keras.Sequential([
+            layers.DepthwiseConv2D(kernel_size=3, padding='same', use_bias=False),
+            layers.BatchNormalization(),
+            layers.Activation('gelu'),
+        ], name='dw_conv')
+
+        # Step 3: pointwise shrink — project back, NO activation (information preservation)
+        self.pw_shrink = keras.Sequential([
+            layers.Conv2D(in_channels, kernel_size=1, use_bias=False, padding='same'),
+            layers.BatchNormalization(),
+        ], name='pw_shrink')
+
+    def call(self, x: tf.Tensor, training: bool = False) -> tf.Tensor:
+        # (B,H,W,3) -> expand(24) -> dw(24) -> shrink(3) -> (B,H,W,3)
+        out = self.pw_expand(x,   training=training)
+        out = self.dw_conv(out,   training=training)
+        out = self.pw_shrink(out, training=training)
+        return out
+
+
 class ConvTokenEmbedding(layers.Layer):
-    """Direct non-overlapping convolutional patch embedding for variable resolutions."""
+    """Convolutional patch embedding with optional inverted bottleneck stem.
+
+    Pipeline:
+        LightweightInvertedBottleneck (in_ch=3, expand=8)  [shape preserved]
+        -> Conv2D patch_proj (kernel=patch_size, stride=patch_size)
+        -> reshape to tokens
+
+    Shape contract:
+        input : (B, H, W, 3)
+        output: tokens (B, N, embed_dim), fmap (B, H/p, W/p, embed_dim), gh, gw
+    """
 
     def __init__(
         self,
@@ -75,6 +137,14 @@ class ConvTokenEmbedding(layers.Layer):
         self.conv_stem_depth = int(conv_stem_depth)
         self.stem_kernel_size = int(stem_kernel_size)
         self.stem_activation = stem_activation
+
+        # Inverted bottleneck stem: in_channels=3, expand_ratio=8 -> hidden=24ch
+        self.inv_bottleneck = LightweightInvertedBottleneck(
+            in_channels=3,
+            expand_ratio=8,
+            name='inv_bottleneck_stem',
+        )
+
         self.patch_proj = layers.Conv2D(
             filters=self.embed_dim,
             kernel_size=self.patch_size,
@@ -85,11 +155,13 @@ class ConvTokenEmbedding(layers.Layer):
         )
 
     def call(self, x: tf.Tensor, training: bool = False) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+        # (B, H, W, 3) -> inv_bottleneck -> (B, H, W, 3) -> patch_proj -> (B, H/p, W/p, D)
         x = tf.cast(x, tf.float32)
-        fmap = self.patch_proj(x)
+        x = self.inv_bottleneck(x, training=training)   # local feature extraction
+        fmap = self.patch_proj(x)                        # patch tokenisation
         gh = tf.shape(fmap)[1]
         gw = tf.shape(fmap)[2]
-        c = tf.shape(fmap)[3]
+        c  = tf.shape(fmap)[3]
         tokens = tf.reshape(fmap, [tf.shape(fmap)[0], gh * gw, c])
         return tokens, fmap, gh, gw
 
@@ -139,13 +211,15 @@ class ConvHybridViTBackbone(keras.Model):
     Shape contract
     --------------
     Input : [B, H, W, 3], with H and W multiples of patch_size.
-    Patch : non-overlapping Conv2D(stride=patch_size) -> [B, H/p, W/p, D]
-    Token : reshape -> [B, N, D], N = (H/p) * (W/p)
+    Stem  : LightweightInvertedBottleneck(in_ch=3, expand=8) -> [B, H, W, 3]
+    Patch : Conv2D(stride=patch_size) -> [B, H/p, W/p, embed_dim]
+    Token : reshape -> [B, N, embed_dim], N = (H/p) * (W/p)
 
     Positional encoding
     -------------------
     - use_positional_encoding=False: no positional encoding
     - use_positional_encoding=True : interpolated learnable absolute 2D embedding
+                                     initialised with TruncatedNormal(0, 0.02)
 
     This backbone is designed to accept multiple resolutions with a single set of weights.
     """
