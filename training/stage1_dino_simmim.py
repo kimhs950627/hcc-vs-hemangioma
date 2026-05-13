@@ -41,6 +41,12 @@ class DINOSimMIMPretrainModel(keras.Model):
         patch_size: int = 16,
         simmim_norm_target: bool = True,
         use_pe: bool = False,
+        encoder_embed_dim: int = 384,
+        encoder_depth: int | None = None,
+        encoder_num_heads: int | None = None,
+        encoder_mlp_dim: int | None = None,
+        encoder_patch_size: int | None = None,
+        encoder_dropout: float = 0.1,
     ):
         super().__init__()
         self.student_temp = student_temp
@@ -58,8 +64,28 @@ class DINOSimMIMPretrainModel(keras.Model):
                 f"Got input_shape={input_shape}, patch_size={patch_size}"
             )
 
-        self.online_encoder = build_encoder(encoder_name, input_shape=input_shape, use_pe=self.use_pe)
-        self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape, use_pe=self.use_pe)
+        self.online_encoder = build_encoder(
+            encoder_name,
+            input_shape=input_shape,
+            embed_dim=encoder_embed_dim,
+            depth=encoder_depth,
+            num_heads=encoder_num_heads,
+            mlp_dim=encoder_mlp_dim,
+            patch_size=encoder_patch_size,
+            dropout=encoder_dropout,
+            use_pe=self.use_pe,
+        )
+        self.teacher_encoder = build_encoder(
+            encoder_name,
+            input_shape=input_shape,
+            embed_dim=encoder_embed_dim,
+            depth=encoder_depth,
+            num_heads=encoder_num_heads,
+            mlp_dim=encoder_mlp_dim,
+            patch_size=encoder_patch_size,
+            dropout=encoder_dropout,
+            use_pe=self.use_pe,
+        )
         self.projector = keras.Sequential([
             layers.Dense(projection_dim, activation='gelu'),
             layers.Dense(projection_dim),
@@ -237,6 +263,12 @@ def build_stage1_dino_simmim_trainer(
     patch_size: int = 16,
     simmim_norm_target: bool = True,
     use_pe: bool = False,
+    encoder_embed_dim: int = 384,
+    encoder_depth: int | None = None,
+    encoder_num_heads: int | None = None,
+    encoder_mlp_dim: int | None = None,
+    encoder_patch_size: int | None = None,
+    encoder_dropout: float = 0.1,
     lr: LrInput = 1e-4,
     clipnorm: float | None = None,
     clipvalue: float | None = None,
@@ -255,6 +287,12 @@ def build_stage1_dino_simmim_trainer(
         patch_size=patch_size,
         simmim_norm_target=simmim_norm_target,
         use_pe=use_pe,
+        encoder_embed_dim=encoder_embed_dim,
+        encoder_depth=encoder_depth,
+        encoder_num_heads=encoder_num_heads,
+        encoder_mlp_dim=encoder_mlp_dim,
+        encoder_patch_size=encoder_patch_size,
+        encoder_dropout=encoder_dropout,
     )
     opt_kwargs: dict = dict(learning_rate=lr)
     if clipnorm is not None:

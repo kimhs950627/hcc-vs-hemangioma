@@ -27,6 +27,13 @@ class DINOPretrainModel(keras.Model):
         center_momentum: float = 0.9,
         ema_momentum: float = 0.996,
         n_local: int = 0,
+        encoder_embed_dim: int = 384,
+        encoder_depth: int | None = None,
+        encoder_num_heads: int | None = None,
+        encoder_mlp_dim: int | None = None,
+        encoder_patch_size: int | None = None,
+        encoder_dropout: float = 0.1,
+        use_pe: bool = False,
     ):
         super().__init__()
         self.student_temp  = student_temp
@@ -34,8 +41,28 @@ class DINOPretrainModel(keras.Model):
         self.ema_momentum    = ema_momentum
         self.n_local         = n_local
 
-        self.online_encoder  = build_encoder(encoder_name, input_shape=input_shape)
-        self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape)
+        self.online_encoder  = build_encoder(
+            encoder_name,
+            input_shape=input_shape,
+            embed_dim=encoder_embed_dim,
+            depth=encoder_depth,
+            num_heads=encoder_num_heads,
+            mlp_dim=encoder_mlp_dim,
+            patch_size=encoder_patch_size,
+            dropout=encoder_dropout,
+            use_pe=use_pe,
+        )
+        self.teacher_encoder = build_encoder(
+            encoder_name,
+            input_shape=input_shape,
+            embed_dim=encoder_embed_dim,
+            depth=encoder_depth,
+            num_heads=encoder_num_heads,
+            mlp_dim=encoder_mlp_dim,
+            patch_size=encoder_patch_size,
+            dropout=encoder_dropout,
+            use_pe=use_pe,
+        )
         self.projector = keras.Sequential([
             layers.Dense(projection_dim, activation='gelu'),
             layers.Dense(projection_dim),
@@ -165,6 +192,13 @@ def build_stage1_dino_trainer(
     center_momentum: float = 0.9,
     ema_momentum: float = 0.996,
     n_local: int = 0,
+    encoder_embed_dim: int = 384,
+    encoder_depth: int | None = None,
+    encoder_num_heads: int | None = None,
+    encoder_mlp_dim: int | None = None,
+    encoder_patch_size: int | None = None,
+    encoder_dropout: float = 0.1,
+    use_pe: bool = False,
     lr: LrInput = 1e-4,
     clipnorm: float | None = None,
     clipvalue: float | None = None,
@@ -179,6 +213,13 @@ def build_stage1_dino_trainer(
         center_momentum=center_momentum,
         ema_momentum=ema_momentum,
         n_local=n_local,
+        encoder_embed_dim=encoder_embed_dim,
+        encoder_depth=encoder_depth,
+        encoder_num_heads=encoder_num_heads,
+        encoder_mlp_dim=encoder_mlp_dim,
+        encoder_patch_size=encoder_patch_size,
+        encoder_dropout=encoder_dropout,
+        use_pe=use_pe,
     )
     opt_kwargs: dict = dict(learning_rate=lr)
     if clipnorm  is not None: opt_kwargs['clipnorm']  = clipnorm

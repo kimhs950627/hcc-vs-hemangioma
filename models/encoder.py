@@ -244,23 +244,44 @@ def build_encoder(
     name: str,
     input_shape: tuple[int, int, int] = (224, 224, 3),
     embed_dim: int = 384,
+    depth: int | None = None,
+    num_heads: int | None = None,
+    mlp_dim: int | None = None,
+    patch_size: int | None = None,
+    dropout: float = 0.1,
     use_pe: bool = False,
 ) -> keras.Model:
     name = name.lower()
     if name in {'vit', 'vanilla_vit'}:
-        return VisionTransformerBackbone(input_shape=input_shape, embed_dim=embed_dim)
+        resolved_patch_size = 16 if patch_size is None else int(patch_size)
+        resolved_depth = 8 if depth is None else int(depth)
+        resolved_num_heads = 6 if num_heads is None else int(num_heads)
+        resolved_mlp_dim = embed_dim * 2 if mlp_dim is None else int(mlp_dim)
+        return VisionTransformerBackbone(
+            input_shape=input_shape,
+            patch_size=resolved_patch_size,
+            embed_dim=embed_dim,
+            depth=resolved_depth,
+            num_heads=resolved_num_heads,
+            mlp_dim=resolved_mlp_dim,
+            dropout=dropout,
+        )
     if name in {'conv_hybrid_vit', 'hybrid_vit', 'convhybridvit'}:
+        resolved_patch_size = 16 if patch_size is None else int(patch_size)
+        resolved_depth = 8 if depth is None else int(depth)
+        resolved_num_heads = 6 if num_heads is None else int(num_heads)
+        resolved_mlp_dim = embed_dim * 2 if mlp_dim is None else int(mlp_dim)
         base_grid = (14, 14)
         if input_shape[0] is not None and input_shape[1] is not None:
-            base_grid = (max(1, input_shape[0] // 16), max(1, input_shape[1] // 16))
+            base_grid = (max(1, input_shape[0] // resolved_patch_size), max(1, input_shape[1] // resolved_patch_size))
         return ConvHybridViTBackbone(
             input_shape=(None, None, input_shape[-1]),
-            patch_size=16,
+            patch_size=resolved_patch_size,
             embed_dim=embed_dim,
-            depth=8,
-            num_heads=6,
-            mlp_dim=embed_dim * 2,
-            dropout=0.1,
+            depth=resolved_depth,
+            num_heads=resolved_num_heads,
+            mlp_dim=resolved_mlp_dim,
+            dropout=dropout,
             conv_stem_depth=2,
             stem_kernel_size=3,
             use_positional_encoding=use_pe,
