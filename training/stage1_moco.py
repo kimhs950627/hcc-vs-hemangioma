@@ -19,13 +19,18 @@ class MoCoPretrainModel(keras.Model):
         temperature: float = 0.1,
         ema_momentum: float = 0.996,
         teacher_temperature: TemperatureInput = 0.04,
+        encoder_attn_drop: bool = False,
+        encoder_attn_drop_rate: float = 0.0,
+        encoder_attn_drop_top_k: int = 40,
     ):
         super().__init__()
         self.temperature = temperature
         self.ema_momentum = ema_momentum
         self.teacher_temperature = teacher_temperature
-        self.online_encoder = build_encoder(encoder_name, input_shape=input_shape)
-        self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape)
+        self.online_encoder = build_encoder(encoder_name, input_shape=input_shape,
+            attn_drop=encoder_attn_drop, attn_drop_rate=encoder_attn_drop_rate, attn_drop_top_k=encoder_attn_drop_top_k)
+        self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape,
+            attn_drop=encoder_attn_drop, attn_drop_rate=encoder_attn_drop_rate, attn_drop_top_k=encoder_attn_drop_top_k)
         self.projector = keras.Sequential([
             layers.Dense(projection_dim, activation='gelu'),
             layers.Dense(projection_dim),
@@ -110,6 +115,9 @@ def build_stage1_moco_trainer(
     ema_momentum: float = 0.996,
     lr: LrInput = 1e-4,
     teacher_temperature: TemperatureInput = 0.04,
+    encoder_attn_drop: bool = False,
+    encoder_attn_drop_rate: float = 0.0,
+    encoder_attn_drop_top_k: int = 40,
     clipnorm: float | None = None,
     clipvalue: float | None = None,
     weight_decay: float = 1e-4,
@@ -121,6 +129,9 @@ def build_stage1_moco_trainer(
         temperature=temperature,
         ema_momentum=ema_momentum,
         teacher_temperature=teacher_temperature,
+        encoder_attn_drop=encoder_attn_drop,
+        encoder_attn_drop_rate=encoder_attn_drop_rate,
+        encoder_attn_drop_top_k=encoder_attn_drop_top_k,
     )
     model.compile(
         optimizer=keras.optimizers.AdamW(

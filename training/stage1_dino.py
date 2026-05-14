@@ -34,6 +34,9 @@ class DINOPretrainModel(keras.Model):
         encoder_patch_size: int | None = None,
         encoder_dropout: float = 0.1,
         use_pe: bool = False,
+        encoder_attn_drop: bool = False,
+        encoder_attn_drop_rate: float = 0.0,
+        encoder_attn_drop_top_k: int = 40,
     ):
         super().__init__()
         self.student_temp  = student_temp
@@ -51,6 +54,9 @@ class DINOPretrainModel(keras.Model):
             patch_size=encoder_patch_size,
             dropout=encoder_dropout,
             use_pe=use_pe,
+            attn_drop=encoder_attn_drop,
+            attn_drop_rate=encoder_attn_drop_rate,
+            attn_drop_top_k=encoder_attn_drop_top_k,
         )
         self.teacher_encoder = build_encoder(
             encoder_name,
@@ -62,6 +68,9 @@ class DINOPretrainModel(keras.Model):
             patch_size=encoder_patch_size,
             dropout=encoder_dropout,
             use_pe=use_pe,
+            attn_drop=encoder_attn_drop,
+            attn_drop_rate=encoder_attn_drop_rate,
+            attn_drop_top_k=encoder_attn_drop_top_k,
         )
         self.projector = keras.Sequential([
             layers.Dense(projection_dim, activation='gelu'),
@@ -199,6 +208,9 @@ def build_stage1_dino_trainer(
     encoder_patch_size: int | None = None,
     encoder_dropout: float = 0.1,
     use_pe: bool = False,
+    encoder_attn_drop: bool = False,
+    encoder_attn_drop_rate: float = 0.0,
+    encoder_attn_drop_top_k: int = 40,
     lr: LrInput = 1e-4,
     clipnorm: float | None = None,
     clipvalue: float | None = None,

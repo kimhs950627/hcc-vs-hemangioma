@@ -84,6 +84,9 @@ def build_supervised_benchmark_model(
     dropout_rate: float = 0.3,
     use_weight_decay: bool = False,
     weight_decay: float = 1e-4,
+    encoder_attn_drop: bool = False,
+    encoder_attn_drop_rate: float = 0.0,
+    encoder_attn_drop_top_k: int = 40,
 ) -> keras.Model:
     """Build scratch supervised binary classifier.
 
@@ -115,7 +118,8 @@ def build_supervised_benchmark_model(
     """
     # ── Encoder ───────────────────────────────────────────────────────────────
     if use_pretrained:
-        encoder = build_encoder(encoder_name, input_shape=input_shape)
+        encoder = build_encoder(encoder_name, input_shape=input_shape,
+            attn_drop=encoder_attn_drop, attn_drop_rate=encoder_attn_drop_rate, attn_drop_top_k=encoder_attn_drop_top_k)
     else:
         # For CNN backbones, override weights to None inside build_encoder
         # by monkey-patching keras.applications at call time.
@@ -134,7 +138,8 @@ def build_supervised_benchmark_model(
         _apps.ConvNeXtTiny  = _cnxt_no_pt   # type: ignore[attr-defined]
         _apps.EfficientNetB0 = _effn_no_pt  # type: ignore[attr-defined]
         try:
-            encoder = build_encoder(encoder_name, input_shape=input_shape)
+            encoder = build_encoder(encoder_name, input_shape=input_shape,
+                attn_drop=encoder_attn_drop, attn_drop_rate=encoder_attn_drop_rate, attn_drop_top_k=encoder_attn_drop_top_k)
         finally:
             _apps.ConvNeXtTiny  = _orig_cnxt
             _apps.EfficientNetB0 = _orig_effn
