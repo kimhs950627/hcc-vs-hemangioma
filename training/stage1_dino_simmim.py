@@ -47,6 +47,9 @@ class DINOSimMIMPretrainModel(keras.Model):
         encoder_mlp_dim: int | None = None,
         encoder_patch_size: int | None = None,
         encoder_dropout: float = 0.1,
+        encoder_attn_drop: bool = False,
+        encoder_attn_drop_rate: float = 0.0,
+        encoder_attn_drop_top_k: int = 2,
     ):
         super().__init__()
         self.student_temp = student_temp
@@ -74,6 +77,9 @@ class DINOSimMIMPretrainModel(keras.Model):
             patch_size=encoder_patch_size,
             dropout=encoder_dropout,
             use_pe=self.use_pe,
+            attn_drop=encoder_attn_drop,
+            attn_drop_rate=encoder_attn_drop_rate,
+            attn_drop_top_k=encoder_attn_drop_top_k,
         )
         self.teacher_encoder = build_encoder(
             encoder_name,
@@ -85,6 +91,9 @@ class DINOSimMIMPretrainModel(keras.Model):
             patch_size=encoder_patch_size,
             dropout=encoder_dropout,
             use_pe=self.use_pe,
+            attn_drop=encoder_attn_drop,
+            attn_drop_rate=encoder_attn_drop_rate,
+            attn_drop_top_k=encoder_attn_drop_top_k,
         )
         self.projector = keras.Sequential([
             layers.Dense(projection_dim, activation='gelu'),
@@ -269,6 +278,9 @@ def build_stage1_dino_simmim_trainer(
     encoder_mlp_dim: int | None = None,
     encoder_patch_size: int | None = None,
     encoder_dropout: float = 0.1,
+    encoder_attn_drop: bool = False,
+    encoder_attn_drop_rate: float = 0.0,
+    encoder_attn_drop_top_k: int = 2,
     lr: LrInput = 1e-4,
     clipnorm: float | None = None,
     clipvalue: float | None = None,
@@ -293,6 +305,9 @@ def build_stage1_dino_simmim_trainer(
         encoder_mlp_dim=encoder_mlp_dim,
         encoder_patch_size=encoder_patch_size,
         encoder_dropout=encoder_dropout,
+        encoder_attn_drop=encoder_attn_drop,
+        encoder_attn_drop_rate=encoder_attn_drop_rate,
+        encoder_attn_drop_top_k=encoder_attn_drop_top_k,
     )
     opt_kwargs: dict = dict(learning_rate=lr)
     if clipnorm is not None:

@@ -7,6 +7,7 @@ import keras
 from keras import layers
 
 from models.conv_hybrid_vit import ConvHybridViTBackbone, OptionalAbsolutePositionalEmbedding
+from models.attention import AttentionDropMultiHeadAttention
 
 
 class PatchExtract(layers.Layer):
@@ -43,14 +44,34 @@ class LearnableCLSToken(layers.Layer):
 
 
 class TransformerBlock(layers.Layer):
-    def __init__(self, embed_dim: int, num_heads: int, mlp_dim: int, dropout: float = 0.1, **kwargs):
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        mlp_dim: int,
+        dropout: float = 0.1,
+        attn_drop: bool = False,
+        attn_drop_rate: float = 0.0,
+        attn_drop_top_k: int = 2,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.norm1 = layers.LayerNormalization(epsilon=1e-6)
-        self.attn = layers.MultiHeadAttention(
-            num_heads=num_heads,
-            key_dim=max(1, embed_dim // num_heads),
-            dropout=dropout,
-        )
+        if attn_drop:
+            self.attn = AttentionDropMultiHeadAttention(
+                num_heads=num_heads,
+                key_dim=max(1, embed_dim // num_heads),
+                dropout=dropout,
+                attn_drop=True,
+                attn_drop_rate=attn_drop_rate,
+                attn_drop_top_k=attn_drop_top_k,
+            )
+        else:
+            self.attn = layers.MultiHeadAttention(
+                num_heads=num_heads,
+                key_dim=max(1, embed_dim // num_heads),
+                dropout=dropout,
+            )
         self.drop1 = layers.Dropout(dropout)
         self.norm2 = layers.LayerNormalization(epsilon=1e-6)
         self.mlp = keras.Sequential([
@@ -110,6 +131,9 @@ class VisionTransformerBackbone(keras.Model):
         dropout: float = 0.1,
         use_positional_encoding: bool = True,
         base_grid_size: tuple[int, int] = (14, 14),
+        attn_drop: bool = False,
+        attn_drop_rate: float = 0.0,
+        attn_drop_top_k: int = 2,
         name: str = 'vit_backbone',
     ):
         super().__init__(name=name)
@@ -132,7 +156,16 @@ class VisionTransformerBackbone(keras.Model):
         )
 
         self.blocks = [
-            TransformerBlock(embed_dim, num_heads, mlp_dim, dropout, name=f'block_{i}')
+            TransformerBlock(
+                embed_dim,
+                num_heads,
+                mlp_dim,
+                dropout,
+                attn_drop=attn_drop,
+                attn_drop_rate=attn_drop_rate,
+                attn_drop_top_k=attn_drop_top_k,
+                name=f'block_{i}',
+            )
             for i in range(depth)
         ]
         self.norm = layers.LayerNormalization(epsilon=1e-6)
@@ -304,6 +337,9 @@ def build_encoder(
     patch_size: int | None = None,
     dropout: float = 0.1,
     use_pe: bool = False,
+    attn_drop: bool = False,
+    attn_drop_rate: float = 0.0,
+    attn_drop_top_k: int = 2,
 ) -> keras.Model:
     name = name.lower()
     if name in {'vit', 'vanilla_vit'}:
@@ -327,6 +363,9 @@ def build_encoder(
             dropout=dropout,
             use_positional_encoding=use_pe,
             base_grid_size=base_grid,
+            attn_drop=attn_drop,
+            attn_drop_rate=attn_drop_rate,
+            attn_drop_top_k=attn_drop_top_k,
         )
     if name in {'conv_hybrid_vit', 'hybrid_vit', 'convhybridvit'}:
         resolved_patch_size = 16 if patch_size is None else int(patch_size)
