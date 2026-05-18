@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from training.stage1_byol import BYOLPretrainModel, build_stage1_byol_trainer
+from training.stage1_config import Stage1TrainerConfig
 from training.stage1_dino import DINOPretrainModel, build_stage1_dino_trainer
 from training.stage1_dino_simmim import DINOSimMIMPretrainModel, build_stage1_dino_simmim_trainer
 from training.stage1_moco import MoCoPretrainModel, build_stage1_moco_trainer
@@ -11,7 +12,8 @@ SSL_MODES = ('moco', 'byol', 'dino', 'dino_simmim')
 
 
 def build_stage1_trainer(
-    encoder_name: str,
+    cfg: Stage1TrainerConfig | None = None,
+    encoder_name: str = 'vit',
     input_shape=(224, 224, 3),
     projection_dim: int = 256,
     temperature: float = 0.1,
@@ -36,6 +38,96 @@ def build_stage1_trainer(
     ``TeacherTempWarmupCallback`` — do NOT pass warmup args here.
     Pass ``teacher_temp`` as the *initial* scalar value only.
     """
+    if cfg is not None:
+        mode = cfg.ssl_mode.lower()
+
+        if mode == 'moco':
+            return build_stage1_moco_trainer(
+                encoder_name=cfg.encoder.name,
+                input_shape=cfg.encoder.input_shape,
+                projection_dim=cfg.moco.projection_dim,
+                temperature=cfg.moco.temperature,
+                ema_momentum=cfg.moco.ema_momentum,
+                lr=cfg.optim.lr,
+                clipnorm=cfg.optim.clipnorm,
+                clipvalue=cfg.optim.clipvalue,
+                weight_decay=cfg.optim.weight_decay,
+            )
+        if mode == 'byol':
+            return build_stage1_byol_trainer(
+                encoder_name=cfg.encoder.name,
+                input_shape=cfg.encoder.input_shape,
+                projection_dim=cfg.byol.projection_dim,
+                predictor_dim=cfg.byol.predictor_dim,
+                ema_momentum=cfg.byol.ema_momentum,
+                lr=cfg.optim.lr,
+                clipnorm=cfg.optim.clipnorm,
+                clipvalue=cfg.optim.clipvalue,
+                weight_decay=cfg.optim.weight_decay,
+            )
+        if mode == 'dino':
+            return build_stage1_dino_trainer(
+                encoder_name=cfg.encoder.name,
+                input_shape=cfg.encoder.input_shape,
+                projection_dim=cfg.dino.projection_dim,
+                temperature=cfg.dino.student_temp,
+                teacher_temp=cfg.dino.teacher_temp,
+                center_momentum=cfg.dino.center_momentum,
+                ema_momentum=cfg.dino.ema_momentum,
+                n_local=cfg.dino.n_local,
+                encoder_embed_dim=cfg.encoder.embed_dim,
+                encoder_depth=cfg.encoder.depth,
+                encoder_num_heads=cfg.encoder.num_heads,
+                encoder_mlp_dim=cfg.encoder.mlp_dim,
+                encoder_patch_size=cfg.encoder.patch_size,
+                encoder_dropout=cfg.encoder.dropout,
+                use_pe=cfg.encoder.use_pe,
+                encoder_attn_drop=cfg.encoder.attn_drop,
+                encoder_attn_drop_rate=cfg.encoder.attn_drop_rate,
+                encoder_attn_drop_top_k=cfg.encoder.attn_drop_top_k,
+                lambda_selfpatch=cfg.selfpatch.weight,
+                selfpatch_proj_dim=cfg.selfpatch.proj_dim,
+                selfpatch_top_k=cfg.selfpatch.top_k,
+                selfpatch_temperature=cfg.selfpatch.temperature,
+                lr=cfg.optim.lr,
+                clipnorm=cfg.optim.clipnorm,
+                clipvalue=cfg.optim.clipvalue,
+                weight_decay=cfg.optim.weight_decay,
+            )
+        if mode == 'dino_simmim':
+            return build_stage1_dino_simmim_trainer(
+                encoder_name=cfg.encoder.name,
+                input_shape=cfg.encoder.input_shape,
+                projection_dim=cfg.dino.projection_dim,
+                temperature=cfg.dino.student_temp,
+                teacher_temp=cfg.dino.teacher_temp,
+                center_momentum=cfg.dino.center_momentum,
+                ema_momentum=cfg.dino.ema_momentum,
+                n_local=cfg.dino.n_local,
+                lambda_simmim=cfg.simmim.weight,
+                patch_size=cfg.simmim.patch_size,
+                simmim_norm_target=cfg.simmim.norm_target,
+                encoder_embed_dim=cfg.encoder.embed_dim,
+                encoder_depth=cfg.encoder.depth,
+                encoder_num_heads=cfg.encoder.num_heads,
+                encoder_mlp_dim=cfg.encoder.mlp_dim,
+                encoder_patch_size=cfg.encoder.patch_size,
+                encoder_dropout=cfg.encoder.dropout,
+                use_pe=cfg.encoder.use_pe,
+                encoder_attn_drop=cfg.encoder.attn_drop,
+                encoder_attn_drop_rate=cfg.encoder.attn_drop_rate,
+                encoder_attn_drop_top_k=cfg.encoder.attn_drop_top_k,
+                lambda_selfpatch=cfg.selfpatch.weight,
+                selfpatch_proj_dim=cfg.selfpatch.proj_dim,
+                selfpatch_top_k=cfg.selfpatch.top_k,
+                selfpatch_temperature=cfg.selfpatch.temperature,
+                lr=cfg.optim.lr,
+                clipnorm=cfg.optim.clipnorm,
+                clipvalue=cfg.optim.clipvalue,
+                weight_decay=cfg.optim.weight_decay,
+            )
+        raise ValueError(f'Unsupported ssl_mode={cfg.ssl_mode}. Expected one of: {SSL_MODES}')
+
     mode = ssl_mode.lower()
 
     if mode == 'moco':

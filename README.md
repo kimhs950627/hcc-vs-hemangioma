@@ -768,3 +768,54 @@ model = build_stage1_dino_simmim_trainer(
 - `lambda_selfpatch > 0.0` means SelfPatch is enabled as an auxiliary patch loss.
 - `lambda_simmim > 0.0` enables SimMIM in the hybrid trainer.
 - For the hybrid trainer, the dataset should yield `(original_clean, masked_clean, patch_mask, aug_global, local_1, ..., local_N)`.
+
+
+## Config-based Stage1 usage
+
+You can now build stage1 trainers from a grouped config object instead of passing many flat arguments.
+
+```python
+from training.config import (
+    Stage1TrainerConfig,
+    EncoderConfig,
+    DINOConfig,
+    SimMIMConfig,
+    SelfPatchConfig,
+    OptimConfig,
+    core_wandb_config,
+)
+from training.stage1_ssl import build_stage1_trainer
+
+cfg = Stage1TrainerConfig(
+    ssl_mode="dino_simmim",
+    encoder=EncoderConfig(
+        name="vit",
+        input_shape=(224, 224, 3),
+        embed_dim=384,
+        depth=8,
+        num_heads=8,
+        mlp_dim=1536,
+        patch_size=16,
+        use_pe=True,
+        attn_drop=True,
+        attn_drop_rate=0.2,
+        attn_drop_top_k=40,
+    ),
+    dino=DINOConfig(
+        projection_dim=256,
+        student_temp=0.1,
+        teacher_temp=0.04,
+        center_momentum=0.9,
+        ema_momentum=0.996,
+        n_local=6,
+    ),
+    simmim=SimMIMConfig(weight=0.30, patch_size=16, norm_target=False),
+    selfpatch=SelfPatchConfig(weight=0.03, proj_dim=256, top_k=4, temperature=0.07),
+    optim=OptimConfig(lr=1e-4, weight_decay=1e-4, clipnorm=1.0),
+)
+
+model = build_stage1_trainer(cfg=cfg)
+
+# Kaggle notebook: tune cfg in cells, then pass to trainer + wandb.
+wandb_cfg = core_wandb_config(cfg)
+```
