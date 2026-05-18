@@ -12,6 +12,7 @@ from training.losses import (
     patchify_images,
 )
 from training.ssl_schedules import LrInput
+from training.selfpatch import SelfPatch
 
 
 class DINOSimMIMPretrainModel(keras.Model):
@@ -50,6 +51,10 @@ class DINOSimMIMPretrainModel(keras.Model):
         encoder_attn_drop: bool = False,
         encoder_attn_drop_rate: float = 0.0,
         encoder_attn_drop_top_k: int = 2,
+        lambda_selfpatch: float = 0.0,
+        selfpatch_proj_dim: int = 256,
+        selfpatch_top_k: int = 4,
+        selfpatch_temperature: float = 0.07,
     ):
         super().__init__()
         self.student_temp = student_temp
@@ -60,6 +65,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         self.patch_size = int(patch_size)
         self.simmim_norm_target = bool(simmim_norm_target)
         self.use_pe = bool(use_pe)
+        self.lambda_selfpatch = float(lambda_selfpatch)
 
         if input_shape[0] % self.patch_size != 0 or input_shape[1] % self.patch_size != 0:
             raise ValueError(
@@ -109,6 +115,14 @@ class DINOSimMIMPretrainModel(keras.Model):
             layers.Dense(patch_dim, name='simmim_reconstruction_head'),
         ], name='simmim_head')
 
+        self.selfpatch = None
+        if self.lambda_selfpatch > 0.0:
+            self.selfpatch = SelfPatch(
+                proj_dim=selfpatch_proj_dim,
+                top_k=selfpatch_top_k,
+                temperature=selfpatch_temperature,
+            )
+
         self.center = tf.Variable(
             tf.zeros([1, projection_dim], dtype=tf.float32),
             trainable=False, name='dino_center'
@@ -135,6 +149,12 @@ class DINOSimMIMPretrainModel(keras.Model):
         out = self.online_encoder(x, training=training)
         encoded_patches = out['encoded_patches']
         return self.simmim_head(encoded_patches, training=training)
+
+    def _student_patches(self, x, training=True):
+        return self.online_encoder(x, training=training)['encoded_patches']
+
+    def _teacher_patches(self, x):
+        return self.teacher_encoder(x, training=False)['encoded_patches']
 
     def _init_teacher(self):
         if self._teacher_initialized:
@@ -213,8 +233,16 @@ class DINOSimMIMPretrainModel(keras.Model):
         with tf.GradientTape() as tape:
             dino_loss, t1, t2 = self._compute_dino_loss(original_clean, aug_global, local_views)
             simmim_loss = self._compute_simmim_loss(original_clean, masked_clean, patch_mask)
+            selfpatch_loss = tf.constant(0.0, dtype=tf.float32)
+            if self.selfpatch is not None:
+                selfpatch_loss = self.selfpatch(
+                    self._student_patches(original_clean, training=True),
+                    self._teacher_patches(original_clean),
+                    training=True,
+                )
             lambda_s = tf.cast(self.lambda_simmim, tf.float32)
-            total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss
+            lambda_p = tf.cast(self.lambda_selfpatch, tf.float32)
+            total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss
 
         trainable_vars = (
             list(self.online_encoder.trainable_variables)
@@ -233,6 +261,8 @@ class DINOSimMIMPretrainModel(keras.Model):
             'dino_loss': dino_loss,
             'simmim_loss': simmim_loss,
             'lambda_simmim': tf.cast(self.lambda_simmim, tf.float32),
+            'selfpatch_loss': selfpatch_loss,
+            'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32),
         }
 
     def test_step(self, data):
@@ -245,13 +275,23 @@ class DINOSimMIMPretrainModel(keras.Model):
 
         dino_loss, _, _ = self._compute_dino_loss(original_clean, aug_global, local_views)
         simmim_loss = self._compute_simmim_loss(original_clean, masked_clean, patch_mask)
+        selfpatch_loss = tf.constant(0.0, dtype=tf.float32)
+        if self.selfpatch is not None:
+            selfpatch_loss = self.selfpatch(
+                self._student_patches(original_clean, training=False),
+                self._teacher_patches(original_clean),
+                training=False,
+            )
         lambda_s = tf.cast(self.lambda_simmim, tf.float32)
-        total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss
+        lambda_p = tf.cast(self.lambda_selfpatch, tf.float32)
+        total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss
         return {
             'loss': total_loss,
             'dino_loss': dino_loss,
             'simmim_loss': simmim_loss,
             'lambda_simmim': tf.cast(self.lambda_simmim, tf.float32),
+            'selfpatch_loss': selfpatch_loss,
+            'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32),
         }
 
     def get_stage2_encoder(self, use_teacher: bool = True) -> keras.Model:
@@ -281,6 +321,10 @@ def build_stage1_dino_simmim_trainer(
     encoder_attn_drop: bool = False,
     encoder_attn_drop_rate: float = 0.0,
     encoder_attn_drop_top_k: int = 2,
+    lambda_selfpatch: float = 0.0,
+    selfpatch_proj_dim: int = 256,
+    selfpatch_top_k: int = 4,
+    selfpatch_temperature: float = 0.07,
     lr: LrInput = 1e-4,
     clipnorm: float | None = None,
     clipvalue: float | None = None,
@@ -308,6 +352,10 @@ def build_stage1_dino_simmim_trainer(
         encoder_attn_drop=encoder_attn_drop,
         encoder_attn_drop_rate=encoder_attn_drop_rate,
         encoder_attn_drop_top_k=encoder_attn_drop_top_k,
+        lambda_selfpatch=lambda_selfpatch,
+        selfpatch_proj_dim=selfpatch_proj_dim,
+        selfpatch_top_k=selfpatch_top_k,
+        selfpatch_temperature=selfpatch_temperature,
     )
     opt_kwargs: dict = dict(learning_rate=lr)
     if clipnorm is not None:

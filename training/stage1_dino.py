@@ -7,6 +7,7 @@ from keras import layers
 from models.encoder import build_encoder
 from training.losses import dino_cross_entropy
 from training.ssl_schedules import LrInput
+from training.selfpatch import SelfPatch
 
 
 class DINOPretrainModel(keras.Model):
@@ -37,12 +38,17 @@ class DINOPretrainModel(keras.Model):
         encoder_attn_drop: bool = False,
         encoder_attn_drop_rate: float = 0.0,
         encoder_attn_drop_top_k: int = 40,
+        lambda_selfpatch: float = 0.0,
+        selfpatch_proj_dim: int = 256,
+        selfpatch_top_k: int = 4,
+        selfpatch_temperature: float = 0.07,
     ):
         super().__init__()
         self.student_temp  = student_temp
         self.center_momentum = center_momentum
         self.ema_momentum    = ema_momentum
         self.n_local         = n_local
+        self.lambda_selfpatch = float(lambda_selfpatch)
 
         self.online_encoder  = build_encoder(
             encoder_name,
@@ -81,6 +87,14 @@ class DINOPretrainModel(keras.Model):
             layers.Dense(projection_dim),
         ], name='dino_teacher_head')
 
+        self.selfpatch = None
+        if self.lambda_selfpatch > 0.0:
+            self.selfpatch = SelfPatch(
+                proj_dim=selfpatch_proj_dim,
+                top_k=selfpatch_top_k,
+                temperature=selfpatch_temperature,
+            )
+
         self.center = tf.Variable(
             tf.zeros([1, projection_dim], dtype=tf.float32),
             trainable=False, name='dino_center'
@@ -105,6 +119,12 @@ class DINOPretrainModel(keras.Model):
     def _teacher_logits(self, x):
         out = self.teacher_encoder(x, training=False)
         return self.teacher_projector(out['embedding'], training=False)
+
+    def _student_patches(self, x, training=True):
+        return self.online_encoder(x, training=training)['encoded_patches']
+
+    def _teacher_patches(self, x):
+        return self.teacher_encoder(x, training=False)['encoded_patches']
 
     def _init_teacher(self):
         if self._teacher_initialized:
@@ -158,19 +178,29 @@ class DINOPretrainModel(keras.Model):
             for lv in locals_:
                 s_all.append(self._student_logits(lv))
 
-            loss = tf.constant(0.0)
+            dino_loss = tf.constant(0.0)
             n_pairs = 0
             for i, s in enumerate(s_all):
                 for j, t in enumerate([t1, t2]):
                     if i == j and i < 2:
                         continue
-                    loss = loss + dino_cross_entropy(
+                    dino_loss = dino_loss + dino_cross_entropy(
                         s, t,
                         student_temp=self.student_temp,
                         teacher_temp=1.0,
                     )
                     n_pairs += 1
-            loss = loss / tf.cast(n_pairs, tf.float32)
+            dino_loss = dino_loss / tf.cast(n_pairs, tf.float32)
+
+            selfpatch_loss = tf.constant(0.0, dtype=tf.float32)
+            if self.selfpatch is not None:
+                selfpatch_loss = self.selfpatch(
+                    self._student_patches(g1, training=True),
+                    self._teacher_patches(g1),
+                    training=True,
+                )
+
+            loss = dino_loss + self.lambda_selfpatch * selfpatch_loss
 
         trainable_vars = (
             list(self.online_encoder.trainable_variables)
@@ -186,7 +216,7 @@ class DINOPretrainModel(keras.Model):
             self._teacher_logits(g1),
             self._teacher_logits(g2),
         )
-        return {'loss': loss}
+        return {'loss': loss, 'dino_loss': dino_loss, 'selfpatch_loss': selfpatch_loss, 'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32)}
 
     def get_stage2_encoder(self, use_teacher: bool = True) -> keras.Model:
         return self.teacher_encoder if use_teacher else self.online_encoder
@@ -211,6 +241,10 @@ def build_stage1_dino_trainer(
     encoder_attn_drop: bool = False,
     encoder_attn_drop_rate: float = 0.0,
     encoder_attn_drop_top_k: int = 40,
+    lambda_selfpatch: float = 0.0,
+    selfpatch_proj_dim: int = 256,
+    selfpatch_top_k: int = 4,
+    selfpatch_temperature: float = 0.07,
     lr: LrInput = 1e-4,
     clipnorm: float | None = None,
     clipvalue: float | None = None,
@@ -232,6 +266,13 @@ def build_stage1_dino_trainer(
         encoder_patch_size=encoder_patch_size,
         encoder_dropout=encoder_dropout,
         use_pe=use_pe,
+        encoder_attn_drop=encoder_attn_drop,
+        encoder_attn_drop_rate=encoder_attn_drop_rate,
+        encoder_attn_drop_top_k=encoder_attn_drop_top_k,
+        lambda_selfpatch=lambda_selfpatch,
+        selfpatch_proj_dim=selfpatch_proj_dim,
+        selfpatch_top_k=selfpatch_top_k,
+        selfpatch_temperature=selfpatch_temperature,
     )
     opt_kwargs: dict = dict(learning_rate=lr)
     if clipnorm  is not None: opt_kwargs['clipnorm']  = clipnorm

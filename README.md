@@ -667,3 +667,104 @@ ssl_model = build_stage1_trainer(
 - `RandomContrast`, `RandomBrightness`, custom `RandomGamma`, `GaussianNoise`
 
 Gain/TGC variability 및 hypoechoic lesion interior에 대한 shortcut learning을 억제한다.
+
+
+## Stage1 SSL usage
+
+This repository supports `DINO`, `DINO + SelfPatch`, `DINO + SimMIM`, and `DINO + SimMIM + SelfPatch` in stage1 pretraining.
+
+### 1) DINO only
+```python
+from training.stage1_dino import build_stage1_dino_trainer
+
+model = build_stage1_dino_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    n_local=6,
+    encoder_embed_dim=384,
+    encoder_depth=8,
+    encoder_num_heads=8,
+    encoder_mlp_dim=1536,
+    encoder_patch_size=16,
+    use_pe=True,
+    lambda_selfpatch=0.0,
+    lr=1e-4,
+)
+```
+
+### 2) DINO + SelfPatch
+```python
+from training.stage1_dino import build_stage1_dino_trainer
+
+model = build_stage1_dino_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    n_local=6,
+    encoder_embed_dim=384,
+    encoder_depth=8,
+    encoder_num_heads=8,
+    encoder_mlp_dim=1536,
+    encoder_patch_size=16,
+    use_pe=True,
+    lambda_selfpatch=0.05,
+    selfpatch_proj_dim=256,
+    selfpatch_top_k=4,
+    selfpatch_temperature=0.07,
+    lr=1e-4,
+)
+```
+
+### 3) DINO + SimMIM
+```python
+from training.stage1_dino_simmim import build_stage1_dino_simmim_trainer
+
+model = build_stage1_dino_simmim_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    n_local=6,
+    lambda_simmim=0.30,
+    patch_size=16,
+    encoder_embed_dim=384,
+    encoder_depth=8,
+    encoder_num_heads=8,
+    encoder_mlp_dim=1536,
+    encoder_patch_size=16,
+    use_pe=True,
+    lambda_selfpatch=0.0,
+    lr=1e-4,
+)
+```
+
+### 4) DINO + SimMIM + SelfPatch
+```python
+from training.stage1_dino_simmim import build_stage1_dino_simmim_trainer
+
+model = build_stage1_dino_simmim_trainer(
+    encoder_name="vit",
+    input_shape=(224, 224, 3),
+    projection_dim=256,
+    n_local=6,
+    lambda_simmim=0.30,
+    patch_size=16,
+    encoder_embed_dim=384,
+    encoder_depth=8,
+    encoder_num_heads=8,
+    encoder_mlp_dim=1536,
+    encoder_patch_size=16,
+    use_pe=True,
+    lambda_selfpatch=0.05,
+    selfpatch_proj_dim=256,
+    selfpatch_top_k=4,
+    selfpatch_temperature=0.07,
+    lr=1e-4,
+)
+```
+
+### Notes
+- `lambda_selfpatch == 0.0` means SelfPatch is disabled.
+- `lambda_selfpatch > 0.0` means SelfPatch is enabled as an auxiliary patch loss.
+- `lambda_simmim > 0.0` enables SimMIM in the hybrid trainer.
+- For the hybrid trainer, the dataset should yield `(original_clean, masked_clean, patch_mask, aug_global, local_1, ..., local_N)`.
