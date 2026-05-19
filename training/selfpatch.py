@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 import keras
+import numpy as np
 import tensorflow as tf
 from keras import layers
 
@@ -40,10 +41,10 @@ class SelfPatch(layers.Layer):
             layers.Dense(self.proj_dim, activation='gelu'),
             layers.Dense(self.proj_dim),
         ], name=f'{name}_proj')
-        self._neighbor_index = None
-        self._cached_n = None
+        self._neighbor_index_np: np.ndarray | None = None
+        self._cached_n: int | None = None
 
-    def _build_neighbor_index(self, n_patches: int) -> tf.Tensor:
+    def _build_neighbor_index_np(self, n_patches: int) -> np.ndarray:
         side = int(math.sqrt(n_patches))
         if side * side != n_patches:
             raise ValueError(
@@ -67,31 +68,31 @@ class SelfPatch(layers.Layer):
                 while len(idxs) < len(offsets):
                     idxs.append(idxs[-1])
                 neighbors.append(idxs)
-        return tf.constant(neighbors, dtype=tf.int32)
+        return np.asarray(neighbors, dtype=np.int32)
 
     def _get_neighbor_index(self, n_patches: int) -> tf.Tensor:
-        if self._neighbor_index is None or self._cached_n != n_patches:
-            self._neighbor_index = self._build_neighbor_index(n_patches)
+        if self._neighbor_index_np is None or self._cached_n != n_patches:
+            self._neighbor_index_np = self._build_neighbor_index_np(n_patches)
             self._cached_n = n_patches
-        return self._neighbor_index
+        return tf.convert_to_tensor(self._neighbor_index_np, dtype=tf.int32)
 
     def call(self, student_patches: tf.Tensor, teacher_patches: tf.Tensor, training: bool = False) -> tf.Tensor:
-        student_proj = tf.math.l2_normalize(self.proj(student_patches, training=training), axis=-1)  # (B,N,D)
-        teacher_proj = tf.math.l2_normalize(self.proj(teacher_patches, training=False), axis=-1)     # (B,N,D)
+        student_proj = tf.math.l2_normalize(self.proj(student_patches, training=training), axis=-1)
+        teacher_proj = tf.math.l2_normalize(self.proj(teacher_patches, training=False), axis=-1)
 
-        n_patches = int(student_proj.shape[1])
+        n_patches = student_proj.shape[1]
         if n_patches is None:
             raise ValueError('SelfPatch requires static patch dimension N.')
-        neighbor_index = self._get_neighbor_index(n_patches)                                           # (N,Kc)
+        neighbor_index = self._get_neighbor_index(int(n_patches))
 
-        teacher_neighbors = tf.gather(teacher_proj, neighbor_index, axis=1)                           # (B,N,Kc,D)
-        sim = tf.reduce_sum(student_proj[:, :, None, :] * teacher_neighbors, axis=-1)                 # (B,N,Kc)
+        teacher_neighbors = tf.gather(teacher_proj, neighbor_index, axis=1)
+        sim = tf.reduce_sum(student_proj[:, :, None, :] * teacher_neighbors, axis=-1)
 
         k = min(self.top_k, teacher_neighbors.shape[2])
-        top_vals, top_idx = tf.math.top_k(sim, k=k, sorted=False)                                     # (B,N,K)
-        top_neighbors = tf.gather(teacher_neighbors, top_idx, batch_dims=2)                           # (B,N,K,D)
-        weights = tf.nn.softmax(top_vals / max(self.temperature, 1e-6), axis=-1)                      # (B,N,K)
-        target = tf.reduce_sum(top_neighbors * weights[..., None], axis=2)                            # (B,N,D)
+        top_vals, top_idx = tf.math.top_k(sim, k=k, sorted=False)
+        top_neighbors = tf.gather(teacher_neighbors, top_idx, batch_dims=2)
+        weights = tf.nn.softmax(top_vals / max(self.temperature, 1e-6), axis=-1)
+        target = tf.reduce_sum(top_neighbors * weights[..., None], axis=2)
         target = tf.stop_gradient(target)
 
         return tf.reduce_mean(tf.square(student_proj - target))
