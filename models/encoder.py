@@ -10,6 +10,7 @@ from models.conv_hybrid_vit import ConvHybridViTBackbone, OptionalAbsolutePositi
 from models.attention import AttentionDropMultiHeadAttention
 
 
+@keras.saving.register_keras_serializable(package="hcc")
 class PatchExtract(layers.Layer):
     def __init__(self, patch_size: int = 16, **kwargs):
         super().__init__(**kwargs)
@@ -30,6 +31,7 @@ class PatchExtract(layers.Layer):
         return tf.reshape(patches, [tf.shape(images)[0], -1, patch_dim]), gh, gw
 
 
+@keras.saving.register_keras_serializable(package="hcc")
 class LearnableCLSToken(layers.Layer):
     def build(self, input_shape):
         d = int(input_shape[-1])
@@ -42,7 +44,11 @@ class LearnableCLSToken(layers.Layer):
         cls = tf.repeat(self.cls, repeats=b, axis=0)
         return tf.concat([cls, x], axis=1)
 
+    def get_config(self):
+        return super().get_config()
 
+
+@keras.saving.register_keras_serializable(package="hcc")
 class TransformerBlock(layers.Layer):
     def __init__(
         self,
@@ -56,6 +62,13 @@ class TransformerBlock(layers.Layer):
         **kwargs,
     ):
         super().__init__(**kwargs)
+        self.embed_dim = int(embed_dim)
+        self.num_heads = int(num_heads)
+        self.mlp_dim = int(mlp_dim)
+        self.dropout = float(dropout)
+        self.attn_drop = bool(attn_drop)
+        self.attn_drop_rate = float(attn_drop_rate)
+        self.attn_drop_top_k = int(attn_drop_top_k)
         self.norm1 = layers.LayerNormalization(epsilon=1e-6)
         if attn_drop:
             self.attn = AttentionDropMultiHeadAttention(
@@ -95,6 +108,7 @@ class TransformerBlock(layers.Layer):
         return x
 
 
+@keras.saving.register_keras_serializable(package="hcc")
 class VisionTransformerBackbone(keras.Model):
     """Pure ViT backbone with variable-resolution support.
 

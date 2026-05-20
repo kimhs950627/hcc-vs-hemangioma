@@ -8,6 +8,7 @@ import tensorflow as tf
 from keras import layers
 
 
+@keras.saving.register_keras_serializable(package="hcc")
 class SelfPatch(layers.Layer):
     """Simple SelfPatch auxiliary module.
 
@@ -96,3 +97,12 @@ class SelfPatch(layers.Layer):
         target = tf.stop_gradient(target)
 
         return tf.reduce_mean(tf.square(student_proj - target))
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "proj_dim": self.proj_dim,
+            "top_k": self.top_k,
+            "temperature": self.temperature,
+        })
+        return config

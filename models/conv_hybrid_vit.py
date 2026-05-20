@@ -7,6 +7,7 @@ import tensorflow as tf
 from keras import layers
 
 
+@keras.saving.register_keras_serializable(package="hcc")
 class OptionalAbsolutePositionalEmbedding(layers.Layer):
     """Learnable absolute positional embedding with bicubic interpolation.
 
@@ -58,6 +59,7 @@ class OptionalAbsolutePositionalEmbedding(layers.Layer):
         return x + pos
 
 
+@keras.saving.register_keras_serializable(package="hcc")
 class ConvTokenEmbedding(layers.Layer):
     """Patch embedding via extract_patches + Dense (no Conv2D).
 
@@ -112,7 +114,16 @@ class ConvTokenEmbedding(layers.Layer):
         # callers must guard with `if fmap is not None`
         return tokens, None, gh, gw
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "patch_size": self.patch_size,
+            "embed_dim": self.embed_dim,
+        })
+        return config
 
+
+@keras.saving.register_keras_serializable(package="hcc")
 class TransformerEncoderBlock(layers.Layer):
     def __init__(
         self,
@@ -123,6 +134,10 @@ class TransformerEncoderBlock(layers.Layer):
         **kwargs,
     ):
         super().__init__(**kwargs)
+        self.embed_dim = int(embed_dim)
+        self.num_heads = int(num_heads)
+        self.mlp_dim = int(mlp_dim)
+        self.dropout = float(dropout)
         self.norm1 = layers.LayerNormalization(epsilon=1e-6)
         self.attn = layers.MultiHeadAttention(
             num_heads=num_heads,
@@ -152,6 +167,7 @@ class TransformerEncoderBlock(layers.Layer):
         return x
 
 
+@keras.saving.register_keras_serializable(package="hcc")
 class ConvHybridViTBackbone(keras.Model):
     """Variable-resolution ViT backbone (no Conv2D in patch embedding).
 

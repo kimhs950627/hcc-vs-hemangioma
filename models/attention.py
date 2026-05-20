@@ -7,6 +7,7 @@ import keras
 _NEG_INF = -1e9
 
 
+@keras.saving.register_keras_serializable(package="hcc")
 class AttentionDropMultiHeadAttention(keras.layers.MultiHeadAttention):
     """Official Keras MHA + optional AttentionDrop.
 
