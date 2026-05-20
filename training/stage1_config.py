@@ -23,7 +23,6 @@ class EncoderConfig:
     attn_drop: bool = False
     attn_drop_rate: float = 0.0
     attn_drop_top_k: int = 40
-    disagreement: DisagreementConfig = field(default_factory=DisagreementConfig)
 
 
 @dataclass
@@ -66,18 +65,15 @@ class SelfPatchConfig:
 
 
 
+
 @dataclass
-class DisagreementConfig:
+class DiversityConfig:
     weight: float = 0.0
     mode: str = "attention_map"
     apply_to: str = "student"
     start_layer: int | None = None
     end_layer: int | None = None
     normalize: bool = True
-
-@dataclass
-class DiversityConfig:
-    weight: float = 0.0
 
 
 @dataclass
@@ -114,8 +110,8 @@ class Stage1TrainerConfig:
             "lambda_simmim": self.simmim.weight,
             "lambda_selfpatch": self.selfpatch.weight,
             "lambda_diversity": self.diversity.weight,
-            "disagreement_weight": self.encoder.disagreement.weight,
-            "disagreement_mode": self.encoder.disagreement.mode,
+            "diversity_mode": self.diversity.mode,
+            "diversity_apply_to": self.diversity.apply_to,
             "lr": self.optim.lr,
             "weight_decay": self.optim.weight_decay,
         }
@@ -160,10 +156,12 @@ def core_wandb_config(cfg: Stage1TrainerConfig) -> dict[str, Any]:
         out["selfpatch_top_k"] = cfg.selfpatch.top_k
     if cfg.diversity.weight > 0.0:
         out["lambda_diversity"] = cfg.diversity.weight
-    if cfg.encoder.disagreement.weight > 0.0:
-        out["disagreement_weight"] = cfg.encoder.disagreement.weight
-        out["disagreement_mode"] = cfg.encoder.disagreement.mode
-        out["disagreement_apply_to"] = cfg.encoder.disagreement.apply_to
+    if cfg.diversity.weight > 0.0:
+        out["diversity_mode"] = cfg.diversity.mode
+        out["diversity_apply_to"] = cfg.diversity.apply_to
+        out["diversity_start_layer"] = cfg.diversity.start_layer
+        out["diversity_end_layer"] = cfg.diversity.end_layer
+        out["diversity_normalize"] = cfg.diversity.normalize
     if cfg.encoder.attn_drop:
         out["attn_drop_rate"] = cfg.encoder.attn_drop_rate
         out["attn_drop_top_k"] = cfg.encoder.attn_drop_top_k
