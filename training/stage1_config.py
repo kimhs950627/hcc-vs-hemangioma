@@ -65,6 +65,11 @@ class SelfPatchConfig:
 
 
 @dataclass
+class DiversityConfig:
+    weight: float = 0.0
+
+
+@dataclass
 class OptimConfig:
     lr: LrInput = 1e-4
     clipnorm: float | None = None
@@ -81,6 +86,7 @@ class Stage1TrainerConfig:
     moco: MoCoConfig = field(default_factory=MoCoConfig)
     simmim: SimMIMConfig = field(default_factory=SimMIMConfig)
     selfpatch: SelfPatchConfig = field(default_factory=SelfPatchConfig)
+    diversity: DiversityConfig = field(default_factory=DiversityConfig)
     optim: OptimConfig = field(default_factory=OptimConfig)
 
     def summary_dict(self) -> dict[str, Any]:
@@ -96,6 +102,7 @@ class Stage1TrainerConfig:
             "n_local": self.dino.n_local,
             "lambda_simmim": self.simmim.weight,
             "lambda_selfpatch": self.selfpatch.weight,
+            "lambda_diversity": self.diversity.weight,
             "lr": self.optim.lr,
             "weight_decay": self.optim.weight_decay,
         }
@@ -138,6 +145,8 @@ def core_wandb_config(cfg: Stage1TrainerConfig) -> dict[str, Any]:
     if cfg.selfpatch.weight > 0.0:
         out["lambda_selfpatch"] = cfg.selfpatch.weight
         out["selfpatch_top_k"] = cfg.selfpatch.top_k
+    if cfg.diversity.weight > 0.0:
+        out["lambda_diversity"] = cfg.diversity.weight
     if cfg.encoder.attn_drop:
         out["attn_drop_rate"] = cfg.encoder.attn_drop_rate
         out["attn_drop_top_k"] = cfg.encoder.attn_drop_top_k

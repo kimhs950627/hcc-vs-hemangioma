@@ -52,6 +52,7 @@ def build_stage1_trainer(
                 clipnorm=cfg.optim.clipnorm,
                 clipvalue=cfg.optim.clipvalue,
                 weight_decay=cfg.optim.weight_decay,
+                lambda_diversity=cfg.diversity.weight,
             )
         if mode == 'byol':
             return build_stage1_byol_trainer(
@@ -64,6 +65,7 @@ def build_stage1_trainer(
                 clipnorm=cfg.optim.clipnorm,
                 clipvalue=cfg.optim.clipvalue,
                 weight_decay=cfg.optim.weight_decay,
+                lambda_diversity=cfg.diversity.weight,
             )
         if mode == 'dino':
             return build_stage1_dino_trainer(
@@ -93,6 +95,7 @@ def build_stage1_trainer(
                 clipnorm=cfg.optim.clipnorm,
                 clipvalue=cfg.optim.clipvalue,
                 weight_decay=cfg.optim.weight_decay,
+                lambda_diversity=cfg.diversity.weight,
             )
         if mode == 'dino_simmim':
             return build_stage1_dino_simmim_trainer(
@@ -125,6 +128,7 @@ def build_stage1_trainer(
                 clipnorm=cfg.optim.clipnorm,
                 clipvalue=cfg.optim.clipvalue,
                 weight_decay=cfg.optim.weight_decay,
+                lambda_diversity=cfg.diversity.weight,
             )
         raise ValueError(f'Unsupported ssl_mode={cfg.ssl_mode}. Expected one of: {SSL_MODES}')
 
@@ -141,6 +145,7 @@ def build_stage1_trainer(
             clipnorm=clipnorm,
             clipvalue=clipvalue,
             weight_decay=weight_decay,
+            lambda_diversity=0.0,
         )
     if mode == 'byol':
         return build_stage1_byol_trainer(
@@ -153,6 +158,7 @@ def build_stage1_trainer(
             clipnorm=clipnorm,
             clipvalue=clipvalue,
             weight_decay=weight_decay,
+            lambda_diversity=0.0,
         )
     if mode == 'dino':
         return build_stage1_dino_trainer(
@@ -168,6 +174,7 @@ def build_stage1_trainer(
             clipnorm=clipnorm,
             clipvalue=clipvalue,
             weight_decay=weight_decay,
+            lambda_diversity=0.0,
         )
     if mode == 'dino_simmim':
         return build_stage1_dino_simmim_trainer(
@@ -187,5 +194,6 @@ def build_stage1_trainer(
             clipnorm=clipnorm,
             clipvalue=clipvalue,
             weight_decay=weight_decay,
+            lambda_diversity=0.0,
         )
     raise ValueError(f'Unsupported ssl_mode={ssl_mode}. Expected one of: {SSL_MODES}')

@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import keras
@@ -6,7 +5,7 @@ import tensorflow as tf
 from keras import layers
 
 from models.encoder import build_encoder
-from training.losses import info_nce_loss
+from training.losses import info_nce_loss, head_disagreement_loss
 from training.ssl_schedules import LrInput, TemperatureInput, resolve_schedule_value
 
 
@@ -22,15 +21,27 @@ class MoCoPretrainModel(keras.Model):
         encoder_attn_drop: bool = False,
         encoder_attn_drop_rate: float = 0.0,
         encoder_attn_drop_top_k: int = 40,
+        lambda_diversity: float = 0.0,
     ):
         super().__init__()
         self.temperature = temperature
         self.ema_momentum = ema_momentum
         self.teacher_temperature = teacher_temperature
-        self.online_encoder = build_encoder(encoder_name, input_shape=input_shape,
-            attn_drop=encoder_attn_drop, attn_drop_rate=encoder_attn_drop_rate, attn_drop_top_k=encoder_attn_drop_top_k)
-        self.teacher_encoder = build_encoder(encoder_name, input_shape=input_shape,
-            attn_drop=encoder_attn_drop, attn_drop_rate=encoder_attn_drop_rate, attn_drop_top_k=encoder_attn_drop_top_k)
+        self.lambda_diversity = float(lambda_diversity)
+        self.online_encoder = build_encoder(
+            encoder_name,
+            input_shape=input_shape,
+            attn_drop=encoder_attn_drop,
+            attn_drop_rate=encoder_attn_drop_rate,
+            attn_drop_top_k=encoder_attn_drop_top_k,
+        )
+        self.teacher_encoder = build_encoder(
+            encoder_name,
+            input_shape=input_shape,
+            attn_drop=encoder_attn_drop,
+            attn_drop_rate=encoder_attn_drop_rate,
+            attn_drop_top_k=encoder_attn_drop_top_k,
+        )
         self.projector = keras.Sequential([
             layers.Dense(projection_dim, activation='gelu'),
             layers.Dense(projection_dim),
@@ -61,6 +72,13 @@ class MoCoPretrainModel(keras.Model):
         temp = tf.maximum(self.teacher_temp_var, 1e-6)
         return tf.math.l2_normalize(z / temp, axis=-1)
 
+    def _compute_diversity_loss(self, x: tf.Tensor, training: bool = True) -> tf.Tensor:
+        out = self.online_encoder(x, training=training, return_attention=True)
+        attn = out.get('last_attn_scores', None)
+        if attn is None:
+            return tf.constant(0.0, dtype=tf.float32)
+        return head_disagreement_loss(attn)
+
     def _init_teacher(self):
         if self._teacher_initialized:
             return
@@ -84,14 +102,27 @@ class MoCoPretrainModel(keras.Model):
         with tf.GradientTape() as tape:
             z1 = self._embed_online(v1, training=True)
             z2_teacher = tf.stop_gradient(self._embed_teacher(v2))
-            loss = info_nce_loss(z1, z2_teacher, temperature=self.temperature)
+            contrastive_loss = info_nce_loss(z1, z2_teacher, temperature=self.temperature)
+            diversity_loss = tf.constant(0.0, dtype=tf.float32)
+            if self.lambda_diversity > 0.0:
+                diversity_loss = self._compute_diversity_loss(v1, training=True)
+            loss = contrastive_loss + self.lambda_diversity * diversity_loss
         vars_ = self.online_encoder.trainable_weights + self.projector.trainable_weights
         grads = tape.gradient(loss, vars_)
-        self.optimizer.apply_gradients(zip(grads, vars_))
+        grads_and_vars = [(g, v) for g, v in zip(grads, vars_) if g is not None]
+        if not grads_and_vars:
+            raise ValueError('No gradients found for online encoder/projector variables.')
+        self.optimizer.apply_gradients(grads_and_vars)
         self._init_teacher()
         self._ema_update()
         self.ssl_step.assign_add(1)
-        return {'loss': loss, 'teacher_temp': self.teacher_temp_var}
+        return {
+            'loss': loss,
+            'contrastive_loss': contrastive_loss,
+            'diversity_loss': diversity_loss,
+            'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
+            'teacher_temp': self.teacher_temp_var,
+        }
 
     def test_step(self, data):
         views = tf.nest.flatten(data)
@@ -100,8 +131,18 @@ class MoCoPretrainModel(keras.Model):
         self._update_teacher_temp()
         z1 = self._embed_online(v1, training=False)
         z2 = self._embed_teacher(v2)
-        loss = info_nce_loss(z1, z2, temperature=self.temperature)
-        return {'loss': loss, 'teacher_temp': self.teacher_temp_var}
+        contrastive_loss = info_nce_loss(z1, z2, temperature=self.temperature)
+        diversity_loss = tf.constant(0.0, dtype=tf.float32)
+        if self.lambda_diversity > 0.0:
+            diversity_loss = self._compute_diversity_loss(v1, training=False)
+        loss = contrastive_loss + self.lambda_diversity * diversity_loss
+        return {
+            'loss': loss,
+            'contrastive_loss': contrastive_loss,
+            'diversity_loss': diversity_loss,
+            'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
+            'teacher_temp': self.teacher_temp_var,
+        }
 
     def get_stage2_encoder(self, use_teacher: bool = True):
         return self.teacher_encoder if use_teacher else self.online_encoder
@@ -118,6 +159,7 @@ def build_stage1_moco_trainer(
     encoder_attn_drop: bool = False,
     encoder_attn_drop_rate: float = 0.0,
     encoder_attn_drop_top_k: int = 40,
+    lambda_diversity: float = 0.0,
     clipnorm: float | None = None,
     clipvalue: float | None = None,
     weight_decay: float = 1e-4,
@@ -132,6 +174,7 @@ def build_stage1_moco_trainer(
         encoder_attn_drop=encoder_attn_drop,
         encoder_attn_drop_rate=encoder_attn_drop_rate,
         encoder_attn_drop_top_k=encoder_attn_drop_top_k,
+        lambda_diversity=lambda_diversity,
     )
     model.compile(
         optimizer=keras.optimizers.AdamW(

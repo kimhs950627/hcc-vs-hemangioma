@@ -5,7 +5,7 @@ import tensorflow as tf
 from keras import layers
 
 from models.encoder import build_encoder
-from training.losses import dino_cross_entropy
+from training.losses import dino_cross_entropy, head_disagreement_loss
 from training.ssl_schedules import LrInput
 from training.selfpatch import SelfPatch
 
@@ -14,7 +14,7 @@ class DINOPretrainModel(keras.Model):
     """DINO self-supervised pretraining model.
 
     teacher_temp_var is a plain tf.Variable that external callbacks
-    (TeacherTempWarmupCallback) update on_train_batch_end.  The model
+    (TeacherTempWarmupCallback) update on_train_batch_end. The model
     itself never touches teacher_temp_var except to read it.
     """
 
@@ -39,18 +39,20 @@ class DINOPretrainModel(keras.Model):
         encoder_attn_drop_rate: float = 0.0,
         encoder_attn_drop_top_k: int = 40,
         lambda_selfpatch: float = 0.0,
+        lambda_diversity: float = 0.0,
         selfpatch_proj_dim: int = 256,
         selfpatch_top_k: int = 4,
         selfpatch_temperature: float = 0.07,
     ):
         super().__init__()
-        self.student_temp  = student_temp
+        self.student_temp = student_temp
         self.center_momentum = center_momentum
-        self.ema_momentum    = ema_momentum
-        self.n_local         = n_local
+        self.ema_momentum = ema_momentum
+        self.n_local = n_local
         self.lambda_selfpatch = float(lambda_selfpatch)
+        self.lambda_diversity = float(lambda_diversity)
 
-        self.online_encoder  = build_encoder(
+        self.online_encoder = build_encoder(
             encoder_name,
             input_shape=input_shape,
             embed_dim=encoder_embed_dim,
@@ -97,20 +99,20 @@ class DINOPretrainModel(keras.Model):
 
         self.center = tf.Variable(
             tf.zeros([1, projection_dim], dtype=tf.float32),
-            trainable=False, name='dino_center'
+            trainable=False,
+            name='dino_center',
         )
-        # ── teacher_temp_var: ONLY written by TeacherTempWarmupCallback ──
         self.teacher_temp_var = tf.Variable(
-            float(teacher_temp), trainable=False,
-            dtype=tf.float32, name='teacher_temp_var'
+            float(teacher_temp),
+            trainable=False,
+            dtype=tf.float32,
+            name='teacher_temp_var',
         )
         self._teacher_initialized = False
 
     def compile(self, optimizer, **kwargs):
         super().compile(jit_compile=False, **kwargs)
         self.optimizer = optimizer
-
-    # ── internal helpers ──────────────────────────────────────────────────
 
     def _student_logits(self, x, training=True):
         out = self.online_encoder(x, training=training)
@@ -125,6 +127,13 @@ class DINOPretrainModel(keras.Model):
 
     def _teacher_patches(self, x):
         return self.teacher_encoder(x, training=False)['encoded_patches']
+
+    def _compute_diversity_loss(self, x: tf.Tensor, training: bool = True) -> tf.Tensor:
+        out = self.online_encoder(x, training=training, return_attention=True)
+        attn = out.get('last_attn_scores', None)
+        if attn is None:
+            return tf.constant(0.0, dtype=tf.float32)
+        return head_disagreement_loss(attn)
 
     def _init_teacher(self):
         if self._teacher_initialized:
@@ -144,13 +153,13 @@ class DINOPretrainModel(keras.Model):
 
     def _update_center(self, t1_logits, t2_logits):
         batch_center = tf.reduce_mean(
-            tf.concat([t1_logits, t2_logits], axis=0), axis=0, keepdims=True
+            tf.concat([t1_logits, t2_logits], axis=0),
+            axis=0,
+            keepdims=True,
         )
         self.center.assign(
             self.center_momentum * self.center + (1.0 - self.center_momentum) * batch_center
         )
-
-    # ── train_step ────────────────────────────────────────────────────────
 
     def train_step(self, data):
         views = tf.nest.flatten(data)
@@ -162,30 +171,25 @@ class DINOPretrainModel(keras.Model):
 
         with tf.GradientTape() as tape:
             t1 = tf.stop_gradient(
-                tf.nn.softmax(
-                    (self._teacher_logits(g1) - self.center) / self.teacher_temp_var,
-                    axis=-1,
-                )
+                tf.nn.softmax((self._teacher_logits(g1) - self.center) / self.teacher_temp_var, axis=-1)
             )
             t2 = tf.stop_gradient(
-                tf.nn.softmax(
-                    (self._teacher_logits(g2) - self.center) / self.teacher_temp_var,
-                    axis=-1,
-                )
+                tf.nn.softmax((self._teacher_logits(g2) - self.center) / self.teacher_temp_var, axis=-1)
             )
 
             s_all = [self._student_logits(g1), self._student_logits(g2)]
             for lv in locals_:
                 s_all.append(self._student_logits(lv))
 
-            dino_loss = tf.constant(0.0)
+            dino_loss = tf.constant(0.0, dtype=tf.float32)
             n_pairs = 0
             for i, s in enumerate(s_all):
                 for j, t in enumerate([t1, t2]):
                     if i == j and i < 2:
                         continue
                     dino_loss = dino_loss + dino_cross_entropy(
-                        s, t,
+                        s,
+                        t,
                         student_temp=self.student_temp,
                         teacher_temp=1.0,
                     )
@@ -200,23 +204,28 @@ class DINOPretrainModel(keras.Model):
                     training=True,
                 )
 
-            loss = dino_loss + self.lambda_selfpatch * selfpatch_loss
+            diversity_loss = tf.constant(0.0, dtype=tf.float32)
+            if self.lambda_diversity > 0.0:
+                diversity_loss = self._compute_diversity_loss(g1, training=True)
 
-        trainable_vars = (
-            list(self.online_encoder.trainable_variables)
-            + list(self.projector.trainable_variables)
-        )
+            loss = dino_loss + self.lambda_selfpatch * selfpatch_loss + self.lambda_diversity * diversity_loss
+
+        trainable_vars = list(self.online_encoder.trainable_variables) + list(self.projector.trainable_variables)
         grads = tape.gradient(loss, trainable_vars)
         grads_and_vars = [(g, v) for g, v in zip(grads, trainable_vars) if g is not None]
         if not grads_and_vars:
             raise ValueError('No gradients found for online encoder/projector variables.')
         self.optimizer.apply_gradients(grads_and_vars)
         self._ema_update()
-        self._update_center(
-            self._teacher_logits(g1),
-            self._teacher_logits(g2),
-        )
-        return {'loss': loss, 'dino_loss': dino_loss, 'selfpatch_loss': selfpatch_loss, 'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32)}
+        self._update_center(self._teacher_logits(g1), self._teacher_logits(g2))
+        return {
+            'loss': loss,
+            'dino_loss': dino_loss,
+            'selfpatch_loss': selfpatch_loss,
+            'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32),
+            'diversity_loss': diversity_loss,
+            'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
+        }
 
     def get_stage2_encoder(self, use_teacher: bool = True) -> keras.Model:
         return self.teacher_encoder if use_teacher else self.online_encoder
@@ -242,6 +251,7 @@ def build_stage1_dino_trainer(
     encoder_attn_drop_rate: float = 0.0,
     encoder_attn_drop_top_k: int = 40,
     lambda_selfpatch: float = 0.0,
+    lambda_diversity: float = 0.0,
     selfpatch_proj_dim: int = 256,
     selfpatch_top_k: int = 4,
     selfpatch_temperature: float = 0.07,
@@ -270,13 +280,16 @@ def build_stage1_dino_trainer(
         encoder_attn_drop_rate=encoder_attn_drop_rate,
         encoder_attn_drop_top_k=encoder_attn_drop_top_k,
         lambda_selfpatch=lambda_selfpatch,
+        lambda_diversity=lambda_diversity,
         selfpatch_proj_dim=selfpatch_proj_dim,
         selfpatch_top_k=selfpatch_top_k,
         selfpatch_temperature=selfpatch_temperature,
     )
     opt_kwargs: dict = dict(learning_rate=lr)
-    if clipnorm  is not None: opt_kwargs['clipnorm']  = clipnorm
-    if clipvalue is not None: opt_kwargs['clipvalue'] = clipvalue
+    if clipnorm is not None:
+        opt_kwargs['clipnorm'] = clipnorm
+    if clipvalue is not None:
+        opt_kwargs['clipvalue'] = clipvalue
     optimizer = keras.optimizers.AdamW(weight_decay=weight_decay, **opt_kwargs)
     model.compile(optimizer=optimizer)
     return model
