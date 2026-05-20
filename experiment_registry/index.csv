@@ -1,0 +1,2 @@
+model_id,experiment_name,ssl_mode,encoder_name,scheduler_name,initial_learning_rate,warmup_steps,decay_steps,alpha,warmup_target,final_loss,best_loss,final_val_loss,best_val_loss,best_epoch,model_filepath,run_json_path,created_at_kst
+jr1km6vs,dino_selfpatch,dino,vit,CosineDecay,1e-05,116,464,0.1,0.001,5.546272277832031,5.546189308166504,,,,models/stage1_jr1km6vs_dino_selfpatch_vit_teacher_encoder.keras,experiment_registry/runs/jr1km6vs/run.json,2026-05-20T21:40:10.485541+09:00
