@@ -74,7 +74,9 @@ class MoCoPretrainModel(keras.Model):
 
     def _compute_diversity_loss(self, x: tf.Tensor, training: bool = True) -> tf.Tensor:
         out = self.online_encoder(x, training=training, return_attention=True)
-        attn = out.get('last_attn_scores', None)
+        attn = out.get('last_encoder_layer_attentional_weights', None)
+        if attn is None:
+            attn = out.get('last_attn_scores', None)
         if attn is None:
             return tf.constant(0.0, dtype=tf.float32)
         return head_disagreement_loss(attn)
