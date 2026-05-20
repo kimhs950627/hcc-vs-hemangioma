@@ -64,6 +64,16 @@ class SelfPatchConfig:
     temperature: float = 0.07
 
 
+
+@dataclass
+class DisagreementConfig:
+    weight: float = 0.0
+    mode: str = "attention_map"
+    apply_to: str = "student"
+    start_layer: int | None = None
+    end_layer: int | None = None
+    normalize: bool = True
+
 @dataclass
 class DiversityConfig:
     weight: float = 0.0
