@@ -7,6 +7,7 @@ from keras import layers
 from models.encoder import build_encoder
 from training.losses import (
     dino_cross_entropy,
+    head_disagreement_loss,
     masked_patch_l1_loss,
     normalize_patch_targets,
     patchify_images,
@@ -52,6 +53,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         encoder_attn_drop_rate: float = 0.0,
         encoder_attn_drop_top_k: int = 2,
         lambda_selfpatch: float = 0.0,
+        lambda_diversity: float = 0.0,
         selfpatch_proj_dim: int = 256,
         selfpatch_top_k: int = 4,
         selfpatch_temperature: float = 0.07,
@@ -66,6 +68,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         self.simmim_norm_target = bool(simmim_norm_target)
         self.use_pe = bool(use_pe)
         self.lambda_selfpatch = float(lambda_selfpatch)
+        self.lambda_diversity = float(lambda_diversity)
 
         if input_shape[0] % self.patch_size != 0 or input_shape[1] % self.patch_size != 0:
             raise ValueError(
@@ -220,6 +223,15 @@ class DINOSimMIMPretrainModel(keras.Model):
             target_patches = normalize_patch_targets(target_patches)
         return masked_patch_l1_loss(pred_patches, target_patches, patch_mask)
 
+
+    def _compute_diversity_loss(self, x: tf.Tensor) -> tf.Tensor:
+        """Head disagreement loss on the last-layer attention of the student encoder."""
+        out = self.online_encoder(x, training=True, return_attention=True)
+        attn = out.get("last_attn_scores", None)
+        if attn is None:
+            return tf.constant(0.0, dtype=tf.float32)
+        return head_disagreement_loss(attn)
+
     def train_step(self, data):
         views = tf.nest.flatten(data)
         original_clean = views[0]
@@ -240,9 +252,13 @@ class DINOSimMIMPretrainModel(keras.Model):
                     self._teacher_patches(original_clean),
                     training=True,
                 )
+            diversity_loss = tf.constant(0.0, dtype=tf.float32)
+            if self.lambda_diversity > 0.0:
+                diversity_loss = self._compute_diversity_loss(original_clean)
             lambda_s = tf.cast(self.lambda_simmim, tf.float32)
             lambda_p = tf.cast(self.lambda_selfpatch, tf.float32)
-            total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss
+            lambda_d = tf.cast(self.lambda_diversity, tf.float32)
+            total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss + lambda_d * diversity_loss
 
         trainable_vars = (
             list(self.online_encoder.trainable_variables)
@@ -263,6 +279,8 @@ class DINOSimMIMPretrainModel(keras.Model):
             'lambda_simmim': tf.cast(self.lambda_simmim, tf.float32),
             'selfpatch_loss': selfpatch_loss,
             'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32),
+            'diversity_loss': diversity_loss,
+            'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
         }
 
     def test_step(self, data):
@@ -282,9 +300,13 @@ class DINOSimMIMPretrainModel(keras.Model):
                 self._teacher_patches(original_clean),
                 training=False,
             )
+        diversity_loss = tf.constant(0.0, dtype=tf.float32)
+        if self.lambda_diversity > 0.0:
+            diversity_loss = self._compute_diversity_loss(original_clean)
         lambda_s = tf.cast(self.lambda_simmim, tf.float32)
         lambda_p = tf.cast(self.lambda_selfpatch, tf.float32)
-        total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss
+        lambda_d = tf.cast(self.lambda_diversity, tf.float32)
+        total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss + lambda_d * diversity_loss
         return {
             'loss': total_loss,
             'dino_loss': dino_loss,
@@ -292,6 +314,8 @@ class DINOSimMIMPretrainModel(keras.Model):
             'lambda_simmim': tf.cast(self.lambda_simmim, tf.float32),
             'selfpatch_loss': selfpatch_loss,
             'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32),
+            'diversity_loss': diversity_loss,
+            'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
         }
 
     def get_stage2_encoder(self, use_teacher: bool = True) -> keras.Model:
@@ -322,6 +346,7 @@ def build_stage1_dino_simmim_trainer(
     encoder_attn_drop_rate: float = 0.0,
     encoder_attn_drop_top_k: int = 2,
     lambda_selfpatch: float = 0.0,
+    lambda_diversity: float = 0.0,
     selfpatch_proj_dim: int = 256,
     selfpatch_top_k: int = 4,
     selfpatch_temperature: float = 0.07,
@@ -353,6 +378,7 @@ def build_stage1_dino_simmim_trainer(
         encoder_attn_drop_rate=encoder_attn_drop_rate,
         encoder_attn_drop_top_k=encoder_attn_drop_top_k,
         lambda_selfpatch=lambda_selfpatch,
+        lambda_diversity=lambda_diversity,
         selfpatch_proj_dim=selfpatch_proj_dim,
         selfpatch_top_k=selfpatch_top_k,
         selfpatch_temperature=selfpatch_temperature,

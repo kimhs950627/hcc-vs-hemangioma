@@ -85,3 +85,38 @@ def masked_patch_l1_loss(
     weighted = per_patch_l1 * patch_mask
     denom = tf.reduce_sum(patch_mask) + eps
     return tf.reduce_sum(weighted) / denom
+
+
+# ---------------------------------------------------------------------------
+# Head Disagreement Loss
+# ---------------------------------------------------------------------------
+
+def head_disagreement_loss(attn_scores: tf.Tensor, eps: float = 1e-6) -> tf.Tensor:
+    """Penalise cosine similarity between attention maps of different heads.
+
+    Args:
+        attn_scores: (B, H, T, T)  – raw attention weights after softmax.
+                     Typically the last-layer scores returned by the encoder.
+    Returns:
+        scalar diversity penalty (lower = more diverse heads).
+    """
+    # average over batch → (H, T, T)
+    a = tf.reduce_mean(attn_scores, axis=0)           # (H, T, T)
+    # flatten token-token dimension → (H, T*T)
+    h = tf.shape(a)[0]
+    tt = tf.shape(a)[1] * tf.shape(a)[2]
+    a_flat = tf.reshape(a, [h, tt])                   # (H, T*T)
+
+    # L2-normalise each head's attention map
+    norm = tf.math.l2_normalize(a_flat, axis=-1)      # (H, T*T)
+
+    # pairwise cosine similarity matrix → (H, H)
+    sim = tf.matmul(norm, norm, transpose_b=True)     # (H, H)
+
+    # mask diagonal (self-similarity = 1 always)
+    h_int = attn_scores.shape[1] or tf.shape(attn_scores)[1]
+    mask = 1.0 - tf.eye(h, dtype=attn_scores.dtype)
+
+    # mean off-diagonal cosine sim
+    n_pairs = tf.cast(h * (h - 1), sim.dtype) + tf.cast(eps, sim.dtype)
+    return tf.reduce_sum(sim * mask) / n_pairs
