@@ -120,3 +120,69 @@ def head_disagreement_loss(attn_scores: tf.Tensor, eps: float = 1e-6) -> tf.Tens
     # mean off-diagonal cosine sim
     n_pairs = tf.cast(h * (h - 1), sim.dtype) + tf.cast(eps, sim.dtype)
     return tf.reduce_sum(sim * mask) / n_pairs
+
+
+
+def extract_cls_patch_attn(
+    attn_scores: tf.Tensor,
+    exclude_cls_col: bool = True,
+) -> tf.Tensor:
+    cls_row = attn_scores[:, :, 0, :]
+    if exclude_cls_col:
+        cls_row = cls_row[:, :, 1:]
+    return cls_row
+
+
+def head_cls_diversity_loss(
+    attn_scores: tf.Tensor,
+    exclude_cls_col: bool = True,
+    eps: float = 1e-6,
+) -> tf.Tensor:
+    a = extract_cls_patch_attn(attn_scores, exclude_cls_col=exclude_cls_col)
+    a = tf.math.l2_normalize(a, axis=-1, epsilon=eps)
+    sim = tf.matmul(a, a, transpose_b=True)
+    b = tf.shape(a)[0]
+    h = tf.shape(a)[1]
+    mask = 1.0 - tf.eye(h, batch_shape=[b], dtype=sim.dtype)
+    n_pairs = tf.cast(h * (h - 1), sim.dtype) + tf.cast(eps, sim.dtype)
+    per_sample = tf.reduce_sum(sim * mask, axis=[1, 2]) / n_pairs
+    return tf.reduce_mean(per_sample)
+
+
+def attention_entropy_floor_loss(
+    attn_scores: tf.Tensor,
+    exclude_cls_col: bool = True,
+    entropy_min: float = 2.5,
+    eps: float = 1e-8,
+) -> tf.Tensor:
+    a = extract_cls_patch_attn(attn_scores, exclude_cls_col=exclude_cls_col)
+    a = a / (tf.reduce_sum(a, axis=-1, keepdims=True) + eps)
+    ent = -tf.reduce_sum(a * tf.math.log(a + eps), axis=-1)
+    return tf.reduce_mean(tf.nn.relu(tf.cast(entropy_min, ent.dtype) - ent))
+
+
+def multilayer_cls_diversity_with_entropy(
+    attention_list,
+    layer_indices: list[int] | None = None,
+    exclude_cls_col: bool = True,
+    entropy_min: float = 2.5,
+    entropy_weight: float = 1.0,
+):
+    if not attention_list:
+        zero = tf.constant(0.0, dtype=tf.float32)
+        return zero, zero, zero
+
+    if layer_indices is None:
+        layer_indices = list(range(len(attention_list)))
+
+    div_terms = []
+    ent_terms = []
+    for idx in layer_indices:
+        attn = attention_list[idx]
+        div_terms.append(head_cls_diversity_loss(attn, exclude_cls_col=exclude_cls_col))
+        ent_terms.append(attention_entropy_floor_loss(attn, exclude_cls_col=exclude_cls_col, entropy_min=entropy_min))
+
+    div_loss = tf.add_n(div_terms) / tf.cast(len(div_terms), tf.float32)
+    ent_loss = tf.add_n(ent_terms) / tf.cast(len(ent_terms), tf.float32)
+    total = div_loss + tf.cast(entropy_weight, tf.float32) * ent_loss
+    return total, div_loss, ent_loss

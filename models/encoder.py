@@ -210,7 +210,7 @@ class VisionTransformerBackbone(keras.Model):
         attn_all = []
         y = tokens
         for i, block in enumerate(self.blocks):
-            ret_attn = return_attention and (i == len(self.blocks) - 1)
+            ret_attn = bool(return_attention)
             if ret_attn:
                 y, attn = block(y, training=training, return_attention=True)
                 attn_all.append(attn)
@@ -266,7 +266,7 @@ class SwinLikeBackbone(keras.Model):
         tokens = self.pos_embed(tokens, grid_hw=(h, w))
         attn_all = []
         for i, block in enumerate(self.blocks):
-            ret_attn = return_attention and (i == len(self.blocks) - 1)
+            ret_attn = bool(return_attention)
             if ret_attn:
                 tokens, attn = block(tokens, training=training, return_attention=True)
                 attn_all.append(attn)
