@@ -48,6 +48,12 @@ class DINOPretrainModel(keras.Model):
         selfpatch_proj_dim: int = 256,
         selfpatch_top_k: int = 4,
         selfpatch_temperature: float = 0.07,
+        diversity_layer_mode: str = 'top_half',
+        diversity_start_layer: int | None = None,
+        diversity_end_layer: int | None = None,
+        diversity_exclude_cls_col: bool = True,
+        diversity_entropy_weight: float = 1.0,
+        diversity_entropy_min: float = 2.5,
     ):
         super().__init__()
         self.student_temp = student_temp
@@ -56,12 +62,12 @@ class DINOPretrainModel(keras.Model):
         self.n_local = n_local
         self.lambda_selfpatch = float(lambda_selfpatch)
         self.lambda_diversity = float(lambda_diversity)
-        self.diversity_layer_mode = 'top_half'
-        self.diversity_start_layer = None
-        self.diversity_end_layer = None
-        self.diversity_exclude_cls_col = True
-        self.diversity_entropy_weight = 1.0
-        self.diversity_entropy_min = 2.5
+        self.diversity_layer_mode = diversity_layer_mode
+        self.diversity_start_layer = diversity_start_layer
+        self.diversity_end_layer = diversity_end_layer
+        self.diversity_exclude_cls_col = bool(diversity_exclude_cls_col)
+        self.diversity_entropy_weight = float(diversity_entropy_weight)
+        self.diversity_entropy_min = float(diversity_entropy_min)
 
         self.online_encoder = build_encoder(
             encoder_name,
@@ -294,6 +300,12 @@ def build_stage1_dino_trainer(
     selfpatch_proj_dim: int = 256,
     selfpatch_top_k: int = 4,
     selfpatch_temperature: float = 0.07,
+    diversity_layer_mode: str = 'top_half',
+    diversity_start_layer: int | None = None,
+    diversity_end_layer: int | None = None,
+    diversity_exclude_cls_col: bool = True,
+    diversity_entropy_weight: float = 1.0,
+    diversity_entropy_min: float = 2.5,
     lr: LrInput = 1e-4,
     clipnorm: float | None = None,
     clipvalue: float | None = None,
@@ -323,6 +335,12 @@ def build_stage1_dino_trainer(
         selfpatch_proj_dim=selfpatch_proj_dim,
         selfpatch_top_k=selfpatch_top_k,
         selfpatch_temperature=selfpatch_temperature,
+        diversity_layer_mode=diversity_layer_mode,
+        diversity_start_layer=diversity_start_layer,
+        diversity_end_layer=diversity_end_layer,
+        diversity_exclude_cls_col=diversity_exclude_cls_col,
+        diversity_entropy_weight=diversity_entropy_weight,
+        diversity_entropy_min=diversity_entropy_min,
     )
     opt_kwargs: dict = dict(learning_rate=lr)
     if clipnorm is not None:

@@ -53,6 +53,12 @@ def build_stage1_trainer(
                 clipvalue=cfg.optim.clipvalue,
                 weight_decay=cfg.optim.weight_decay,
                 lambda_diversity=cfg.diversity.weight,
+                diversity_layer_mode=cfg.diversity.layer_mode,
+                diversity_start_layer=cfg.diversity.start_layer,
+                diversity_end_layer=cfg.diversity.end_layer,
+                diversity_exclude_cls_col=cfg.diversity.exclude_cls_col,
+                diversity_entropy_weight=cfg.diversity.entropy_weight,
+                diversity_entropy_min=cfg.diversity.entropy_min,
             )
         if mode == 'byol':
             return build_stage1_byol_trainer(
@@ -66,6 +72,12 @@ def build_stage1_trainer(
                 clipvalue=cfg.optim.clipvalue,
                 weight_decay=cfg.optim.weight_decay,
                 lambda_diversity=cfg.diversity.weight,
+                diversity_layer_mode=cfg.diversity.layer_mode,
+                diversity_start_layer=cfg.diversity.start_layer,
+                diversity_end_layer=cfg.diversity.end_layer,
+                diversity_exclude_cls_col=cfg.diversity.exclude_cls_col,
+                diversity_entropy_weight=cfg.diversity.entropy_weight,
+                diversity_entropy_min=cfg.diversity.entropy_min,
             )
         if mode == 'dino':
             return build_stage1_dino_trainer(
@@ -96,6 +108,12 @@ def build_stage1_trainer(
                 clipvalue=cfg.optim.clipvalue,
                 weight_decay=cfg.optim.weight_decay,
                 lambda_diversity=cfg.diversity.weight,
+                diversity_layer_mode=cfg.diversity.layer_mode,
+                diversity_start_layer=cfg.diversity.start_layer,
+                diversity_end_layer=cfg.diversity.end_layer,
+                diversity_exclude_cls_col=cfg.diversity.exclude_cls_col,
+                diversity_entropy_weight=cfg.diversity.entropy_weight,
+                diversity_entropy_min=cfg.diversity.entropy_min,
             )
         if mode == 'dino_simmim':
             return build_stage1_dino_simmim_trainer(
@@ -129,6 +147,12 @@ def build_stage1_trainer(
                 clipvalue=cfg.optim.clipvalue,
                 weight_decay=cfg.optim.weight_decay,
                 lambda_diversity=cfg.diversity.weight,
+                diversity_layer_mode=cfg.diversity.layer_mode,
+                diversity_start_layer=cfg.diversity.start_layer,
+                diversity_end_layer=cfg.diversity.end_layer,
+                diversity_exclude_cls_col=cfg.diversity.exclude_cls_col,
+                diversity_entropy_weight=cfg.diversity.entropy_weight,
+                diversity_entropy_min=cfg.diversity.entropy_min,
             )
         raise ValueError(f'Unsupported ssl_mode={cfg.ssl_mode}. Expected one of: {SSL_MODES}')
 
