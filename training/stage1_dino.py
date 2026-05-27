@@ -5,7 +5,12 @@ import tensorflow as tf
 from keras import layers
 
 from models.encoder import build_encoder
-from training.losses import dino_cross_entropy, head_disagreement_loss
+from training.losses import (
+    attention_entropy_floor_loss,
+    dino_cross_entropy,
+    head_cls_diversity_loss,
+    multilayer_cls_diversity_with_entropy,
+)
 from training.ssl_schedules import LrInput
 from training.selfpatch import SelfPatch
 
@@ -51,6 +56,12 @@ class DINOPretrainModel(keras.Model):
         self.n_local = n_local
         self.lambda_selfpatch = float(lambda_selfpatch)
         self.lambda_diversity = float(lambda_diversity)
+        self.diversity_layer_mode = 'top_half'
+        self.diversity_start_layer = None
+        self.diversity_end_layer = None
+        self.diversity_exclude_cls_col = True
+        self.diversity_entropy_weight = 1.0
+        self.diversity_entropy_min = 2.5
 
         self.online_encoder = build_encoder(
             encoder_name,
@@ -128,14 +139,36 @@ class DINOPretrainModel(keras.Model):
     def _teacher_patches(self, x):
         return self.teacher_encoder(x, training=False)['encoded_patches']
 
-    def _compute_diversity_loss(self, x: tf.Tensor, training: bool = True) -> tf.Tensor:
+    def _compute_diversity_loss(self, x: tf.Tensor, training: bool = True):
         out = self.online_encoder(x, training=training, return_attention=True)
-        attn = out.get('last_encoder_layer_attentional_weights', None)
-        if attn is None:
-            attn = out.get('last_attn_scores', None)
-        if attn is None:
-            return tf.constant(0.0, dtype=tf.float32)
-        return head_disagreement_loss(attn)
+        attn_list = out.get('attention_weights', None)
+        if not attn_list:
+            zero = tf.constant(0.0, dtype=tf.float32)
+            return zero, zero, zero
+        layer_indices = self._resolve_diversity_layer_indices(len(attn_list))
+        return multilayer_cls_diversity_with_entropy(
+            attn_list,
+            layer_indices=layer_indices,
+            exclude_cls_col=self.diversity_exclude_cls_col,
+            entropy_min=self.diversity_entropy_min,
+            entropy_weight=self.diversity_entropy_weight,
+        )
+
+
+    def _resolve_diversity_layer_indices(self, n_layers: int) -> list[int]:
+        mode = self.diversity_layer_mode
+        if mode == 'last':
+            return [n_layers - 1]
+        if mode == 'all':
+            return list(range(n_layers))
+        if mode == 'top_half':
+            start = n_layers // 2
+            return list(range(start, n_layers))
+        if mode == 'range':
+            start = 0 if self.diversity_start_layer is None else self.diversity_start_layer
+            end = n_layers if self.diversity_end_layer is None else self.diversity_end_layer
+            return list(range(start, end))
+        raise ValueError(f'Unsupported diversity_layer_mode={mode}')
 
     def _init_teacher(self):
         if self._teacher_initialized:
@@ -207,8 +240,10 @@ class DINOPretrainModel(keras.Model):
                 )
 
             diversity_loss = tf.constant(0.0, dtype=tf.float32)
+            diversity_cls_loss = tf.constant(0.0, dtype=tf.float32)
+            diversity_entropy_loss = tf.constant(0.0, dtype=tf.float32)
             if self.lambda_diversity > 0.0:
-                diversity_loss = self._compute_diversity_loss(g1, training=True)
+                diversity_loss, diversity_cls_loss, diversity_entropy_loss = self._compute_diversity_loss(g1, training=True)
 
             loss = dino_loss + self.lambda_selfpatch * selfpatch_loss + self.lambda_diversity * diversity_loss
 
@@ -226,6 +261,8 @@ class DINOPretrainModel(keras.Model):
             'selfpatch_loss': selfpatch_loss,
             'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32),
             'diversity_loss': diversity_loss,
+            'diversity_cls_loss': diversity_cls_loss,
+            'diversity_entropy_loss': diversity_entropy_loss,
             'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
         }
 
