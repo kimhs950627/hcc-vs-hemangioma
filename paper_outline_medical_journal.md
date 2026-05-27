@@ -25,13 +25,29 @@ Prior medical-journal literature has shown that deep learning on abdominal ultra
 | Interpretable Machine Learning for Characterization of Focal Liver Lesions on CEUS | Scientific Reports, 2022 [web:1051] | Interpretable CEUS-based lesion characterization | Supports the need for interpretability and clinically meaningful features | CEUS/radiomics pipeline, not grayscale B-mode SSL with patch-level encoder utility |
 | Deep learning for abdominal ultrasound: severity of fatty liver | Journal of the Chinese Medical Association, 2021 [web:1040] | Abdominal US disease severity classification | Demonstrates acceptance of abdominal US deep learning in general medical journals | Different disease target; not focal liver lesion differentiation |
 
+
+## Updated clinical framing: from binary diagnosis to HCC proximity scoring
+
+In real clinical practice, especially in primary care, hypoechoic liver lesions are not cleanly separable into a binary normal-versus-cancer axis. Benign mimickers such as hemangioma, focal fat sparing, focal fatty change, inflammatory lesions, or indeterminate solid lesions may all enter the practical differential diagnosis, and grayscale ultrasound often leaves residual uncertainty before referral or second-line imaging.[UNVERIFIED] Because of this, the most clinically meaningful novelty of the present work may not be binary image classification alone, but the ability to quantify **how close an image or a patch-level embedding is to an HCC prototype**.[UNVERIFIED]
+
+This framing is related to prototype-based and case-based reasoning literature. ProtoPNet introduced the idea that a model can compare image parts against learned prototypes and make decisions based on patch-to-prototype similarity, yielding “this looks like that” explanations.[web:1072] More recent medical-imaging work has extended prototype reasoning toward patch-level medical concepts, localized explanation, and interactive similarity reasoning in clinical images.[web:1055][web:1074] Patch-based prototype networks have also been explored in radiology settings, indicating that prototype similarity can be used as an interpretable bridge between latent image representation and clinical decision support.[web:1058][web:1064]
+
+For the current ultrasound project, the clinically useful output can therefore be framed as an **HCC proximity score** derived from image-level or patch-level similarity to learned HCC prototypes rather than as a forced binary declaration that a lesion is simply “normal” or “cancer.”[UNVERIFIED] In practice, this could support triage and referral by identifying lesions whose latent representation lies close to HCC prototypes, even when the lesion is not confidently classifiable within a narrow benign-versus-malignant label space.[UNVERIFIED]
+
+### Implications for manuscript positioning
+
+- The manuscript should avoid overclaiming that grayscale ultrasound can fully resolve all hypoechoic liver lesions into binary benign-versus-HCC categories.[UNVERIFIED]
+- The stage-2 module can be positioned as **prototype-based quantitative similarity assessment** for HCC, with classification as one downstream use case rather than the only output.[UNVERIFIED]
+- Patch-level embeddings with shape `[patch_length, embed_dims]` become clinically meaningful because each patch can be scored against one or more HCC prototypes, enabling regional similarity maps and lesion-level summaries.[UNVERIFIED]
+- This strengthens the interpretability story in a way that is closer to clinical reasoning: “which part of this lesion resembles previously learned HCC patterns, and by how much?”[web:1072][web:1055]
+
 ## Proposed manuscript contribution
 
 The manuscript should position the contribution in clinical language rather than algorithm novelty language.
 
 ### Core contribution statement
 
-A **lightweight self-supervised B-mode ultrasound encoder** is developed for liver lesion analysis, with downstream focus on differentiating HCC from hemangioma and future support for prototype-based clinical interpretation.[UNVERIFIED]
+A **lightweight self-supervised B-mode ultrasound encoder** is developed for liver lesion analysis, with downstream focus on differentiating HCC from hemangioma while also enabling **prototype-based quantitative HCC similarity scoring** at the image and patch level for clinically interpretable decision support.[UNVERIFIED]
 
 ### Specific contributions to emphasize
 
@@ -39,6 +55,7 @@ A **lightweight self-supervised B-mode ultrasound encoder** is developed for liv
 - The stage-1 design explicitly seeks to preserve **encoded patch quality** for downstream dense/local tasks while maintaining global invariance.[UNVERIFIED]
 - A diversity regularization strategy based on **top-half multi-layer CLS-row diversity plus entropy floor** is introduced to reduce head collapse and encourage complementary regional attention.[UNVERIFIED]
 - The final framing is clinically oriented: not merely improving attention-map aesthetics, but supporting robust HCC-vs-hemangioma discrimination and stage-2 HCC prototype induction.[UNVERIFIED]
+- The downstream system can be formulated to output an **HCC prototype proximity score**, allowing quantitative assessment of how much a lesion or a local patch resembles learned HCC patterns.[UNVERIFIED]
 
 ## Suggested manuscript structure
 
@@ -125,16 +142,18 @@ The diversity module is computed on CLS-to-patch attention patterns from the top
 - [ ] Decide whether to keep formulae in the main manuscript or supplement.
 - [ ] Clarify the selected default hyperparameters and rationale.
 
-### 4.5 Stage-2 downstream task
+### 4.5 Stage-2 downstream task and HCC prototype scoring
 
 #### Draft
-After stage-1 pretraining, the encoder is transferred to the downstream HCC-vs-hemangioma classification task.[UNVERIFIED] If prototype induction is included in the submitted version, it should be presented as a clinically motivated interpretability component rather than as a purely algorithmic module.[UNVERIFIED]
+After stage-1 pretraining, the encoder is transferred to the downstream HCC-vs-hemangioma task, but the stage-2 framework should not be restricted to binary classification alone.[UNVERIFIED] Instead, the manuscript can emphasize a prototype-based analysis module in which image-level features or patch-level embeddings are compared against learned HCC prototypes to yield a quantitative **HCC proximity score**.[UNVERIFIED] This is conceptually aligned with prototype-based interpretable learning, where prediction is partly grounded in similarity between latent image patches and learned class prototypes.[web:1072][web:1058][web:1064]
 
 #### Checklist to expand
-- [ ] Define the stage-2 training and evaluation protocol.
-- [ ] Clarify whether fine-tuning is full, partial, or frozen-encoder based.
+- [ ] Define whether the primary stage-2 output is probability, prototype proximity, or both.
+- [ ] Specify how HCC prototypes are learned, stored, and updated.
+- [ ] Clarify whether patch-to-prototype similarity uses cosine similarity, Euclidean distance, or another metric.
+- [ ] Report how patch-level scores are aggregated into lesion-level or image-level summaries.
 - [ ] Add class imbalance handling and threshold selection.
-- [ ] Decide whether prototype results are in main paper or supplement.
+- [ ] Decide whether prototype visualizations are in the main paper or supplement.
 
 ### 4.6 Outcomes and statistical analysis
 
@@ -180,33 +199,36 @@ Representation analyses should support the clinical claim that stage-1 pretraini
 - [ ] Link representation behavior to downstream benefit.
 - [ ] Decide which analyses belong in the supplement to avoid overloading the main paper.
 
-### 5.4 Qualitative interpretation
+### 5.4 Prototype similarity and qualitative interpretation
 
 #### Draft
-Include representative ultrasound examples with attention or prototype visualizations, but describe them conservatively as supportive interpretability evidence rather than mechanistic proof.[UNVERIFIED]
+Include representative ultrasound examples with attention maps and prototype-based regional similarity visualizations, showing not only the final class decision but also **which patches were most similar to HCC prototypes and to what degree**.[UNVERIFIED] These displays should be framed as supportive evidence for clinical interpretability and triage relevance rather than as proof of causal lesion biology.[UNVERIFIED]
 
 #### Checklist to expand
-- [ ] Show true-positive, false-positive, and failure cases.
+- [ ] Show true-positive, false-positive, indeterminate-like, and failure cases.
 - [ ] Include examples from both HCC and hemangioma.
+- [ ] Visualize patch-level HCC proximity maps or top-k prototype-matching patches.
 - [ ] Ask whether lesion boundary, posterior enhancement, or surrounding liver texture seems clinically plausible.
+- [ ] Add at least one example where binary classification is uncertain but prototype proximity is informative.
 
 ## 6. Discussion
 
 ### Draft
-The discussion should begin with the main clinical finding: whether a lightweight self-supervised ultrasound encoder improved downstream HCC-vs-hemangioma diagnosis and whether the diversity-regularized stage-1 strategy produced a more usable representation for local reasoning.[UNVERIFIED] It should then compare the work with prior medical-journal literature on abdominal ultrasound AI, emphasizing that this study contributes a representation-learning perspective rather than only another supervised classifier.[web:1042][web:1044][web:1045]
+The discussion should begin with the main clinical finding: whether a lightweight self-supervised ultrasound encoder improved downstream HCC-vs-hemangioma diagnosis and whether the diversity-regularized stage-1 strategy produced a more usable representation for local reasoning and prototype-based HCC similarity assessment.[UNVERIFIED] It should then compare the work with prior medical-journal literature on abdominal ultrasound AI, emphasizing that this study contributes a representation-learning and prototype-reasoning perspective rather than only another supervised classifier.[web:1042][web:1044][web:1045]
 
 ### Checklist to expand
 - [ ] First paragraph: summarize main findings only.
 - [ ] Second paragraph: compare with prior B-mode and CEUS papers.
 - [ ] Third paragraph: explain why patch-quality preservation matters clinically.
-- [ ] Fourth paragraph: discuss interpretability carefully without overclaiming.
+- [ ] Fourth paragraph: discuss prototype proximity as a clinically more realistic framing than forced binary diagnosis.
+- [ ] Fifth paragraph: discuss interpretability carefully without overclaiming.
 - [ ] Add explicit limitations: retrospective design, single-center risk, still-image setting, label/reference limitations, and external validation need.
 - [ ] End with clinical implications and future prospective validation.
 
 ## 7. Conclusion
 
 ### Draft
-A clinically oriented conclusion should state that stage-1 self-supervised design may improve downstream liver ultrasound diagnosis by producing a reusable representation that balances global discrimination, local patch quality, and stable attention specialization.[UNVERIFIED]
+A clinically oriented conclusion should state that stage-1 self-supervised design may improve downstream liver ultrasound diagnosis by producing a reusable representation that balances global discrimination, local patch quality, stable attention specialization, and prototype-based quantitative HCC similarity assessment.[UNVERIFIED]
 
 ### Checklist to expand
 - [ ] Keep to 2–3 sentences.
@@ -222,6 +244,7 @@ The paper should resemble a medical-imaging journal article with a modest number
 - [ ] Figure 1: study flow / cohort selection.
 - [ ] Figure 2: overview of stage-1 and stage-2 pipeline in medical-style schematic.
 - [ ] Figure 3: representative HCC and hemangioma cases with attention/prototype overlays.
+- [ ] Figure 4: patch-level HCC prototype proximity visualization and lesion-level summary score example.
 - [ ] Table 1: cohort characteristics.
 - [ ] Table 2: main performance comparison across three stage-1 plans.
 - [ ] Table 3: ablation / representation-support analysis, possibly supplement.
