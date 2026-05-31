@@ -1,17 +1,18 @@
 # hcc-vs-hemangioma
 
-Lightweight ultrasound representation learning and downstream classification framework for HCC vs hemangioma, with a stage-1 self-supervised encoder and a stage-2 prototype-oriented classifier.
+Lightweight ultrasound representation learning and downstream classification framework for HCC vs hemangioma, with a stage-1 self-supervised encoder and a stage-2 supervised fine-tuning benchmark.
 
 ## Ultimate goal
 
-The current project is not only to obtain a good-looking mean attention map. The actual goal is to build a **lightweight encoder** that can be reused across multiple downstream tasks, including dense tasks that depend on `encoded_patches`, while also enabling stage-2 **HCC prototype induction** and final HCC-vs-hemangioma classification.
+The project is not only to obtain a visually appealing attention map. The real target is to build a **lightweight encoder** that can be reused across downstream classification and dense-token tasks, while preserving interpretable attention behavior and enabling stage-2 HCC-vs-hemangioma decision support.
 
 Concretely, the project aims to achieve all of the following:
 
 - Stable stage-1 self-supervised learning without late collapse.
-- Headwise attention specialization, so different heads attend to different hepatic regions rather than converging to the same hyperechoic shortcut.
-- High-quality `encoded_patches` that remain useful for dense tasks and local prototype reasoning.
-- Strong stage-2 classification performance together with clinically interpretable HCC prototypes.
+- Headwise attention specialization instead of shortcut monoculture.
+- High-quality `encoded_patches` that remain useful for dense downstream tasks.
+- Strong and reproducible stage-2 supervised performance under both pretrained and random-init settings.
+- Clear experiment control from Kaggle notebooks, including model path, experiment mode, LR policy, WandB logging, confusion matrix, and attention-map upload.
 
 ## Current stage-1 problem setting
 
@@ -77,16 +78,66 @@ raw ultrasound image
                                          +--> CLS-row diversity
                                          +--> entropy floor
 
-Stage 2: downstream learning
+Stage 2: supervised downstream learning
 
-stage-1 encoder
-      |
-      +--> classifier head ----------------------> HCC vs hemangioma prediction
-      |
-      +--> prototype module / prototype mining --> HCC prototypes
-      |
-      +--> dense/local token usage --------------> encoded_patch-based downstream tasks
+selected stage-1 encoder checkpoint
+                |
+                +------------------------------------------+
+                |                                          |
+                v                                          v
+      finetune mode                                 scratch mode
+(load MODEL_PATH weights)                    (random initialize encoder)
+                |                                          |
+                v                                          v
+      supervised model                            supervised model
+                |                                          |
+                |                                          |
+                +------------------+-----------------------+
+                                   |
+                                   v
+                         train / val / test evaluation
+                                   |
+                                   +--> CE / SupCon / total loss logging
+                                   +--> accuracy logging
+                                   +--> test confusion matrix
+                                   +--> test attention-map table
 ```
+
+## Stage-2 experiment modes
+
+Stage 2 is now controlled directly from `Stage2_SSK_run.ipynb`.
+
+### Researcher-controlled inputs
+
+- `MODEL_PATH`: path to the selected stage-1 encoder checkpoint.
+- `EXPERIMENT_MODE`: one of `scratch`, `finetune`, or `both`.
+- `LR_MODE`: one of `constant` or `cosine`.
+- `LR`: base learning rate value.
+- `WARMUP_EPOCHS`: warmup length when cosine schedule is used.
+
+### Mode behavior
+
+| Mode | Encoder initialization | Loss | Purpose |
+|---|---|---|---|
+| `scratch` | random initialization | CE only | Supervised baseline without stage-1 transfer |
+| `finetune` | load `MODEL_PATH` weights | mean(CE, SupCon) | Evaluate benefit of stage-1 representation transfer |
+| `both` | run `finetune` then `scratch` | each mode uses its own loss | Side-by-side comparison |
+
+### WandB outputs
+
+For each executed mode, the notebook logs:
+
+- train metrics,
+- validation metrics,
+- test confusion matrix,
+- test attention-map table based on the stage-1 attention callback path.
+
+The final test artifact keys are intentionally separated by mode:
+
+- `vit_파인튜닝_confusion_matrix`
+- `vit_파인튜닝_att_map`
+- `vit_from_scratch_confusion_matrix`
+- `vit_from_scratch_att_map`
 
 ## Code status
 
@@ -94,27 +145,33 @@ The current codebase already supports the following pieces:
 
 - all-layer attention extraction from the encoder,
 - multi-layer CLS-row diversity primitives in `training/losses.py`,
-- stage-1 DINO and DINO+SimMIM trainers wired to the new diversity path,
-- config-level control of diversity settings,
-- notebook-level experiment selection for the three-run plan.
+- stage-1 DINO and DINO+SimMIM trainers wired to the diversity path,
+- configurable stage-2 supervised trainer with CE-only vs mean(CE, SupCon) behavior,
+- notebook-level experiment selection for stage 1 and stage 2,
+- WandB logging for metrics, confusion matrix, and attention-map tables.
 
 ## Main files
 
 - `models/encoder.py`: ViT/CNN encoder definitions and attention return path.
-- `training/losses.py`: DINO, SimMIM, and diversity-related losses.
+- `training/losses.py`: DINO, SimMIM, diversity, and supervised contrastive losses.
 - `training/stage1_dino.py`: stage-1 DINO trainer.
 - `training/stage1_dino_simmim.py`: stage-1 DINO + SimMIM trainer.
 - `training/stage1_config.py`: structured experiment config.
 - `training/stage1_ssl.py`: trainer builder and config-to-model wiring.
+- `training/stage2_supcon.py`: stage-2 supervised trainer.
+- `visualization/wandb_viz.py`: attention-map and WandB visualization helpers.
 - `Stage1_SSK_run.ipynb`: practical stage-1 experiment notebook.
+- `Stage2_SSK_run.ipynb`: practical stage-2 supervised experiment notebook.
 
-## Recommended first run order
+## Recommended run order
 
-1. Run `dino` to establish the baseline.
-2. Run `dino_simmim` to evaluate whether `encoded_patches` improve without diversity pressure.
-3. Run `dino_simmim_diversity` to test whether headwise specialization improves without triggering late collapse.
+1. Run stage 1 baseline and select a checkpoint.
+2. Use `Stage2_SSK_run.ipynb` with `EXPERIMENT_MODE="finetune"` for transfer evaluation.
+3. Run `EXPERIMENT_MODE="scratch"` for supervised baseline.
+4. Use `EXPERIMENT_MODE="both"` only when a full paired comparison is needed in one notebook session.
 
 ## Notes
 
 - `selfpatch.py` is preserved for legacy comparison and future ablation.
-- The current README reflects the latest plan centered on lightweight encoder quality, dense usability, and stage-2 HCC prototype induction.
+- Stage-2 attention logging intentionally reuses the proven stage-1 attention callback path for better stability.
+- The current README reflects the latest plan centered on lightweight encoder quality, dense usability, and controlled stage-2 benchmarking.
