@@ -32,6 +32,8 @@ class SupConClassifier(keras.Model):
             dropout_rate=dropout_rate,
         )
         self.encoder_init_weights = encoder_init_weights
+        dummy_x = tf.zeros((1, *input_shape), dtype=tf.float32)
+        _ = self.model(dummy_x, training=False)
         if encoder_init_weights:
             self.model.encoder.load_weights(encoder_init_weights)
         self.ce_loss = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
