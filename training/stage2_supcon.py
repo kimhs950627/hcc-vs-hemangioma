@@ -5,7 +5,7 @@ from typing import Any
 import tensorflow as tf
 import keras
 
-from models.encoder import build_classifier
+from models.encoder import Classifier
 from training.losses import supervised_contrastive_loss
 
 
@@ -23,8 +23,8 @@ class SupConClassifier(keras.Model):
     ):
         super().__init__()
         self.supcon_weight = supcon_weight
-        self.model = build_classifier(
-            encoder_name,
+        self.model = Classifier(
+            encoder_name=encoder_name,
             input_shape=input_shape,
             num_classes=num_classes,
             projection_dim=projection_dim,
