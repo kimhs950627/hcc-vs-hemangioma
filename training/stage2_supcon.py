@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from typing import Any
@@ -37,11 +36,18 @@ class SupConClassifier(keras.Model):
             self.model.encoder.load_weights(encoder_init_weights)
         self.ce_loss = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         self.loss_tracker = keras.metrics.Mean(name='loss')
+        self.ce_loss_tracker = keras.metrics.Mean(name='ce_loss')
+        self.supcon_loss_tracker = keras.metrics.Mean(name='supcon_loss')
         self.acc = keras.metrics.SparseCategoricalAccuracy(name='acc')
 
     @property
     def metrics(self):
-        return [self.loss_tracker, self.acc]
+        return [
+            self.loss_tracker,
+            self.ce_loss_tracker,
+            self.supcon_loss_tracker,
+            self.acc,
+        ]
 
     def compile(self, optimizer, **kwargs):
         super().compile(**kwargs)
@@ -57,8 +63,15 @@ class SupConClassifier(keras.Model):
         grads = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
         self.loss_tracker.update_state(loss)
+        self.ce_loss_tracker.update_state(ce)
+        self.supcon_loss_tracker.update_state(scl)
         self.acc.update_state(y, out['probabilities'])
-        return {'loss': self.loss_tracker.result(), 'acc': self.acc.result()}
+        return {
+            'loss': self.loss_tracker.result(),
+            'ce_loss': self.ce_loss_tracker.result(),
+            'supcon_loss': self.supcon_loss_tracker.result(),
+            'acc': self.acc.result(),
+        }
 
     def test_step(self, data: Any):
         x, y = data
@@ -67,8 +80,15 @@ class SupConClassifier(keras.Model):
         scl = supervised_contrastive_loss(y, out['projection'])
         loss = ce + self.supcon_weight * scl
         self.loss_tracker.update_state(loss)
+        self.ce_loss_tracker.update_state(ce)
+        self.supcon_loss_tracker.update_state(scl)
         self.acc.update_state(y, out['probabilities'])
-        return {'loss': self.loss_tracker.result(), 'acc': self.acc.result()}
+        return {
+            'loss': self.loss_tracker.result(),
+            'ce_loss': self.ce_loss_tracker.result(),
+            'supcon_loss': self.supcon_loss_tracker.result(),
+            'acc': self.acc.result(),
+        }
 
 
 def build_stage2_trainer(
