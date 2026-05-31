@@ -59,7 +59,7 @@ class SupConClassifier(keras.Model):
             out = self.model(x, training=True)
             ce = self.ce_loss(y, out['logits'])
             scl = supervised_contrastive_loss(y, out['projection'])
-            loss = ce + self.supcon_weight * scl
+            loss = ce if self.supcon_weight <= 0.0 else 0.5 * (ce + scl)
         grads = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
         self.loss_tracker.update_state(loss)
@@ -78,7 +78,7 @@ class SupConClassifier(keras.Model):
         out = self.model(x, training=False)
         ce = self.ce_loss(y, out['logits'])
         scl = supervised_contrastive_loss(y, out['projection'])
-        loss = ce + self.supcon_weight * scl
+        loss = ce if self.supcon_weight <= 0.0 else 0.5 * (ce + scl)
         self.loss_tracker.update_state(loss)
         self.ce_loss_tracker.update_state(ce)
         self.supcon_loss_tracker.update_state(scl)
