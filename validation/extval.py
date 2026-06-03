@@ -98,7 +98,12 @@ def _mean_similarity(rep: np.ndarray, proto: np.ndarray) -> np.ndarray:
     proto_n = _l2_normalize(proto)
     sim = rep_n @ proto_n.T
     return sim.mean(axis=-1)
-    
+def _sem(x: np.ndarray) -> float:
+    if len(x) == 0:
+        return float('nan')
+    if len(x) == 1:
+        return 0.0
+    return float(np.std(x, ddof=1) / math.sqrt(len(x)))
 def _extract_encoder_output(stage2_model, batch: np.ndarray):
     encoder = stage2_model.model.encoder if hasattr(stage2_model, 'model') and hasattr(stage2_model.model, 'encoder') else stage2_model.encoder
     out = encoder(tf.convert_to_tensor(batch, dtype=tf.float32), training=False)
