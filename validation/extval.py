@@ -14,6 +14,7 @@ import tensorflow as tf
 from PIL import Image
 from scipy.stats import ttest_ind
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 
 try:
     import wandb
@@ -123,6 +124,31 @@ def _save_paths(path: Path, paths: Sequence[Path]) -> None:
         for p in paths:
             writer.writerow([str(p)])
 
+
+
+
+def _pca_3d(hcc_rep: np.ndarray, hem_rep: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    all_rep = np.concatenate([hcc_rep, hem_rep], axis=0)
+    pca = PCA(n_components=3)
+    all_3d = pca.fit_transform(all_rep)
+    n_hcc = len(hcc_rep)
+    return all_3d[:n_hcc], all_3d[n_hcc:], pca.explained_variance_ratio_
+
+
+def _log_pca_scatter(model_id: str, prefix: str, hcc_3d: np.ndarray, hem_3d: np.ndarray, hcc_paths: Sequence[Path], hem_paths: Sequence[Path], pca_var: np.ndarray):
+    if wandb is None or wandb.run is None:
+        return
+    table = wandb.Table(columns=['x', 'y', 'z', 'label', 'path', 'model_id'])
+    for xyz, p in zip(hcc_3d, hcc_paths):
+        table.add_data(float(xyz[0]), float(xyz[1]), float(xyz[2]), 'HCC', str(p), model_id)
+    for xyz, p in zip(hem_3d, hem_paths):
+        table.add_data(float(xyz[0]), float(xyz[1]), float(xyz[2]), 'Hemangioma', str(p), model_id)
+    wandb.log({
+        f'{prefix}/{model_id}/groupA_pca3d_table': table,
+        f'{prefix}/{model_id}/groupA_pca_pc1': float(pca_var[0]),
+        f'{prefix}/{model_id}/groupA_pca_pc2': float(pca_var[1]),
+        f'{prefix}/{model_id}/groupA_pca_pc3': float(pca_var[2]),
+    })
 
 def _l2_normalize(x: np.ndarray, eps: float = 1e-8) -> np.ndarray:
     denom = np.linalg.norm(x, axis=1, keepdims=True)
@@ -241,6 +267,11 @@ def run_extval(stage2_model, cfg: ExtValConfig) -> pd.DataFrame:
     _save_paths(out_dir / 'groupA_hcc_paths.csv', all_hcc_paths)
     _save_paths(out_dir / 'groupA_hemangioma_paths.csv', all_hem_paths)
 
+    hcc_3d, hem_3d, pca_var = _pca_3d(hcc_rep, hem_rep)
+    _save_matrix(out_dir / 'groupA_hcc_3d_rep', hcc_3d, 'pc')
+    _save_matrix(out_dir / 'groupA_hemangioma_3d_rep', hem_3d, 'pc')
+    pd.DataFrame([{'pc1': float(pca_var[0]), 'pc2': float(pca_var[1]), 'pc3': float(pca_var[2])}]).to_csv(out_dir / 'groupA_pca_explained_variance_ratio.csv', index=False)
+
     hcc_proto = _fit_prototypes(hcc_rep, cfg.n_proto, cfg.random_state)
     hem_proto = _fit_prototypes(hem_rep, cfg.n_proto, cfg.random_state)
     _save_matrix(out_dir / 'groupA_hcc_prototype', hcc_proto, 'proto')
@@ -299,6 +330,7 @@ def run_extval(stage2_model, cfg: ExtValConfig) -> pd.DataFrame:
             f'{cfg.wandb_prefix}/{cfg.model_id}/ttest_margin_t': ttest_margin['t_value'],
             f'{cfg.wandb_prefix}/{cfg.model_id}/ttest_margin_p': ttest_margin['p_value'],
         })
+        _log_pca_scatter(cfg.model_id, cfg.wandb_prefix, hcc_3d, hem_3d, all_hcc_paths, all_hem_paths, pca_var)
         _log_summary_plots(cfg.model_id, cfg.wandb_prefix, stats, ttest_df)
 
     return ttest_df
