@@ -41,6 +41,13 @@ class SupConClassifier(keras.Model):
         self.ce_loss_tracker = keras.metrics.Mean(name='ce_loss')
         self.supcon_loss_tracker = keras.metrics.Mean(name='supcon_loss')
         self.acc = keras.metrics.SparseCategoricalAccuracy(name='acc')
+        self.auc = keras.metrics.AUC(name='auc')
+        self.precision = keras.metrics.Precision(name='ppv')
+        self.recall = keras.metrics.Recall(name='sensitivity')
+        self.tp = keras.metrics.TruePositives(name='tp')
+        self.tn = keras.metrics.TrueNegatives(name='tn')
+        self.fp = keras.metrics.FalsePositives(name='fp')
+        self.fn = keras.metrics.FalseNegatives(name='fn')
 
     @property
     def metrics(self):
@@ -49,11 +56,63 @@ class SupConClassifier(keras.Model):
             self.ce_loss_tracker,
             self.supcon_loss_tracker,
             self.acc,
+            self.auc,
+            self.precision,
+            self.recall,
+            self.tp,
+            self.tn,
+            self.fp,
+            self.fn,
         ]
 
     def compile(self, optimizer, **kwargs):
         super().compile(**kwargs)
         self.optimizer = optimizer
+
+    def _update_classification_metrics(self, y, probabilities):
+        if probabilities.shape[-1] == 2:
+            pos_scores = probabilities[:, 1]
+            pos_pred = pos_scores
+        else:
+            pos_scores = probabilities
+            pos_pred = probabilities
+        y = tf.cast(tf.reshape(y, (-1, 1)), tf.float32)
+        pos_scores = tf.cast(tf.reshape(pos_scores, (-1, 1)), tf.float32)
+        pos_pred = tf.cast(tf.reshape(pos_pred, (-1, 1)), tf.float32)
+        self.auc.update_state(y, pos_scores)
+        self.precision.update_state(y, pos_pred)
+        self.recall.update_state(y, pos_pred)
+        self.tp.update_state(y, pos_pred)
+        self.tn.update_state(y, pos_pred)
+        self.fp.update_state(y, pos_pred)
+        self.fn.update_state(y, pos_pred)
+
+    def _collect_metric_results(self):
+        tp = self.tp.result()
+        tn = self.tn.result()
+        fp = self.fp.result()
+        fn = self.fn.result()
+        precision = self.precision.result()
+        recall = self.recall.result()
+        specificity = tf.math.divide_no_nan(tn, tn + fp)
+        npv = tf.math.divide_no_nan(tn, tn + fn)
+        f1 = tf.math.divide_no_nan(2.0 * precision * recall, precision + recall)
+        return {
+            'loss': self.loss_tracker.result(),
+            'ce_loss': self.ce_loss_tracker.result(),
+            'supcon_loss': self.supcon_loss_tracker.result(),
+            'acc': self.acc.result(),
+            'auc': self.auc.result(),
+            'f1': f1,
+            'sensitivity': recall,
+            'specificity': specificity,
+            'ppv': precision,
+            'npv': npv,
+            'tp': tp,
+            'tn': tn,
+            'fp': fp,
+            'fn': fn,
+        }
 
     def train_step(self, data: Any):
         x, y = data
@@ -68,12 +127,8 @@ class SupConClassifier(keras.Model):
         self.ce_loss_tracker.update_state(ce)
         self.supcon_loss_tracker.update_state(scl)
         self.acc.update_state(y, out['probabilities'])
-        return {
-            'loss': self.loss_tracker.result(),
-            'ce_loss': self.ce_loss_tracker.result(),
-            'supcon_loss': self.supcon_loss_tracker.result(),
-            'acc': self.acc.result(),
-        }
+        self._update_classification_metrics(y, out['probabilities'])
+        return self._collect_metric_results()
 
     def test_step(self, data: Any):
         x, y = data
@@ -85,12 +140,8 @@ class SupConClassifier(keras.Model):
         self.ce_loss_tracker.update_state(ce)
         self.supcon_loss_tracker.update_state(scl)
         self.acc.update_state(y, out['probabilities'])
-        return {
-            'loss': self.loss_tracker.result(),
-            'ce_loss': self.ce_loss_tracker.result(),
-            'supcon_loss': self.supcon_loss_tracker.result(),
-            'acc': self.acc.result(),
-        }
+        self._update_classification_metrics(y, out['probabilities'])
+        return self._collect_metric_results()
 
 
 def build_stage2_trainer(
