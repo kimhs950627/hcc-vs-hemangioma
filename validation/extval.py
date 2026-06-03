@@ -98,17 +98,20 @@ def _mean_similarity(rep: np.ndarray, proto: np.ndarray) -> np.ndarray:
     proto_n = _l2_normalize(proto)
     sim = rep_n @ proto_n.T
     return sim.mean(axis=-1)
+
 def _sem(x: np.ndarray) -> float:
     if len(x) == 0:
         return float('nan')
     if len(x) == 1:
         return 0.0
     return float(np.std(x, ddof=1) / math.sqrt(len(x)))
+
 def _ttest(a: np.ndarray, b: np.ndarray) -> dict[str, float]:
     if len(a) == 0 or len(b) == 0:
         return {'t_value': float('nan'), 'p_value': float('nan')}
     stat, p = ttest_ind(a, b, equal_var=False)
     return {'t_value': float(stat), 'p_value': float(p)}
+
 def _extract_encoder_output(stage2_model, batch: np.ndarray):
     encoder = stage2_model.model.encoder if hasattr(stage2_model, 'model') and hasattr(stage2_model.model, 'encoder') else stage2_model.encoder
     out = encoder(tf.convert_to_tensor(batch, dtype=tf.float32), training=False)
@@ -206,6 +209,94 @@ def _log_pca_scatter(model_id: str, prefix: str, hcc_3d: np.ndarray, hem_3d: np.
         f'{prefix}/{model_id}/groupA_pca_pc2': float(pca_var[1]),
         f'{prefix}/{model_id}/groupA_pca_pc3': float(pca_var[2]),
     })
+
+
+def _make_barplot(
+    title: str,
+    ylabel: str,
+    means: Sequence[float],
+    errors: Sequence[float],
+    labels: Sequence[str],
+) -> plt.Figure:
+    """집단 간 수치 분포를 시각화하는 에러 막대 bar plot을 생성하고 Figure를 반환한다.
+
+    Args:
+        title:  그래프 제목
+        ylabel: y축 레이블
+        means:  각 집단의 mean 값 리스트
+        errors: 각 집단의 SEM 값 리스트 (means와 동일 길이)
+        labels: 각 집단의 이름 리스트 (means와 동일 길이)
+
+    Returns:
+        matplotlib Figure 객체 (wandb.Image()에 직접 전달 가능)
+    """
+    if len(means) != len(errors) or len(means) != len(labels):
+        raise ValueError('means, errors, and labels must have the same length')
+
+    x = np.arange(len(labels))
+    fig, ax = plt.subplots(figsize=(6, 5), dpi=150)
+
+    # HCC → red, Hemangioma → blue (기존 PCA scatter 색상과 통일)
+    _palette = ['#C0504D', '#4F81BD', '#9BBB59', '#8064A2']
+    bar_colors = [_palette[i % len(_palette)] for i in range(len(labels))]
+
+    ax.bar(
+        x,
+        means,
+        yerr=errors,
+        capsize=6,
+        color=bar_colors,
+        edgecolor='black',
+        linewidth=0.8,
+        alpha=0.88,
+        width=0.55,
+        error_kw={'elinewidth': 1.4, 'capthick': 1.4, 'ecolor': '#333333'},
+    )
+
+    ax.set_title(title, fontsize=12, fontweight='bold', pad=10)
+    ax.set_ylabel(ylabel, fontsize=10)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.grid(axis='y', linestyle='--', linewidth=0.6, alpha=0.40)
+    ax.set_axisbelow(True)
+    ax.spines[['top', 'right']].set_visible(False)
+
+    # y축 범위: bar + error 최대/최소값에서 여백 15% 확보
+    vals = np.asarray(means, dtype=float)
+    errs = np.asarray(errors, dtype=float)
+    errs_safe = np.nan_to_num(errs, nan=0.0)
+    tops = vals + errs_safe
+    bottoms = vals - errs_safe
+
+    finite_vals = np.concatenate([bottoms[np.isfinite(bottoms)], vals[np.isfinite(vals)]])
+    finite_tops = tops[np.isfinite(tops)]
+    y_min = float(np.min(finite_vals)) if len(finite_vals) else 0.0
+    y_max = float(np.max(finite_tops)) if len(finite_tops) else 1.0
+
+    if y_min == y_max:
+        margin = max(abs(y_max) * 0.2, 1e-3)
+    else:
+        margin = (y_max - y_min) * 0.15
+    ax.set_ylim(y_min - margin, y_max + margin)
+
+    # 각 bar 위에 mean 값 텍스트 표기
+    for xi, yi, ei in zip(x, vals, errs_safe):
+        if not np.isfinite(yi):
+            continue
+        offset = (y_max - y_min) * 0.03 if y_max != y_min else 1e-4
+        ax.text(
+            xi,
+            yi + ei + offset,
+            f'{yi:.3f}',
+            ha='center',
+            va='bottom',
+            fontsize=9,
+            color='#222222',
+        )
+
+    fig.tight_layout()
+    return fig
+
 
 def _log_summary_plots(model_id: str, prefix: str, stats: dict[str, float], ttest_df: pd.DataFrame):
     if wandb is None or wandb.run is None:
