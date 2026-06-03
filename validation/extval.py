@@ -104,6 +104,11 @@ def _sem(x: np.ndarray) -> float:
     if len(x) == 1:
         return 0.0
     return float(np.std(x, ddof=1) / math.sqrt(len(x)))
+def _ttest(a: np.ndarray, b: np.ndarray) -> dict[str, float]:
+    if len(a) == 0 or len(b) == 0:
+        return {'t_value': float('nan'), 'p_value': float('nan')}
+    stat, p = ttest_ind(a, b, equal_var=False)
+    return {'t_value': float(stat), 'p_value': float(p)}
 def _extract_encoder_output(stage2_model, batch: np.ndarray):
     encoder = stage2_model.model.encoder if hasattr(stage2_model, 'model') and hasattr(stage2_model.model, 'encoder') else stage2_model.encoder
     out = encoder(tf.convert_to_tensor(batch, dtype=tf.float32), training=False)
