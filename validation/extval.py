@@ -7,13 +7,13 @@ from typing import Iterable, Sequence
 import csv
 import math
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from PIL import Image
 from scipy.stats import ttest_ind
 from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
 
 try:
     import wandb
@@ -43,11 +43,6 @@ class ExtValConfig:
     stage_name: str = 'stage2'
     wandb_prefix: str = 'extval'
     random_state: int = 42
-
-
-def _require_wandb():
-    if wandb is None:
-        raise ImportError('wandb is required. Install with `pip install wandb`.')
 
 
 def _find_class_dir(split_dir: Path, class_key: str) -> Path:
@@ -129,14 +124,6 @@ def _save_paths(path: Path, paths: Sequence[Path]) -> None:
             writer.writerow([str(p)])
 
 
-def _pca_3d(hcc_rep: np.ndarray, hem_rep: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    all_rep = np.concatenate([hcc_rep, hem_rep], axis=0)
-    pca = PCA(n_components=3)
-    all_3d = pca.fit_transform(all_rep)
-    n_hcc = len(hcc_rep)
-    return all_3d[:n_hcc], all_3d[n_hcc:], pca.explained_variance_ratio_
-
-
 def _l2_normalize(x: np.ndarray, eps: float = 1e-8) -> np.ndarray:
     denom = np.linalg.norm(x, axis=1, keepdims=True)
     denom = np.maximum(denom, eps)
@@ -162,144 +149,156 @@ def _mean_similarity(rep: np.ndarray, proto: np.ndarray) -> np.ndarray:
 def _ttest(a: np.ndarray, b: np.ndarray) -> dict[str, float]:
     test = ttest_ind(a, b, equal_var=False)
     return {
-        'mean_a': float(np.mean(a)),
-        'std_a': float(np.std(a, ddof=1)) if len(a) > 1 else 0.0,
-        'mean_b': float(np.mean(b)),
-        'std_b': float(np.std(b, ddof=1)) if len(b) > 1 else 0.0,
-        't_stat': float(test.statistic),
+        't_value': float(test.statistic),
         'p_value': float(test.pvalue),
-        'n_a': int(len(a)),
-        'n_b': int(len(b)),
     }
 
 
-def _log_scatter(split: str, model_id: str, hcc_3d: np.ndarray, hem_3d: np.ndarray, hcc_paths: Sequence[Path], hem_paths: Sequence[Path], prefix: str) -> None:
+def _sem(x: np.ndarray) -> float:
+    x = np.asarray(x, dtype=np.float32)
+    if len(x) <= 1:
+        return 0.0
+    return float(np.std(x, ddof=1) / math.sqrt(len(x)))
+
+
+def _make_barplot(title: str, ylabel: str, means: list[float], errors: list[float], labels: list[str]):
+    fig, ax = plt.subplots(figsize=(5, 4), dpi=150)
+    colors = ['#4F81BD', '#C0504D']
+    x = np.arange(len(labels))
+    ax.bar(x, means, yerr=errors, color=colors[:len(labels)], capsize=6, width=0.55)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+def _log_summary_plots(model_id: str, prefix: str, stats: dict[str, float], ttest_df: pd.DataFrame):
     if wandb is None or wandb.run is None:
         return
-    table = wandb.Table(columns=['x', 'y', 'z', 'label', 'path', 'split', 'model_id'])
-    for xyz, p in zip(hcc_3d, hcc_paths):
-        table.add_data(float(xyz[0]), float(xyz[1]), float(xyz[2]), 'HCC', str(p), split, model_id)
-    for xyz, p in zip(hem_3d, hem_paths):
-        table.add_data(float(xyz[0]), float(xyz[1]), float(xyz[2]), 'Hemangioma', str(p), split, model_id)
-    wandb.log({f'{prefix}/{model_id}/{split}/pca3d_table': table})
+    labels = ['HCC group', 'Hemangioma group']
+
+    fig_hcc = _make_barplot(
+        title='HCC similarity',
+        ylabel='Mean similarity (a.u.)',
+        means=[stats['A_hcc_to_hccproto_mean'], stats['C_hem_to_hccproto_mean']],
+        errors=[stats['A_hcc_to_hccproto_sem'], stats['C_hem_to_hccproto_sem']],
+        labels=labels,
+    )
+    fig_hem = _make_barplot(
+        title='Hemangioma similarity',
+        ylabel='Mean similarity (a.u.)',
+        means=[stats['B_hcc_to_hemproto_mean'], stats['D_hem_to_hemproto_mean']],
+        errors=[stats['B_hcc_to_hemproto_sem'], stats['D_hem_to_hemproto_sem']],
+        labels=labels,
+    )
+    fig_margin = _make_barplot(
+        title='HCC sim - Hemangioma sim',
+        ylabel='Similarity margin (a.u.)',
+        means=[stats['A_minus_B_mean'], stats['C_minus_D_mean']],
+        errors=[stats['A_minus_B_sem'], stats['C_minus_D_sem']],
+        labels=labels,
+    )
+
+    wandb.log({
+        f'{prefix}/{model_id}/hcc_similarity_bar': wandb.Image(fig_hcc),
+        f'{prefix}/{model_id}/hemangioma_similarity_bar': wandb.Image(fig_hem),
+        f'{prefix}/{model_id}/margin_similarity_bar': wandb.Image(fig_margin),
+        f'{prefix}/{model_id}/ttest_table': wandb.Table(dataframe=ttest_df),
+    })
+    plt.close(fig_hcc)
+    plt.close(fig_hem)
+    plt.close(fig_margin)
 
 
-def _log_similarity_table(split: str, model_id: str, hcc_paths: Sequence[Path], hem_paths: Sequence[Path], A: np.ndarray, B: np.ndarray, C: np.ndarray, D: np.ndarray, prefix: str) -> None:
-    if wandb is None or wandb.run is None:
-        return
-    table = wandb.Table(columns=['path', 'label', 'sim_to_hcc_proto', 'sim_to_hem_proto', 'margin', 'split', 'model_id'])
-    for p, a, b in zip(hcc_paths, A, B):
-        table.add_data(str(p), 'HCC', float(a), float(b), float(a - b), split, model_id)
-    for p, c, d in zip(hem_paths, C, D):
-        table.add_data(str(p), 'Hemangioma', float(c), float(d), float(c - d), split, model_id)
-    wandb.log({f'{prefix}/{model_id}/{split}/similarity_table': table})
+def run_extval(stage2_model, cfg: ExtValConfig) -> pd.DataFrame:
+    all_hcc_paths: list[Path] = []
+    all_hem_paths: list[Path] = []
+    all_hcc_rep: list[np.ndarray] = []
+    all_hem_rep: list[np.ndarray] = []
 
+    for split in cfg.split_names:
+        paths = _collect_image_paths(cfg.data_root, split)
+        hcc_paths = paths['hcc']
+        hem_paths = paths['hemangioma']
+        hcc_rep = extract_representations(stage2_model, hcc_paths, cfg.image_size, cfg.batch_size)
+        hem_rep = extract_representations(stage2_model, hem_paths, cfg.image_size, cfg.batch_size)
+        all_hcc_paths.extend(hcc_paths)
+        all_hem_paths.extend(hem_paths)
+        all_hcc_rep.append(hcc_rep)
+        all_hem_rep.append(hem_rep)
 
-def _save_stats(path: Path, stats: dict[str, float]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame([stats]).to_csv(path, index=False)
+    hcc_rep = np.concatenate(all_hcc_rep, axis=0)
+    hem_rep = np.concatenate(all_hem_rep, axis=0)
 
-
-def run_split_extval(stage2_model, split: str, cfg: ExtValConfig) -> dict[str, float]:
-    paths = _collect_image_paths(cfg.data_root, split)
-    hcc_paths = paths['hcc']
-    hem_paths = paths['hemangioma']
-
-    hcc_rep = extract_representations(stage2_model, hcc_paths, cfg.image_size, cfg.batch_size)
-    hem_rep = extract_representations(stage2_model, hem_paths, cfg.image_size, cfg.batch_size)
-
-    out_dir = Path(cfg.work_dir) / 'output' / 'extval' / cfg.model_id / split
-    _save_matrix(out_dir / 'hcc_rep', hcc_rep, 'emb')
-    _save_matrix(out_dir / 'hemangioma_rep', hem_rep, 'emb')
-    _save_paths(out_dir / 'hcc_paths.csv', hcc_paths)
-    _save_paths(out_dir / 'hemangioma_paths.csv', hem_paths)
-
-    hcc_3d, hem_3d, pca_var = _pca_3d(hcc_rep, hem_rep)
-    _save_matrix(out_dir / 'hcc_3d_rep', hcc_3d, 'pc')
-    _save_matrix(out_dir / 'hemangioma_3d_rep', hem_3d, 'pc')
-    pd.DataFrame([{'pc1': float(pca_var[0]), 'pc2': float(pca_var[1]), 'pc3': float(pca_var[2])}]).to_csv(out_dir / 'pca_explained_variance_ratio.csv', index=False)
-    _log_scatter(split, cfg.model_id, hcc_3d, hem_3d, hcc_paths, hem_paths, cfg.wandb_prefix)
+    out_dir = Path(cfg.work_dir) / 'output' / 'extval' / cfg.model_id / 'groupA'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _save_matrix(out_dir / 'groupA_hcc_rep', hcc_rep, 'emb')
+    _save_matrix(out_dir / 'groupA_hemangioma_rep', hem_rep, 'emb')
+    _save_paths(out_dir / 'groupA_hcc_paths.csv', all_hcc_paths)
+    _save_paths(out_dir / 'groupA_hemangioma_paths.csv', all_hem_paths)
 
     hcc_proto = _fit_prototypes(hcc_rep, cfg.n_proto, cfg.random_state)
     hem_proto = _fit_prototypes(hem_rep, cfg.n_proto, cfg.random_state)
-    _save_matrix(out_dir / 'hcc_prototype', hcc_proto, 'proto')
-    _save_matrix(out_dir / 'hemangioma_prototype', hem_proto, 'proto')
+    _save_matrix(out_dir / 'groupA_hcc_prototype', hcc_proto, 'proto')
+    _save_matrix(out_dir / 'groupA_hemangioma_prototype', hem_proto, 'proto')
 
     A = _mean_similarity(hcc_rep, hcc_proto)
     B = _mean_similarity(hcc_rep, hem_proto)
     C = _mean_similarity(hem_rep, hcc_proto)
     D = _mean_similarity(hem_rep, hem_proto)
+    margin_hcc = A - B
+    margin_hem = C - D
 
-    pd.DataFrame({
-        'path': [str(p) for p in hcc_paths],
-        'label': ['HCC'] * len(hcc_paths),
-        'sim_to_hcc_proto': A,
-        'sim_to_hem_proto': B,
-        'margin': A - B,
-    }).to_csv(out_dir / 'hcc_similarity.csv', index=False)
-    pd.DataFrame({
-        'path': [str(p) for p in hem_paths],
-        'label': ['Hemangioma'] * len(hem_paths),
-        'sim_to_hcc_proto': C,
-        'sim_to_hem_proto': D,
-        'margin': C - D,
-    }).to_csv(out_dir / 'hemangioma_similarity.csv', index=False)
-    _log_similarity_table(split, cfg.model_id, hcc_paths, hem_paths, A, B, C, D, cfg.wandb_prefix)
-
-    ttest_ac = _ttest(A, C)
-    ttest_margin = _ttest(A - B, C - D)
     stats = {
-        'split': split,
         'model_id': cfg.model_id,
-        'n_hcc': int(len(hcc_paths)),
-        'n_hemangioma': int(len(hem_paths)),
+        'n_hcc': int(len(hcc_rep)),
+        'n_hemangioma': int(len(hem_rep)),
         'embed_dim': int(hcc_rep.shape[1]),
         'n_hcc_prototype': int(hcc_proto.shape[0]),
         'n_hemangioma_prototype': int(hem_proto.shape[0]),
         'A_hcc_to_hccproto_mean': float(np.mean(A)),
+        'A_hcc_to_hccproto_sem': _sem(A),
         'B_hcc_to_hemproto_mean': float(np.mean(B)),
+        'B_hcc_to_hemproto_sem': _sem(B),
         'C_hem_to_hccproto_mean': float(np.mean(C)),
+        'C_hem_to_hccproto_sem': _sem(C),
         'D_hem_to_hemproto_mean': float(np.mean(D)),
-        'A_minus_B_mean': float(np.mean(A - B)),
-        'C_minus_D_mean': float(np.mean(C - D)),
-        'ttest_AC_t': ttest_ac['t_stat'],
-        'ttest_AC_p': ttest_ac['p_value'],
-        'ttest_margin_t': ttest_margin['t_stat'],
-        'ttest_margin_p': ttest_margin['p_value'],
-        'pca_pc1': float(pca_var[0]),
-        'pca_pc2': float(pca_var[1]),
-        'pca_pc3': float(pca_var[2]),
+        'D_hem_to_hemproto_sem': _sem(D),
+        'A_minus_B_mean': float(np.mean(margin_hcc)),
+        'A_minus_B_sem': _sem(margin_hcc),
+        'C_minus_D_mean': float(np.mean(margin_hem)),
+        'C_minus_D_sem': _sem(margin_hem),
     }
-    _save_stats(out_dir / 'summary_stats.csv', stats)
-    _save_stats(out_dir / 'ttest_ac.csv', {'split': split, 'model_id': cfg.model_id, **ttest_ac})
-    _save_stats(out_dir / 'ttest_margin.csv', {'split': split, 'model_id': cfg.model_id, **ttest_margin})
+
+    ttest_hcc = _ttest(A, C)
+    ttest_margin = _ttest(margin_hcc, margin_hem)
+    ttest_df = pd.DataFrame([
+        {'metric': 'hcc_similarity', 't_value': ttest_hcc['t_value'], 'p_value': ttest_hcc['p_value']},
+        {'metric': 'hcc_minus_hem_similarity', 't_value': ttest_margin['t_value'], 'p_value': ttest_margin['p_value']},
+    ])
+
+    pd.DataFrame([stats]).to_csv(out_dir / 'groupA_summary_stats.csv', index=False)
+    ttest_df.to_csv(out_dir / 'groupA_ttest.csv', index=False)
 
     if wandb is not None and wandb.run is not None:
         wandb.log({
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/A_hcc_to_hccproto_mean': stats['A_hcc_to_hccproto_mean'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/B_hcc_to_hemproto_mean': stats['B_hcc_to_hemproto_mean'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/C_hem_to_hccproto_mean': stats['C_hem_to_hccproto_mean'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/D_hem_to_hemproto_mean': stats['D_hem_to_hemproto_mean'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/A_minus_B_mean': stats['A_minus_B_mean'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/C_minus_D_mean': stats['C_minus_D_mean'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/ttest_AC_t': stats['ttest_AC_t'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/ttest_AC_p': stats['ttest_AC_p'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/ttest_margin_t': stats['ttest_margin_t'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/ttest_margin_p': stats['ttest_margin_p'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/n_hcc': stats['n_hcc'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/n_hemangioma': stats['n_hemangioma'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/n_hcc_prototype': stats['n_hcc_prototype'],
-            f'{cfg.wandb_prefix}/{cfg.model_id}/{split}/n_hemangioma_prototype': stats['n_hemangioma_prototype'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/n_hcc': stats['n_hcc'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/n_hemangioma': stats['n_hemangioma'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/A_hcc_to_hccproto_mean': stats['A_hcc_to_hccproto_mean'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/B_hcc_to_hemproto_mean': stats['B_hcc_to_hemproto_mean'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/C_hem_to_hccproto_mean': stats['C_hem_to_hccproto_mean'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/D_hem_to_hemproto_mean': stats['D_hem_to_hemproto_mean'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/A_minus_B_mean': stats['A_minus_B_mean'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/C_minus_D_mean': stats['C_minus_D_mean'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/ttest_hcc_similarity_t': ttest_hcc['t_value'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/ttest_hcc_similarity_p': ttest_hcc['p_value'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/ttest_margin_t': ttest_margin['t_value'],
+            f'{cfg.wandb_prefix}/{cfg.model_id}/ttest_margin_p': ttest_margin['p_value'],
         })
-    return stats
+        _log_summary_plots(cfg.model_id, cfg.wandb_prefix, stats, ttest_df)
 
-
-def run_extval(stage2_model, cfg: ExtValConfig) -> pd.DataFrame:
-    rows = [run_split_extval(stage2_model, split, cfg) for split in cfg.split_names]
-    summary = pd.DataFrame(rows)
-    out_path = Path(cfg.work_dir) / 'output' / 'extval' / cfg.model_id / 'summary_all_splits.csv'
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    summary.to_csv(out_path, index=False)
-    if wandb is not None and wandb.run is not None:
-        wandb.log({f'{cfg.wandb_prefix}/{cfg.model_id}/summary_all_splits': wandb.Table(dataframe=summary)})
-    return summary
+    return ttest_df
