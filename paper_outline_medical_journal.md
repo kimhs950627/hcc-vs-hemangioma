@@ -56,10 +56,11 @@ Although the practical downstream task was binary HCC-versus-hemangioma classifi
 
 ## References
 
-1. Sung H, Ferlay J, Siegel RL, Laversanne M, Soerjomataram I, Jemal A, et al. Global cancer statistics 2020: GLOBOCAN estimates of incidence and mortality worldwide for 36 cancers in 185 countries. CA Cancer J Clin. 2021;71(3):209-249.
-2. Artificial intelligence in medical imaging and its application in sonography for the management of liver tumor. Front Oncol. 2020;10:594580.
+1. Sung H, Ferlay J, Siegel RL, Laversanne M, Soerjomataram I, Jemal A, Bray F. Global cancer statistics 2020: GLOBOCAN estimates of incidence and mortality worldwide for 36 cancers in 185 countries. CA Cancer J Clin. 2021;71(3):209-249. doi:10.3322/caac.21660.
+2. Liu X, Faes L, Kale AU, Wagner SK, Fu DJ, Bruynseels A, Mahendiran T, Moraes G, Shamdas M, Kern C, et al. A comparison of deep learning performance against health-care professionals in detecting diseases from medical imaging: a systematic review and meta-analysis. Lancet Digit Health. 2019;1(6):e271-e297. doi:10.1016/S2589-7500(19)30123-2.
 3. Hassan TM, Elmogy M, Sallam ES. Deep learning for differentiation of benign and malignant solid liver lesions on ultrasonography. Abdom Radiol (NY). 2021;46(2):534-543. doi:10.1007/s00261-020-02564-w.
-4. Zhao C, Zhang H, Liu Y, et al. Development and validation of an ultrasound-based interpretable machine learning model for the classification of ≤3 cm hepatocellular carcinoma: a multicentre retrospective diagnostic study. EClinicalMedicine. 2025;81:103098. doi:10.1016/j.eclinm.2025.103098.
-5. Ultrasound image analysis with vision transformers: review. Diagnostics/Review article. 2024.
-6. Tang Y, Yang D, Li W, Roth HR, Landman B, Xu D, et al. Self-supervised pre-training of Swin transformers for 3D medical image analysis. Proc CVPR. 2022:20730-20740.
-7. Tak J, Kim J, Hong J, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. Sci Data. 2026;13(1):649. doi:10.1038/s41597-026-07023-7.
+4. Zhao C, Zhang H, Liu Y, Wang S, Duan S, Wang Y, Li Y, Zhou Q, Chen M, Liu Y, et al. Development and validation of an ultrasound-based interpretable machine learning model for the classification of ≤3 cm hepatocellular carcinoma: a multicentre retrospective diagnostic study. EClinicalMedicine. 2025;81:103098. doi:10.1016/j.eclinm.2025.103098.
+5. Wang J, Eslick GD, Huang Y, Deng Y, Gong X, Chen Y. Artificial intelligence in medical imaging and its application in sonography for the management of liver tumor. Front Oncol. 2020;10:594580. doi:10.3389/fonc.2020.594580.
+6. Vafaeezadeh M, Behnam H, Gifani P. Ultrasound image analysis with vision transformers-review. Diagnostics (Basel). 2024;14(5):542. doi:10.3390/diagnostics14050542.
+7. Tang Y, Yang D, Li W, Roth HR, Landman B, Xu D, Nath V, Hatamizadeh A. Self-supervised pre-training of Swin transformers for 3D medical image analysis. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). 2022:20730-20740. doi:10.1109/CVPR52688.2022.02011.
+8. Tak J, Kim J, Hong J, Lee H, Kim S, Kim T, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. Sci Data. 2026;13:649. doi:10.1038/s41597-026-07023-7.
