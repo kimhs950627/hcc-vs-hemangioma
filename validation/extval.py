@@ -10,6 +10,7 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import tensorflow as tf
 from PIL import Image
 from scipy.stats import ttest_ind
@@ -138,69 +139,43 @@ def _pca_3d(hcc_rep: np.ndarray, hem_rep: np.ndarray) -> tuple[np.ndarray, np.nd
 def _log_pca_scatter(model_id: str, prefix: str, hcc_3d: np.ndarray, hem_3d: np.ndarray, hcc_paths: Sequence[Path], hem_paths: Sequence[Path], pca_var: np.ndarray):
     if wandb is None or wandb.run is None:
         return
-    table = wandb.Table(columns=['x', 'y', 'z', 'label', 'path', 'model_id'])
-    for xyz, p in zip(hcc_3d, hcc_paths):
-        table.add_data(float(xyz[0]), float(xyz[1]), float(xyz[2]), 'HCC', str(p), model_id)
-    for xyz, p in zip(hem_3d, hem_paths):
-        table.add_data(float(xyz[0]), float(xyz[1]), float(xyz[2]), 'Hemangioma', str(p), model_id)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter3d(
+        x=hcc_3d[:, 0],
+        y=hcc_3d[:, 1],
+        z=hcc_3d[:, 2],
+        mode='markers',
+        name='HCC',
+        text=[str(p) for p in hcc_paths],
+        hovertemplate='HCC<br>%{text}<br>x=%{x:.3f}<br>y=%{y:.3f}<br>z=%{z:.3f}<extra></extra>',
+        marker=dict(size=4, color='#C0504D', opacity=0.8),
+    ))
+    fig.add_trace(go.Scatter3d(
+        x=hem_3d[:, 0],
+        y=hem_3d[:, 1],
+        z=hem_3d[:, 2],
+        mode='markers',
+        name='Hemangioma',
+        text=[str(p) for p in hem_paths],
+        hovertemplate='Hemangioma<br>%{text}<br>x=%{x:.3f}<br>y=%{y:.3f}<br>z=%{z:.3f}<extra></extra>',
+        marker=dict(size=4, color='#4F81BD', opacity=0.8),
+    ))
+    fig.update_layout(
+        title='Group A PCA 3D scatter',
+        scene=dict(
+            xaxis_title=f'PC1 ({pca_var[0]*100:.1f}%)',
+            yaxis_title=f'PC2 ({pca_var[1]*100:.1f}%)',
+            zaxis_title=f'PC3 ({pca_var[2]*100:.1f}%)',
+        ),
+        legend=dict(x=0.02, y=0.98),
+        margin=dict(l=0, r=0, b=0, t=40),
+    )
+    wandb.log({f'{prefix}/{model_id}/groupA_pca3d_figure': fig})
     wandb.log({
-        f'{prefix}/{model_id}/groupA_pca3d_table': table,
         f'{prefix}/{model_id}/groupA_pca_pc1': float(pca_var[0]),
         f'{prefix}/{model_id}/groupA_pca_pc2': float(pca_var[1]),
         f'{prefix}/{model_id}/groupA_pca_pc3': float(pca_var[2]),
     })
-
-def _l2_normalize(x: np.ndarray, eps: float = 1e-8) -> np.ndarray:
-    denom = np.linalg.norm(x, axis=1, keepdims=True)
-    denom = np.maximum(denom, eps)
-    return x / denom
-
-
-def _fit_prototypes(rep: np.ndarray, n_proto: int, random_state: int) -> np.ndarray:
-    n_clusters = min(n_proto, len(rep))
-    if n_clusters < 1:
-        raise ValueError('empty representation matrix')
-    km = KMeans(n_clusters=n_clusters, n_init=10, random_state=random_state)
-    km.fit(rep)
-    return km.cluster_centers_.astype(np.float32)
-
-
-def _mean_similarity(rep: np.ndarray, proto: np.ndarray) -> np.ndarray:
-    rep_n = _l2_normalize(rep)
-    proto_n = _l2_normalize(proto)
-    sim = rep_n @ proto_n.T
-    return sim.mean(axis=-1)
-
-
-def _ttest(a: np.ndarray, b: np.ndarray) -> dict[str, float]:
-    test = ttest_ind(a, b, equal_var=False)
-    return {
-        't_value': float(test.statistic),
-        'p_value': float(test.pvalue),
-    }
-
-
-def _sem(x: np.ndarray) -> float:
-    x = np.asarray(x, dtype=np.float32)
-    if len(x) <= 1:
-        return 0.0
-    return float(np.std(x, ddof=1) / math.sqrt(len(x)))
-
-
-def _make_barplot(title: str, ylabel: str, means: list[float], errors: list[float], labels: list[str]):
-    fig, ax = plt.subplots(figsize=(5, 4), dpi=150)
-    colors = ['#4F81BD', '#C0504D']
-    x = np.arange(len(labels))
-    ax.bar(x, means, yerr=errors, color=colors[:len(labels)], capsize=6, width=0.55)
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels)
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    fig.tight_layout()
-    return fig
-
 
 def _log_summary_plots(model_id: str, prefix: str, stats: dict[str, float], ttest_df: pd.DataFrame):
     if wandb is None or wandb.run is None:
