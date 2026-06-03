@@ -78,7 +78,27 @@ def _chunked(seq: Sequence[Path], size: int) -> Iterable[list[Path]]:
     for i in range(0, len(seq), size):
         yield list(seq[i:i + size])
 
+def _l2_normalize(x: np.ndarray, eps: float = 1e-8) -> np.ndarray:
+    denom = np.linalg.norm(x, axis=1, keepdims=True)
+    denom = np.maximum(denom, eps)
+    return x / denom
 
+
+def _fit_prototypes(rep: np.ndarray, n_proto: int, random_state: int) -> np.ndarray:
+    n_clusters = min(n_proto, len(rep))
+    if n_clusters < 1:
+        raise ValueError('empty representation matrix')
+    km = KMeans(n_clusters=n_clusters, n_init=10, random_state=random_state)
+    km.fit(rep)
+    return km.cluster_centers_.astype(np.float32)
+
+
+def _mean_similarity(rep: np.ndarray, proto: np.ndarray) -> np.ndarray:
+    rep_n = _l2_normalize(rep)
+    proto_n = _l2_normalize(proto)
+    sim = rep_n @ proto_n.T
+    return sim.mean(axis=-1)
+    
 def _extract_encoder_output(stage2_model, batch: np.ndarray):
     encoder = stage2_model.model.encoder if hasattr(stage2_model, 'model') and hasattr(stage2_model.model, 'encoder') else stage2_model.encoder
     out = encoder(tf.convert_to_tensor(batch, dtype=tf.float32), training=False)
