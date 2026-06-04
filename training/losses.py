@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import tensorflow as tf
@@ -53,7 +52,6 @@ def dino_cross_entropy(student_logits: tf.Tensor, teacher_logits: tf.Tensor, stu
     t = tf.stop_gradient(tf.nn.softmax(teacher_logits / teacher_temp, axis=-1))
     logp = tf.nn.log_softmax(s, axis=-1)
     return -tf.reduce_mean(tf.reduce_sum(t * logp, axis=-1))
-
 
 
 def patchify_images(images: tf.Tensor, patch_size: int = 16) -> tf.Tensor:
@@ -122,7 +120,6 @@ def head_disagreement_loss(attn_scores: tf.Tensor, eps: float = 1e-6) -> tf.Tens
     return tf.reduce_sum(sim * mask) / n_pairs
 
 
-
 def extract_cls_patch_attn(
     attn_scores: tf.Tensor,
     exclude_cls_col: bool = True,
@@ -155,10 +152,29 @@ def attention_entropy_floor_loss(
     entropy_min: float = 2.5,
     eps: float = 1e-8,
 ) -> tf.Tensor:
+    """Soft-exponential entropy floor loss.
+
+    Loss = mean( exp( -(ent - entropy_min) / 1.0 ) )
+
+    - entropy_scale is hardcoded to 1.0.
+    - When ent << entropy_min (collapse): loss >> 1, strong gradient pushing entropy up.
+    - When ent == entropy_min: loss == 1, gradient still exists.
+    - When ent >> entropy_min: loss -> 0 smoothly, gradient vanishes gently.
+
+    This replaces the previous relu(entropy_min - ent) formulation whose
+    gradient was zero whenever entropy exceeded entropy_min, allowing
+    re-collapse without penalty.
+    """
+    _ENTROPY_SCALE = 1.0
     a = extract_cls_patch_attn(attn_scores, exclude_cls_col=exclude_cls_col)
     a = a / (tf.reduce_sum(a, axis=-1, keepdims=True) + eps)
-    ent = -tf.reduce_sum(a * tf.math.log(a + eps), axis=-1)
-    return tf.reduce_mean(tf.nn.relu(tf.cast(entropy_min, ent.dtype) - ent))
+    ent = -tf.reduce_sum(a * tf.math.log(a + eps), axis=-1)  # (B, H)
+    return tf.reduce_mean(
+        tf.exp(
+            -(ent - tf.cast(entropy_min, ent.dtype))
+            / tf.cast(_ENTROPY_SCALE, ent.dtype)
+        )
+    )
 
 
 def multilayer_cls_diversity_with_entropy(
