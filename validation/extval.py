@@ -211,124 +211,106 @@ def _log_pca_scatter(model_id: str, prefix: str, hcc_3d: np.ndarray, hem_3d: np.
     })
 
 
-def _make_barplot(
+def _make_boxplot(
     title: str,
     ylabel: str,
-    means: Sequence[float],
-    errors: Sequence[float],
+    arrays: Sequence[np.ndarray],
     labels: Sequence[str],
 ) -> plt.Figure:
-    """집단 간 수치 분포를 시각화하는 에러 막대 bar plot을 생성하고 Figure를 반환한다.
+    """집단 간 수치 분포를 시각화하는 box plot을 생성하고 Figure를 반환한다.
 
     Args:
-        title:  그래프 제목
-        ylabel: y축 레이블
-        means:  각 집단의 mean 값 리스트
-        errors: 각 집단의 SEM 값 리스트 (means와 동일 길이)
-        labels: 각 집단의 이름 리스트 (means와 동일 길이)
+        title:   그래프 제목
+        ylabel:  y축 레이블
+        arrays:  각 집단의 per-sample 유사도 배열 리스트
+        labels:  각 집단의 이름 리스트 (arrays와 동일 길이)
 
     Returns:
         matplotlib Figure 객체 (wandb.Image()에 직접 전달 가능)
     """
-    if len(means) != len(errors) or len(means) != len(labels):
-        raise ValueError('means, errors, and labels must have the same length')
-
-    x = np.arange(len(labels))
-    fig, ax = plt.subplots(figsize=(6, 5), dpi=150)
+    if len(arrays) != len(labels):
+        raise ValueError('arrays and labels must have the same length')
 
     # HCC → red, Hemangioma → blue (기존 PCA scatter 색상과 통일)
     _palette = ['#C0504D', '#4F81BD', '#9BBB59', '#8064A2']
-    bar_colors = [_palette[i % len(_palette)] for i in range(len(labels))]
+    box_colors = [_palette[i % len(_palette)] for i in range(len(labels))]
 
-    ax.bar(
-        x,
-        means,
-        yerr=errors,
-        capsize=6,
-        color=bar_colors,
-        edgecolor='black',
-        linewidth=0.8,
-        alpha=0.88,
-        width=0.55,
-        error_kw={'elinewidth': 1.4, 'capthick': 1.4, 'ecolor': '#333333'},
+    fig, ax = plt.subplots(figsize=(6, 5), dpi=150)
+
+    bp = ax.boxplot(
+        [arr for arr in arrays],
+        patch_artist=True,
+        notch=False,
+        widths=0.50,
+        medianprops=dict(color='black', linewidth=2.0),
+        whiskerprops=dict(linewidth=1.2),
+        capprops=dict(linewidth=1.2),
+        flierprops=dict(
+            marker='o',
+            markersize=4,
+            linestyle='none',
+            markeredgewidth=0.6,
+        ),
+        boxprops=dict(linewidth=1.0),
     )
+
+    for patch, color in zip(bp['boxes'], box_colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.75)
+
+    for flier, color in zip(bp['fliers'], box_colors):
+        flier.set_markerfacecolor(color)
+        flier.set_markeredgecolor(color)
 
     ax.set_title(title, fontsize=12, fontweight='bold', pad=10)
     ax.set_ylabel(ylabel, fontsize=10)
-    ax.set_xticks(x)
+    ax.set_xticks(range(1, len(labels) + 1))
     ax.set_xticklabels(labels, fontsize=10)
     ax.grid(axis='y', linestyle='--', linewidth=0.6, alpha=0.40)
     ax.set_axisbelow(True)
     ax.spines[['top', 'right']].set_visible(False)
 
-    # y축 범위: bar + error 최대/최소값에서 여백 15% 확보
-    vals = np.asarray(means, dtype=float)
-    errs = np.asarray(errors, dtype=float)
-    errs_safe = np.nan_to_num(errs, nan=0.0)
-    tops = vals + errs_safe
-    bottoms = vals - errs_safe
-
-    finite_vals = np.concatenate([bottoms[np.isfinite(bottoms)], vals[np.isfinite(vals)]])
-    finite_tops = tops[np.isfinite(tops)]
-    y_min = float(np.min(finite_vals)) if len(finite_vals) else 0.0
-    y_max = float(np.max(finite_tops)) if len(finite_tops) else 1.0
-
-    if y_min == y_max:
-        margin = max(abs(y_max) * 0.2, 1e-3)
-    else:
-        margin = (y_max - y_min) * 0.15
-    ax.set_ylim(y_min - margin, y_max + margin)
-
-    # 각 bar 위에 mean 값 텍스트 표기
-    for xi, yi, ei in zip(x, vals, errs_safe):
-        if not np.isfinite(yi):
-            continue
-        offset = (y_max - y_min) * 0.03 if y_max != y_min else 1e-4
-        ax.text(
-            xi,
-            yi + ei + offset,
-            f'{yi:.3f}',
-            ha='center',
-            va='bottom',
-            fontsize=9,
-            color='#222222',
-        )
-
     fig.tight_layout()
     return fig
 
 
-def _log_summary_plots(model_id: str, prefix: str, stats: dict[str, float], ttest_df: pd.DataFrame):
+def _log_summary_plots(
+    model_id: str,
+    prefix: str,
+    stats: dict[str, float],
+    ttest_df: pd.DataFrame,
+    sim_A: np.ndarray,
+    sim_B: np.ndarray,
+    sim_C: np.ndarray,
+    sim_D: np.ndarray,
+) -> None:
     if wandb is None or wandb.run is None:
         return
     labels = ['HCC group', 'Hemangioma group']
 
-    fig_hcc = _make_barplot(
+    fig_hcc = _make_boxplot(
         title='HCC similarity',
-        ylabel='Mean similarity (a.u.)',
-        means=[stats['A_hcc_to_hccproto_mean'], stats['C_hem_to_hccproto_mean']],
-        errors=[stats['A_hcc_to_hccproto_sem'], stats['C_hem_to_hccproto_sem']],
+        ylabel='Similarity (a.u.)',
+        arrays=[sim_A, sim_C],
         labels=labels,
     )
-    fig_hem = _make_barplot(
+    fig_hem = _make_boxplot(
         title='Hemangioma similarity',
-        ylabel='Mean similarity (a.u.)',
-        means=[stats['B_hcc_to_hemproto_mean'], stats['D_hem_to_hemproto_mean']],
-        errors=[stats['B_hcc_to_hemproto_sem'], stats['D_hem_to_hemproto_sem']],
+        ylabel='Similarity (a.u.)',
+        arrays=[sim_B, sim_D],
         labels=labels,
     )
-    fig_margin = _make_barplot(
+    fig_margin = _make_boxplot(
         title='HCC sim - Hemangioma sim',
         ylabel='Similarity margin (a.u.)',
-        means=[stats['A_minus_B_mean'], stats['C_minus_D_mean']],
-        errors=[stats['A_minus_B_sem'], stats['C_minus_D_sem']],
+        arrays=[sim_A - sim_B, sim_C - sim_D],
         labels=labels,
     )
 
     wandb.log({
-        f'{prefix}/{model_id}/hcc_similarity_bar': wandb.Image(fig_hcc),
-        f'{prefix}/{model_id}/hemangioma_similarity_bar': wandb.Image(fig_hem),
-        f'{prefix}/{model_id}/margin_similarity_bar': wandb.Image(fig_margin),
+        f'{prefix}/{model_id}/hcc_similarity_box': wandb.Image(fig_hcc),
+        f'{prefix}/{model_id}/hemangioma_similarity_box': wandb.Image(fig_hem),
+        f'{prefix}/{model_id}/margin_similarity_box': wandb.Image(fig_margin),
         f'{prefix}/{model_id}/ttest_table': wandb.Table(dataframe=ttest_df),
     })
     plt.close(fig_hcc)
@@ -427,6 +409,15 @@ def run_extval(stage2_model, cfg: ExtValConfig) -> pd.DataFrame:
             f'{cfg.wandb_prefix}/{cfg.model_id}/ttest_margin_p': ttest_margin['p_value'],
         })
         _log_pca_scatter(cfg.model_id, cfg.wandb_prefix, hcc_3d, hem_3d, all_hcc_paths, all_hem_paths, pca_var)
-        _log_summary_plots(cfg.model_id, cfg.wandb_prefix, stats, ttest_df)
+        _log_summary_plots(
+            cfg.model_id,
+            cfg.wandb_prefix,
+            stats,
+            ttest_df,
+            sim_A=A,
+            sim_B=B,
+            sim_C=C,
+            sim_D=D,
+        )
 
     return ttest_df
