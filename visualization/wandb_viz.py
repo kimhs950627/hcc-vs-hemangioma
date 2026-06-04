@@ -1,7 +1,6 @@
-
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -28,6 +27,16 @@ class WandbVisualizationConfig:
     normalize_from_minus1: bool = False
     gradcam_layer_name: str | None = None
     stage: str = "stage1"
+    table_key: str | None = None
+    """wandb에 로그할 테이블의 key(제목). None이면 각 Visualizer의 기본값을 사용한다.
+
+    예시::
+
+        cfg = WandbVisualizationConfig(
+            test_dir="/data/test",
+            table_key="my_attention_table",  # wandb UI에 이 이름으로 표시됨
+        )
+    """
 
 
 def _require_wandb():
@@ -258,11 +267,16 @@ def _classification_summary(
     return report_text, report_dict
 
 
+_DEFAULT_ATTENTION_TABLE_KEY = "stage1_attention_table"
+
+
 class WandbAttentionVisualizer(keras.callbacks.Callback):
     def __init__(self, vis_cfg: WandbVisualizationConfig):
         super().__init__()
         self.cfg = vis_cfg
         self.samples = _list_test_images(vis_cfg.test_dir, vis_cfg.num_images)
+        # table_key가 명시되지 않으면 기본값 사용
+        self._table_key: str = vis_cfg.table_key if vis_cfg.table_key is not None else _DEFAULT_ATTENTION_TABLE_KEY
 
     def _forward_for_attention(self, image_batch: tf.Tensor):
         model = self.model
@@ -316,7 +330,7 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
         table = wandb.Table(columns=columns)
         for row in rows:
             table.add_data(*[row[c] for c in columns])
-        wandb.log({"stage1_attention_table": table}, commit=False)
+        wandb.log({self._table_key: table}, commit=False)
 
 
 class WandbStage2Visualizer(keras.callbacks.Callback):
