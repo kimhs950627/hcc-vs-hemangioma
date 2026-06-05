@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 from sklearn.metrics import classification_report, confusion_matrix
 
@@ -14,6 +14,9 @@ try:
     import wandb
 except Exception:
     wandb = None
+
+
+AttentionMode = Literal["last_layer", "rollout"]
 
 
 @dataclass
@@ -28,14 +31,27 @@ class WandbVisualizationConfig:
     gradcam_layer_name: str | None = None
     stage: str = "stage1"
     table_key: str | None = None
-    """wandb에 로그할 테이블의 key(제목). None이면 각 Visualizer의 기본값을 사용한다.
+    attention_mode: AttentionMode = "last_layer"
+    """attention 시각화 모드.
+
+    - ``"last_layer"`` (기본값): 마지막 transformer block의 attention만 사용.
+    - ``"rollout"``: 모든 block attention을 residual-augmented matrix product로
+      합산하는 Attention Rollout (Abnar & Zuidema, 2020).
 
     예시::
 
         cfg = WandbVisualizationConfig(
             test_dir="/data/test",
-            table_key="my_attention_table",  # wandb UI에 이 이름으로 표시됨
+            attention_mode="rollout",   # rollout 사용
         )
+    """
+    rollout_head_reduction: Literal["mean", "max"] = "mean"
+    rollout_discard_ratio: float = 0.0
+    """Rollout 전용 옵션.
+
+    rollout_head_reduction : head 축 집계 방법 ('mean' or 'max')
+    rollout_discard_ratio  : 0.0~1.0. 각 layer에서 하위 비율 attention을 0으로 버림
+                             (noise 제거). 0.0이면 vanilla rollout.
     """
 
 
@@ -144,17 +160,90 @@ def _infer_patch_grid(attn: np.ndarray) -> tuple[int, int]:
 
 
 def _extract_cls_attention_map(attn: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Last-layer attention: CLS row → patch grid.
+
+    Args:
+        attn: [B, H, T, T] — single layer attention (last block)
+    Returns:
+        merged   : [B, gh, gw]    — head-mean CLS→patch map
+        headwise : [B, H, gh, gw] — per-head CLS→patch map
+    """
     if attn.ndim != 4:
         raise ValueError(f"Expected attention shape [B,H,T,T], got {attn.shape}")
-    cls_to_patch = attn[:, :, 0, 1:]
+    cls_to_patch = attn[:, :, 0, 1:]  # [B, H, N]
     gh, gw = _infer_patch_grid(attn[0])
-    merged = np.mean(cls_to_patch, axis=1)
-    merged = merged.reshape(attn.shape[0], gh, gw)
+    merged = np.mean(cls_to_patch, axis=1).reshape(attn.shape[0], gh, gw)
     headwise = cls_to_patch.reshape(attn.shape[0], attn.shape[1], gh, gw)
     return merged, headwise
 
 
+# ── Attention Rollout (Abnar & Zuidema, 2020) ─────────────────────────────
+
+def compute_attention_rollout(
+    attn_list: list[np.ndarray],
+    head_reduction: str = "mean",
+    discard_ratio: float = 0.0,
+) -> np.ndarray:
+    """Attention Rollout across all transformer blocks.
+
+    Args:
+        attn_list      : List[[B, H, N+1, N+1]] — 모든 block의 attention weight list.
+                         encoder output dict의 'attention_weights' 를 그대로 전달.
+        head_reduction : 'mean' | 'max' — head 축 집계 방법.
+        discard_ratio  : 0.0~1.0 — 각 layer에서 하위 비율 attention을 0으로 버림
+                         (noise 제거용). 0.0이면 vanilla rollout.
+    Returns:
+        rollout : [B, N+1, N+1] — residual-augmented layer-product rollout map.
+                  CLS row (rollout[:, 0, 1:]) 가 최종 시각화에 사용됨.
+    """
+    if head_reduction == "mean":
+        mats = [np.mean(a, axis=1) for a in attn_list]   # [B, T, T] per layer
+    else:
+        mats = [np.max(a, axis=1) for a in attn_list]
+
+    if discard_ratio > 0.0:
+        cleaned = []
+        for mat in mats:
+            flat = mat.reshape(mat.shape[0], -1)
+            thresh = np.quantile(flat, discard_ratio, axis=-1, keepdims=True)
+            thresh = thresh.reshape(mat.shape[0], 1, 1)
+            cleaned.append(np.where(mat >= thresh, mat, 0.0))
+        mats = cleaned
+
+    n_tokens = mats[0].shape[-1]
+    eye = np.eye(n_tokens, dtype=np.float32)
+    augmented = []
+    for mat in mats:
+        aug = 0.5 * mat + 0.5 * eye[None]           # residual connection 반영
+        aug = aug / (aug.sum(axis=-1, keepdims=True) + 1e-8)  # row-normalize
+        augmented.append(aug)
+
+    rollout = augmented[0]
+    for mat in augmented[1:]:
+        rollout = np.einsum("bij,bjk->bik", mat, rollout)  # [B,T,T]
+
+    return rollout
+
+
+def _get_attention_list_from_outputs(outputs: Any) -> list[np.ndarray] | None:
+    """encoder output dict에서 모든 layer attention list를 추출.
+
+    'attention_weights' (full list) 우선, 없으면 'last_encoder_layer_attentional_weights'
+    를 1-element list로 포장해서 반환.
+    """
+    if not isinstance(outputs, dict):
+        return None
+    attn_list = outputs.get("attention_weights")
+    if attn_list and isinstance(attn_list, (list, tuple)) and len(attn_list) > 0:
+        return [tf.convert_to_tensor(a).numpy() for a in attn_list]
+    attn_last = outputs.get("last_encoder_layer_attentional_weights")
+    if attn_last is not None:
+        return [tf.convert_to_tensor(attn_last).numpy()]
+    return None
+
+
 def _get_attention_from_outputs(outputs: Any) -> np.ndarray | None:
+    """Last-layer attention 단일 array 반환 (기존 호환)."""
     if isinstance(outputs, dict):
         attn = outputs.get("last_encoder_layer_attentional_weights")
         if attn is None and outputs.get("attention_weights"):
@@ -164,6 +253,43 @@ def _get_attention_from_outputs(outputs: Any) -> np.ndarray | None:
     if attn is None:
         return None
     return tf.convert_to_tensor(attn).numpy()
+
+
+def _extract_attention_maps(
+    outputs: Any,
+    mode: AttentionMode = "last_layer",
+    head_reduction: str = "mean",
+    discard_ratio: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """attention_mode에 따라 (merged [B,gh,gw], headwise [B,H,gh,gw]) 반환.
+
+    Args:
+        outputs        : encoder forward output dict
+        mode           : 'last_layer' (기본값) 또는 'rollout'
+        head_reduction : rollout 전용 — head 축 집계 방법
+        discard_ratio  : rollout 전용 — 하위 noise 비율 제거
+    Returns:
+        (merged, headwise) 또는 None (attention 없을 때)
+    """
+    if mode == "rollout":
+        attn_list = _get_attention_list_from_outputs(outputs)
+        if attn_list is None:
+            return None
+        # rollout: all layers
+        rollout = compute_attention_rollout(attn_list, head_reduction, discard_ratio)
+        cls_rollout = rollout[:, 0, 1:]               # [B, N]
+        gh, gw = _infer_patch_grid(attn_list[-1][0])
+        merged = cls_rollout.reshape(rollout.shape[0], gh, gw)
+        # headwise: last layer 그대로 (per-head column은 last layer 기준 유지)
+        last = attn_list[-1]                           # [B, H, T, T]
+        cls_last = last[:, :, 0, 1:]                  # [B, H, N]
+        headwise = cls_last.reshape(last.shape[0], last.shape[1], gh, gw)
+        return merged, headwise
+    else:  # last_layer (default)
+        attn = _get_attention_from_outputs(outputs)
+        if attn is None:
+            return None
+        return _extract_cls_attention_map(attn)
 
 
 def _get_predictions(outputs: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
@@ -271,11 +397,32 @@ _DEFAULT_ATTENTION_TABLE_KEY = "stage1_attention_table"
 
 
 class WandbAttentionVisualizer(keras.callbacks.Callback):
+    """Stage1 attention visualization callback.
+
+    attention_mode 옵션:
+        - ``"last_layer"`` (기본값): 마지막 block attention만 사용.
+        - ``"rollout"``: Attention Rollout (모든 block 합산).
+
+    사용 예시::
+
+        # last_layer (기본값)
+        cb = WandbAttentionVisualizer(WandbVisualizationConfig(
+            test_dir="/data/test",
+        ))
+
+        # rollout 사용
+        cb = WandbAttentionVisualizer(WandbVisualizationConfig(
+            test_dir="/data/test",
+            attention_mode="rollout",
+            rollout_head_reduction="mean",
+            rollout_discard_ratio=0.1,
+        ))
+    """
+
     def __init__(self, vis_cfg: WandbVisualizationConfig):
         super().__init__()
         self.cfg = vis_cfg
         self.samples = _list_test_images(vis_cfg.test_dir, vis_cfg.num_images)
-        # table_key가 명시되지 않으면 기본값 사용
         self._table_key: str = vis_cfg.table_key if vis_cfg.table_key is not None else _DEFAULT_ATTENTION_TABLE_KEY
 
     def _forward_for_attention(self, image_batch: tf.Tensor):
@@ -295,19 +442,28 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
     def _build_stage1_row(self, path: str, true_label: int | None):
         original, resized = _load_raw_image(path, self.cfg.image_size)
         outputs = self._forward_for_attention(resized)
-        attn = _get_attention_from_outputs(outputs)
-        if attn is None:
+
+        result = _extract_attention_maps(
+            outputs,
+            mode=self.cfg.attention_mode,
+            head_reduction=self.cfg.rollout_head_reduction,
+            discard_ratio=self.cfg.rollout_discard_ratio,
+        )
+        if result is None:
             return None
-        merged, headwise = _extract_cls_attention_map(attn)
+        merged, headwise = result
+
         img_uint8 = _prepare_display_image(original, self.cfg.normalize_from_minus1)
         target_hw = img_uint8.shape[:2]
         merged_up = _resize_heatmap(merged[0], target_hw)
+
+        mode_label = self.cfg.attention_mode  # 'last_layer' or 'rollout'
         row = {
             "path": path,
             "label": true_label,
             "raw_image": wandb.Image(img_uint8),
-            "merged_attention": wandb.Image(_colormap_heatmap(merged_up)),
-            "overlay_merged": wandb.Image(_overlay_image(img_uint8, merged_up, self.cfg.overlay_alpha)),
+            f"attention_map_{mode_label}": wandb.Image(_colormap_heatmap(merged_up)),
+            f"overlay_{mode_label}": wandb.Image(_overlay_image(img_uint8, merged_up, self.cfg.overlay_alpha)),
         }
         for h in range(headwise.shape[1]):
             hm_up = _resize_heatmap(headwise[0, h], target_hw)
@@ -334,6 +490,13 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
 
 
 class WandbStage2Visualizer(keras.callbacks.Callback):
+    """Stage2 classification visualization callback.
+
+    attention_mode 옵션:
+        - ``"last_layer"`` (기본값): 마지막 block attention만 사용.
+        - ``"rollout"``: Attention Rollout (모든 block 합산).
+    """
+
     def __init__(self, vis_cfg: WandbVisualizationConfig):
         super().__init__()
         self.cfg = vis_cfg
@@ -366,21 +529,30 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
         probs, logits = _get_predictions(outputs)
         pred_label = int(np.argmax(probs[0])) if probs is not None else None
         attn_outputs = self._attention_outputs(resized)
-        attn = _get_attention_from_outputs(attn_outputs)
+
         row = {
             "path": path,
             "true_label": true_label,
             "pred_label": pred_label,
             "raw_image": wandb.Image(img_uint8),
         }
-        if attn is not None:
-            merged, headwise = _extract_cls_attention_map(attn)
+
+        result = _extract_attention_maps(
+            attn_outputs,
+            mode=self.cfg.attention_mode,
+            head_reduction=self.cfg.rollout_head_reduction,
+            discard_ratio=self.cfg.rollout_discard_ratio,
+        )
+        if result is not None:
+            merged, headwise = result
+            mode_label = self.cfg.attention_mode
             merged_up = _resize_heatmap(merged[0], img_uint8.shape[:2])
-            row["merged_attention"] = wandb.Image(_colormap_heatmap(merged_up))
-            row["overlay_merged"] = wandb.Image(_overlay_image(img_uint8, merged_up, self.cfg.overlay_alpha))
+            row[f"attention_map_{mode_label}"] = wandb.Image(_colormap_heatmap(merged_up))
+            row[f"overlay_{mode_label}"] = wandb.Image(_overlay_image(img_uint8, merged_up, self.cfg.overlay_alpha))
             for h in range(headwise.shape[1]):
                 hm_up = _resize_heatmap(headwise[0, h], img_uint8.shape[:2])
                 row[f"overlay_head_{h+1}"] = wandb.Image(_overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha))
+
         grad_model = self._resolve_model_for_gradcam()
         layer_name = _resolve_gradcam_layer(grad_model, self.cfg.gradcam_layer_name)
         for class_idx in (0, 1):
