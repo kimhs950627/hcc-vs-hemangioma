@@ -6,10 +6,8 @@ from keras import layers
 
 from models.encoder import build_encoder
 from training.losses import (
-    attention_entropy_floor_loss,
     dino_cross_entropy,
-    head_cls_diversity_loss,
-    multilayer_cls_diversity_with_entropy,
+    diversity_loss as compute_diversity_loss,
 )
 from training.ssl_schedules import LrInput
 from training.selfpatch import SelfPatch
@@ -19,8 +17,7 @@ class DINOPretrainModel(keras.Model):
     """DINO self-supervised pretraining model.
 
     teacher_temp_var is a plain tf.Variable that external callbacks
-    (TeacherTempWarmupCallback) update on_train_batch_end. The model
-    itself never touches teacher_temp_var except to read it.
+    (TeacherTempWarmupCallback) update on_train_batch_end.
     """
 
     def __init__(
@@ -48,6 +45,8 @@ class DINOPretrainModel(keras.Model):
         selfpatch_proj_dim: int = 256,
         selfpatch_top_k: int = 4,
         selfpatch_temperature: float = 0.07,
+        diversity_mode: str = 'cls_entropy',
+        diversity_ortho_alpha: float = 0.5,
         diversity_layer_mode: str = 'top_half',
         diversity_start_layer: int | None = None,
         diversity_end_layer: int | None = None,
@@ -62,6 +61,8 @@ class DINOPretrainModel(keras.Model):
         self.n_local = n_local
         self.lambda_selfpatch = float(lambda_selfpatch)
         self.lambda_diversity = float(lambda_diversity)
+        self.diversity_mode = diversity_mode
+        self.diversity_ortho_alpha = float(diversity_ortho_alpha)
         self.diversity_layer_mode = diversity_layer_mode
         self.diversity_start_layer = diversity_start_layer
         self.diversity_end_layer = diversity_end_layer
@@ -152,14 +153,16 @@ class DINOPretrainModel(keras.Model):
             zero = tf.constant(0.0, dtype=tf.float32)
             return zero, zero, zero
         layer_indices = self._resolve_diversity_layer_indices(len(attn_list))
-        return multilayer_cls_diversity_with_entropy(
+        # unified dispatcher: cls_entropy (legacy) or ortho_entropy (new)
+        return compute_diversity_loss(
             attn_list,
+            mode=self.diversity_mode,
+            ortho_alpha=self.diversity_ortho_alpha,
             layer_indices=layer_indices,
             exclude_cls_col=self.diversity_exclude_cls_col,
             entropy_min=self.diversity_entropy_min,
             entropy_weight=self.diversity_entropy_weight,
         )
-
 
     def _resolve_diversity_layer_indices(self, n_layers: int) -> list[int]:
         mode = self.diversity_layer_mode
@@ -245,13 +248,15 @@ class DINOPretrainModel(keras.Model):
                     training=True,
                 )
 
-            diversity_loss = tf.constant(0.0, dtype=tf.float32)
-            diversity_cls_loss = tf.constant(0.0, dtype=tf.float32)
-            diversity_entropy_loss = tf.constant(0.0, dtype=tf.float32)
+            div_total = tf.constant(0.0, dtype=tf.float32)
+            div_primary = tf.constant(0.0, dtype=tf.float32)
+            div_entropy = tf.constant(0.0, dtype=tf.float32)
             if self.lambda_diversity > 0.0:
-                diversity_loss, diversity_cls_loss, diversity_entropy_loss = self._compute_diversity_loss(g1, training=True)
+                # div_primary: ortho loss (ortho_entropy) or cosine-sim (cls_entropy)
+                # div_entropy: entropy floor loss (공통)
+                div_total, div_primary, div_entropy = self._compute_diversity_loss(g1, training=True)
 
-            loss = dino_loss + self.lambda_selfpatch * selfpatch_loss + self.lambda_diversity * diversity_loss
+            loss = dino_loss + self.lambda_selfpatch * selfpatch_loss + self.lambda_diversity * div_total
 
         trainable_vars = list(self.online_encoder.trainable_variables) + list(self.projector.trainable_variables)
         grads = tape.gradient(loss, trainable_vars)
@@ -266,9 +271,10 @@ class DINOPretrainModel(keras.Model):
             'dino_loss': dino_loss,
             'selfpatch_loss': selfpatch_loss,
             'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32),
-            'diversity_loss': diversity_loss,
-            'diversity_cls_loss': diversity_cls_loss,
-            'diversity_entropy_loss': diversity_entropy_loss,
+            'diversity_loss': div_total,
+            # mode=cls_entropy -> cosine-sim diversity / mode=ortho_entropy -> Gram^2 ortho loss
+            'diversity_primary_loss': div_primary,
+            'diversity_entropy_loss': div_entropy,
             'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
         }
 
@@ -300,6 +306,8 @@ def build_stage1_dino_trainer(
     selfpatch_proj_dim: int = 256,
     selfpatch_top_k: int = 4,
     selfpatch_temperature: float = 0.07,
+    diversity_mode: str = 'cls_entropy',
+    diversity_ortho_alpha: float = 0.5,
     diversity_layer_mode: str = 'top_half',
     diversity_start_layer: int | None = None,
     diversity_end_layer: int | None = None,
@@ -335,6 +343,8 @@ def build_stage1_dino_trainer(
         selfpatch_proj_dim=selfpatch_proj_dim,
         selfpatch_top_k=selfpatch_top_k,
         selfpatch_temperature=selfpatch_temperature,
+        diversity_mode=diversity_mode,
+        diversity_ortho_alpha=diversity_ortho_alpha,
         diversity_layer_mode=diversity_layer_mode,
         diversity_start_layer=diversity_start_layer,
         diversity_end_layer=diversity_end_layer,
