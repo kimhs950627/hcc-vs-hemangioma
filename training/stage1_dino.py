@@ -18,6 +18,10 @@ class DINOPretrainModel(keras.Model):
 
     teacher_temp_var is a plain tf.Variable that external callbacks
     (TeacherTempWarmupCallback) update on_train_batch_end.
+
+    ortho_alpha_var is a tf.Variable controlled by OrthoAlphaScheduleCallback:
+      - starts at 0.0 (pure entropy phase)
+      - linearly warms up to target_alpha over warmup_steps
     """
 
     def __init__(
@@ -62,7 +66,6 @@ class DINOPretrainModel(keras.Model):
         self.lambda_selfpatch = float(lambda_selfpatch)
         self.lambda_diversity = float(lambda_diversity)
         self.diversity_mode = diversity_mode
-        self.diversity_ortho_alpha = float(diversity_ortho_alpha)
         self.diversity_layer_mode = diversity_layer_mode
         self.diversity_start_layer = diversity_start_layer
         self.diversity_end_layer = diversity_end_layer
@@ -126,6 +129,17 @@ class DINOPretrainModel(keras.Model):
             dtype=tf.float32,
             name='teacher_temp_var',
         )
+        # ortho_alpha_var: controlled by OrthoAlphaScheduleCallback.
+        # Initialised to diversity_ortho_alpha (cfg value).
+        # When OrthoAlphaScheduleCallback is used it overrides to 0 at
+        # train_begin and warms up to target_alpha — so cfg value acts
+        # as the static fallback when callback is NOT attached.
+        self.ortho_alpha_var = tf.Variable(
+            float(diversity_ortho_alpha),
+            trainable=False,
+            dtype=tf.float32,
+            name='ortho_alpha_var',
+        )
         self._teacher_initialized = False
 
     def compile(self, optimizer, **kwargs):
@@ -153,11 +167,12 @@ class DINOPretrainModel(keras.Model):
             zero = tf.constant(0.0, dtype=tf.float32)
             return zero, zero, zero
         layer_indices = self._resolve_diversity_layer_indices(len(attn_list))
-        # unified dispatcher: cls_entropy (legacy) or ortho_entropy (new)
+        # Read ortho_alpha from tf.Variable so OrthoAlphaScheduleCallback
+        # changes take effect without graph recompilation.
         return compute_diversity_loss(
             attn_list,
             mode=self.diversity_mode,
-            ortho_alpha=self.diversity_ortho_alpha,
+            ortho_alpha=float(self.ortho_alpha_var.numpy()),
             layer_indices=layer_indices,
             exclude_cls_col=self.diversity_exclude_cls_col,
             entropy_min=self.diversity_entropy_min,
@@ -252,8 +267,6 @@ class DINOPretrainModel(keras.Model):
             div_primary = tf.constant(0.0, dtype=tf.float32)
             div_entropy = tf.constant(0.0, dtype=tf.float32)
             if self.lambda_diversity > 0.0:
-                # div_primary: ortho loss (ortho_entropy) or cosine-sim (cls_entropy)
-                # div_entropy: entropy floor loss (공통)
                 div_total, div_primary, div_entropy = self._compute_diversity_loss(g1, training=True)
 
             loss = dino_loss + self.lambda_selfpatch * selfpatch_loss + self.lambda_diversity * div_total
@@ -272,10 +285,11 @@ class DINOPretrainModel(keras.Model):
             'selfpatch_loss': selfpatch_loss,
             'lambda_selfpatch': tf.cast(self.lambda_selfpatch, tf.float32),
             'diversity_loss': div_total,
-            # mode=cls_entropy -> cosine-sim diversity / mode=ortho_entropy -> Gram^2 ortho loss
             'diversity_primary_loss': div_primary,
             'diversity_entropy_loss': div_entropy,
             'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
+            # ortho_alpha_var 추적: wandb에서 schedule 확인용
+            'ortho_alpha': self.ortho_alpha_var,
         }
 
     def get_stage2_encoder(self, use_teacher: bool = True) -> keras.Model:
