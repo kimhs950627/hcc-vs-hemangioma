@@ -64,16 +64,31 @@ class SelfPatchConfig:
     temperature: float = 0.07
 
 
-
-
 @dataclass
 class DiversityConfig:
+    # --- loss weight (0.0 = disabled) ---
     weight: float = 0.0
-    mode: str = "attention_map"
-    apply_to: str = "student"
+
+    # --- loss mode ---
+    # "cls_entropy"  : cosine-sim diversity + entropy_weight * entropy_floor  (legacy)
+    # "ortho_entropy": ortho_alpha * Gram^2 + (1-ortho_alpha) * entropy_floor (new)
+    mode: str = "cls_entropy"
+
+    # --- new: blending coefficient for ortho_entropy mode ---
+    ortho_alpha: float = 0.5
+
+    # --- layer selection ---
+    # "top_half": use top half of transformer layers
+    # "all"     : use all layers
+    # "custom"  : use [start_layer, end_layer)
+    layer_mode: str = "top_half"
     start_layer: int | None = None
     end_layer: int | None = None
-    normalize: bool = True
+
+    # --- per-layer loss kwargs ---
+    exclude_cls_col: bool = True
+    entropy_weight: float = 1.0
+    entropy_min: float = 2.5
 
 
 @dataclass
@@ -111,7 +126,7 @@ class Stage1TrainerConfig:
             "lambda_selfpatch": self.selfpatch.weight,
             "lambda_diversity": self.diversity.weight,
             "diversity_mode": self.diversity.mode,
-            "diversity_apply_to": self.diversity.apply_to,
+            "diversity_ortho_alpha": self.diversity.ortho_alpha,
             "lr": self.optim.lr,
             "weight_decay": self.optim.weight_decay,
         }
@@ -156,12 +171,14 @@ def core_wandb_config(cfg: Stage1TrainerConfig) -> dict[str, Any]:
         out["selfpatch_top_k"] = cfg.selfpatch.top_k
     if cfg.diversity.weight > 0.0:
         out["lambda_diversity"] = cfg.diversity.weight
-    if cfg.diversity.weight > 0.0:
         out["diversity_mode"] = cfg.diversity.mode
-        out["diversity_apply_to"] = cfg.diversity.apply_to
+        out["diversity_layer_mode"] = cfg.diversity.layer_mode
         out["diversity_start_layer"] = cfg.diversity.start_layer
         out["diversity_end_layer"] = cfg.diversity.end_layer
-        out["diversity_normalize"] = cfg.diversity.normalize
+        out["diversity_entropy_min"] = cfg.diversity.entropy_min
+        out["diversity_entropy_weight"] = cfg.diversity.entropy_weight
+        if cfg.diversity.mode == "ortho_entropy":
+            out["diversity_ortho_alpha"] = cfg.diversity.ortho_alpha
     if cfg.encoder.attn_drop:
         out["attn_drop_rate"] = cfg.encoder.attn_drop_rate
         out["attn_drop_top_k"] = cfg.encoder.attn_drop_top_k
