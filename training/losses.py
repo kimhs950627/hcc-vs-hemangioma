@@ -86,104 +86,84 @@ def masked_patch_l1_loss(
 
 
 # ---------------------------------------------------------------------------
-# Head Disagreement Loss
+# Attention diversity helpers
 # ---------------------------------------------------------------------------
 
-def head_disagreement_loss(attn_scores: tf.Tensor, eps: float = 1e-6) -> tf.Tensor:
-    """Penalise cosine similarity between attention maps of different heads.
-
-    Args:
-        attn_scores: (B, H, T, T)  – raw attention weights after softmax.
-                     Typically the last-layer scores returned by the encoder.
-    Returns:
-        scalar diversity penalty (lower = more diverse heads).
-    """
-    # average over batch → (H, T, T)
-    a = tf.reduce_mean(attn_scores, axis=0)           # (H, T, T)
-    # flatten token-token dimension → (H, T*T)
-    h = tf.shape(a)[0]
-    tt = tf.shape(a)[1] * tf.shape(a)[2]
-    a_flat = tf.reshape(a, [h, tt])                   # (H, T*T)
-
-    # L2-normalise each head's attention map
-    norm = tf.math.l2_normalize(a_flat, axis=-1)      # (H, T*T)
-
-    # pairwise cosine similarity matrix → (H, H)
-    sim = tf.matmul(norm, norm, transpose_b=True)     # (H, H)
-
-    # mask diagonal (self-similarity = 1 always)
-    h_int = attn_scores.shape[1] or tf.shape(attn_scores)[1]
-    mask = 1.0 - tf.eye(h, dtype=attn_scores.dtype)
-
-    # mean off-diagonal cosine sim
-    n_pairs = tf.cast(h * (h - 1), sim.dtype) + tf.cast(eps, sim.dtype)
-    return tf.reduce_sum(sim * mask) / n_pairs
-
-
-def extract_cls_patch_attn(
+def _extract_cls_patch_attn(
     attn_scores: tf.Tensor,
     exclude_cls_col: bool = True,
 ) -> tf.Tensor:
+    """CLS row 추출: (B, H, T, T) -> (B, H, N_patch)"""
     cls_row = attn_scores[:, :, 0, :]
     if exclude_cls_col:
         cls_row = cls_row[:, :, 1:]
     return cls_row
 
 
-def head_cls_diversity_loss(
-    attn_scores: tf.Tensor,
-    exclude_cls_col: bool = True,
-    eps: float = 1e-6,
-) -> tf.Tensor:
-    a = extract_cls_patch_attn(attn_scores, exclude_cls_col=exclude_cls_col)
-    a = tf.math.l2_normalize(a, axis=-1, epsilon=eps)
-    sim = tf.matmul(a, a, transpose_b=True)
-    b = tf.shape(a)[0]
-    h = tf.shape(a)[1]
-    mask = 1.0 - tf.eye(h, batch_shape=[b], dtype=sim.dtype)
-    n_pairs = tf.cast(h * (h - 1), sim.dtype) + tf.cast(eps, sim.dtype)
-    per_sample = tf.reduce_sum(sim * mask, axis=[1, 2]) / n_pairs
-    return tf.reduce_mean(per_sample)
-
-
-def attention_entropy_floor_loss(
+def entropy_floor_loss(
     attn_scores: tf.Tensor,
     exclude_cls_col: bool = True,
     entropy_min: float = 2.5,
     eps: float = 1e-8,
 ) -> tf.Tensor:
-    """Soft-exponential entropy floor loss.
+    """Soft-exponential entropy floor: mean(exp(-(H - H_min))).
 
-    Loss = mean( exp( -(ent - entropy_min) / 1.0 ) )
-
-    - entropy_scale is hardcoded to 1.0.
-    - When ent << entropy_min (collapse): loss >> 1, strong gradient pushing entropy up.
-    - When ent == entropy_min: loss == 1, gradient still exists.
-    - When ent >> entropy_min: loss -> 0 smoothly, gradient vanishes gently.
-
-    This replaces the previous relu(entropy_min - ent) formulation whose
-    gradient was zero whenever entropy exceeded entropy_min, allowing
-    re-collapse without penalty.
+    - H << H_min (collapse): loss >> 1, strong upward gradient.
+    - H >> H_min: loss -> 0 smoothly.
     """
-    _ENTROPY_SCALE = 1.0
-    a = extract_cls_patch_attn(attn_scores, exclude_cls_col=exclude_cls_col)
+    _SCALE = 1.0
+    a = _extract_cls_patch_attn(attn_scores, exclude_cls_col=exclude_cls_col)
     a = a / (tf.reduce_sum(a, axis=-1, keepdims=True) + eps)
     ent = -tf.reduce_sum(a * tf.math.log(a + eps), axis=-1)  # (B, H)
     return tf.reduce_mean(
-        tf.exp(
-            -(ent - tf.cast(entropy_min, ent.dtype))
-            / tf.cast(_ENTROPY_SCALE, ent.dtype)
-        )
+        tf.exp(-(ent - tf.cast(entropy_min, ent.dtype)) / tf.cast(_SCALE, ent.dtype))
     )
 
 
-def multilayer_cls_diversity_with_entropy(
-    attention_list,
+def ortho_loss(
+    attn_scores: tf.Tensor,
+    exclude_cls_col: bool = True,
+    eps: float = 1e-6,
+) -> tf.Tensor:
+    """Head orthogonality loss via Gram matrix off-diagonal squared.
+
+    Gram[i,j] = <A_i_normed, A_j_normed>  =>  loss = mean(Gram_ij^2, i!=j)
+    Quadratic gradient: 작은 cosine similarity에도 지속적 학습 신호 제공.
+
+    Input : attn_scores (B, H, T, T)
+    Output: scalar in [0, 1]
+    """
+    a = _extract_cls_patch_attn(attn_scores, exclude_cls_col=exclude_cls_col)
+    a = tf.math.l2_normalize(a, axis=-1, epsilon=eps)          # (B, H, N)
+    gram = tf.matmul(a, a, transpose_b=True)                   # (B, H, H)
+    b_size = tf.shape(gram)[0]
+    h_size = tf.shape(gram)[1]
+    mask = 1.0 - tf.eye(h_size, batch_shape=[b_size], dtype=gram.dtype)
+    n_pairs = tf.cast(h_size * (h_size - 1), gram.dtype) + eps
+    per_sample = tf.reduce_sum(tf.square(gram) * mask, axis=[1, 2]) / n_pairs
+    return tf.reduce_mean(per_sample)
+
+
+def diversity_loss(
+    attention_list: list,
+    mode: str = "cls_entropy",
+    ortho_alpha: float = 0.5,
     layer_indices: list[int] | None = None,
     exclude_cls_col: bool = True,
     entropy_min: float = 2.5,
     entropy_weight: float = 1.0,
-):
+    eps: float = 1e-6,
+) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    """Unified diversity loss dispatcher.
+
+    mode == "cls_entropy"  : L_total = L_cosine + entropy_weight * L_ent  (legacy)
+    mode == "ortho_entropy": L_total = alpha * L_ortho + (1-alpha) * L_ent (new)
+
+    Returns:
+        (total, L_primary, L_ent)
+        L_primary: cls_entropy -> cosine sim diversity
+                   ortho_entropy -> Gram^2 ortho loss
+    """
     if not attention_list:
         zero = tf.constant(0.0, dtype=tf.float32)
         return zero, zero, zero
@@ -191,14 +171,69 @@ def multilayer_cls_diversity_with_entropy(
     if layer_indices is None:
         layer_indices = list(range(len(attention_list)))
 
-    div_terms = []
-    ent_terms = []
+    primary_terms, ent_terms = [], []
+
     for idx in layer_indices:
         attn = attention_list[idx]
-        div_terms.append(head_cls_diversity_loss(attn, exclude_cls_col=exclude_cls_col))
-        ent_terms.append(attention_entropy_floor_loss(attn, exclude_cls_col=exclude_cls_col, entropy_min=entropy_min))
+        ent_terms.append(entropy_floor_loss(attn, exclude_cls_col=exclude_cls_col, entropy_min=entropy_min))
 
-    div_loss = tf.add_n(div_terms) / tf.cast(len(div_terms), tf.float32)
-    ent_loss = tf.add_n(ent_terms) / tf.cast(len(ent_terms), tf.float32)
-    total = div_loss + tf.cast(entropy_weight, tf.float32) * ent_loss
-    return total, div_loss, ent_loss
+        if mode == "ortho_entropy":
+            primary_terms.append(ortho_loss(attn, exclude_cls_col=exclude_cls_col, eps=eps))
+        else:  # cls_entropy (legacy)
+            a = _extract_cls_patch_attn(attn, exclude_cls_col=exclude_cls_col)
+            a = tf.math.l2_normalize(a, axis=-1, epsilon=eps)
+            sim = tf.matmul(a, a, transpose_b=True)
+            b = tf.shape(sim)[0]; h = tf.shape(sim)[1]
+            mask = 1.0 - tf.eye(h, batch_shape=[b], dtype=sim.dtype)
+            n_pairs = tf.cast(h * (h - 1), sim.dtype) + eps
+            per_sample = tf.reduce_sum(sim * mask, axis=[1, 2]) / n_pairs
+            primary_terms.append(tf.reduce_mean(per_sample))
+
+    L_primary = tf.add_n(primary_terms) / tf.cast(len(primary_terms), tf.float32)
+    L_ent     = tf.add_n(ent_terms)     / tf.cast(len(ent_terms),     tf.float32)
+
+    if mode == "ortho_entropy":
+        alpha = tf.cast(ortho_alpha, tf.float32)
+        total = alpha * L_primary + (1.0 - alpha) * L_ent
+    else:
+        total = L_primary + tf.cast(entropy_weight, tf.float32) * L_ent
+
+    return total, L_primary, L_ent
+
+
+# ---------------------------------------------------------------------------
+# Legacy aliases (backward compat)
+# ---------------------------------------------------------------------------
+
+def head_disagreement_loss(attn_scores: tf.Tensor, eps: float = 1e-6) -> tf.Tensor:
+    a = tf.reduce_mean(attn_scores, axis=0)
+    h = tf.shape(a)[0]; tt = tf.shape(a)[1] * tf.shape(a)[2]
+    a_flat = tf.reshape(a, [h, tt])
+    norm = tf.math.l2_normalize(a_flat, axis=-1)
+    sim = tf.matmul(norm, norm, transpose_b=True)
+    mask = 1.0 - tf.eye(h, dtype=attn_scores.dtype)
+    n_pairs = tf.cast(h * (h - 1), sim.dtype) + tf.cast(eps, sim.dtype)
+    return tf.reduce_sum(sim * mask) / n_pairs
+
+extract_cls_patch_attn        = _extract_cls_patch_attn
+attention_entropy_floor_loss  = entropy_floor_loss
+
+def head_cls_diversity_loss(attn_scores, exclude_cls_col=True, eps=1e-6):
+    a = _extract_cls_patch_attn(attn_scores, exclude_cls_col=exclude_cls_col)
+    a = tf.math.l2_normalize(a, axis=-1, epsilon=eps)
+    sim = tf.matmul(a, a, transpose_b=True)
+    b = tf.shape(a)[0]; h = tf.shape(a)[1]
+    mask = 1.0 - tf.eye(h, batch_shape=[b], dtype=sim.dtype)
+    n_pairs = tf.cast(h * (h - 1), sim.dtype) + tf.cast(eps, sim.dtype)
+    per_sample = tf.reduce_sum(sim * mask, axis=[1, 2]) / n_pairs
+    return tf.reduce_mean(per_sample)
+
+def multilayer_cls_diversity_with_entropy(
+    attention_list, layer_indices=None, exclude_cls_col=True,
+    entropy_min=2.5, entropy_weight=1.0,
+):
+    return diversity_loss(
+        attention_list, mode="cls_entropy",
+        layer_indices=layer_indices, exclude_cls_col=exclude_cls_col,
+        entropy_min=entropy_min, entropy_weight=entropy_weight,
+    )
