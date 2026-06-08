@@ -131,9 +131,10 @@ class DINOPretrainModel(keras.Model):
         )
         # ortho_alpha_var: controlled by OrthoAlphaScheduleCallback.
         # Initialised to diversity_ortho_alpha (cfg value).
-        # When OrthoAlphaScheduleCallback is used it overrides to 0 at
-        # train_begin and warms up to target_alpha — so cfg value acts
-        # as the static fallback when callback is NOT attached.
+        # When OrthoAlphaScheduleCallback is used it overrides to 0.0 at
+        # train_begin and warms up to target_alpha.
+        # Passed directly as tf.Variable to diversity_loss() —
+        # tf.cast() inside that function handles graph-mode compatibility.
         self.ortho_alpha_var = tf.Variable(
             float(diversity_ortho_alpha),
             trainable=False,
@@ -167,12 +168,13 @@ class DINOPretrainModel(keras.Model):
             zero = tf.constant(0.0, dtype=tf.float32)
             return zero, zero, zero
         layer_indices = self._resolve_diversity_layer_indices(len(attn_list))
-        # Read ortho_alpha from tf.Variable so OrthoAlphaScheduleCallback
-        # changes take effect without graph recompilation.
+        # Pass ortho_alpha_var directly as tf.Variable (no .numpy()).
+        # diversity_loss() uses tf.cast(ortho_alpha, tf.float32) internally,
+        # which is fully graph-mode / tf.function compatible.
         return compute_diversity_loss(
             attn_list,
             mode=self.diversity_mode,
-            ortho_alpha=float(self.ortho_alpha_var.numpy()),
+            ortho_alpha=self.ortho_alpha_var,
             layer_indices=layer_indices,
             exclude_cls_col=self.diversity_exclude_cls_col,
             entropy_min=self.diversity_entropy_min,
@@ -288,7 +290,6 @@ class DINOPretrainModel(keras.Model):
             'diversity_primary_loss': div_primary,
             'diversity_entropy_loss': div_entropy,
             'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
-            # ortho_alpha_var 추적: wandb에서 schedule 확인용
             'ortho_alpha': self.ortho_alpha_var,
         }
 
