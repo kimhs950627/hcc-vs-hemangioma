@@ -27,6 +27,14 @@ class DINOSimMIMPretrainModel(keras.Model):
     - patch_mask     : [B, N] binary mask, 1=masked, 0=visible
     - aug_global     : student global view for DINO
     - local_i        : student local views for DINO
+
+    Loss formula (additive):
+        total = L_DINO + lambda_simmim * L_SimMIM
+                       + lambda_selfpatch * L_SelfPatch
+                       + lambda_diversity * L_Diversity
+
+    Note: norm_target is hardcoded to False to preserve echogenicity
+    (absolute patch intensity), which is a diagnostic feature in ultrasound.
     """
 
     def __init__(
@@ -41,7 +49,7 @@ class DINOSimMIMPretrainModel(keras.Model):
         n_local: int = 0,
         lambda_simmim: float = 0.3,
         patch_size: int = 16,
-        simmim_norm_target: bool = True,
+        simmim_norm_target: bool = True,  # kept for API compat, ignored internally
         use_pe: bool = False,
         encoder_embed_dim: int = 384,
         encoder_depth: int | None = None,
@@ -71,7 +79,8 @@ class DINOSimMIMPretrainModel(keras.Model):
         self.n_local = n_local
         self.lambda_simmim = float(lambda_simmim)
         self.patch_size = int(patch_size)
-        self.simmim_norm_target = bool(simmim_norm_target)
+        # norm_target is hardcoded OFF: ultrasound echogenicity must be preserved
+        self.simmim_norm_target = False
         self.use_pe = bool(use_pe)
         self.lambda_selfpatch = float(lambda_selfpatch)
         self.lambda_diversity = float(lambda_diversity)
@@ -228,7 +237,6 @@ class DINOSimMIMPretrainModel(keras.Model):
                 n_pairs += 1
         return loss / tf.cast(n_pairs, tf.float32), t1, t2
 
-
     def _resolve_diversity_layer_indices(self, n_layers: int) -> list[int]:
         mode = self.diversity_layer_mode
         if mode == 'last':
@@ -247,10 +255,8 @@ class DINOSimMIMPretrainModel(keras.Model):
     def _compute_simmim_loss(self, original_clean, masked_clean, patch_mask):
         pred_patches = self._student_patch_predictions(masked_clean, training=True)
         target_patches = patchify_images(original_clean, patch_size=self.patch_size)
-        if self.simmim_norm_target:
-            target_patches = normalize_patch_targets(target_patches)
+        # norm_target hardcoded OFF: preserves absolute echogenicity in ultrasound
         return masked_patch_l1_loss(pred_patches, target_patches, patch_mask)
-
 
     def _compute_diversity_loss(self, x: tf.Tensor):
         out = self.online_encoder(x, training=True, return_attention=True)
@@ -295,7 +301,8 @@ class DINOSimMIMPretrainModel(keras.Model):
             lambda_s = tf.cast(self.lambda_simmim, tf.float32)
             lambda_p = tf.cast(self.lambda_selfpatch, tf.float32)
             lambda_d = tf.cast(self.lambda_diversity, tf.float32)
-            total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss + lambda_d * diversity_loss
+            # Additive formulation: DINO is never penalized by other loss weights
+            total_loss = dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss + lambda_d * diversity_loss
 
         trainable_vars = (
             list(self.online_encoder.trainable_variables)
@@ -347,7 +354,8 @@ class DINOSimMIMPretrainModel(keras.Model):
         lambda_s = tf.cast(self.lambda_simmim, tf.float32)
         lambda_p = tf.cast(self.lambda_selfpatch, tf.float32)
         lambda_d = tf.cast(self.lambda_diversity, tf.float32)
-        total_loss = (1.0 - lambda_s) * dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss + lambda_d * diversity_loss
+        # Additive formulation: DINO is never penalized by other loss weights
+        total_loss = dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss + lambda_d * diversity_loss
         return {
             'loss': total_loss,
             'dino_loss': dino_loss,
