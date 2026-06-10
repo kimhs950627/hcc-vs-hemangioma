@@ -65,6 +65,8 @@ class DINOSimMIMPretrainModel(keras.Model):
         selfpatch_proj_dim: int = 256,
         selfpatch_top_k: int = 4,
         selfpatch_temperature: float = 0.07,
+        diversity_mode: str = 'cls_entropy',
+        diversity_ortho_alpha: float = 0.5,
         diversity_layer_mode: str = 'top_half',
         diversity_start_layer: int | None = None,
         diversity_end_layer: int | None = None,
@@ -84,6 +86,8 @@ class DINOSimMIMPretrainModel(keras.Model):
         self.use_pe = bool(use_pe)
         self.lambda_selfpatch = float(lambda_selfpatch)
         self.lambda_diversity = float(lambda_diversity)
+        self.diversity_mode = diversity_mode
+        self.diversity_ortho_alpha = float(diversity_ortho_alpha)
         self.diversity_layer_mode = diversity_layer_mode
         self.diversity_start_layer = diversity_start_layer
         self.diversity_end_layer = diversity_end_layer
@@ -401,6 +405,8 @@ def build_stage1_dino_simmim_trainer(
     selfpatch_proj_dim: int = 256,
     selfpatch_top_k: int = 4,
     selfpatch_temperature: float = 0.07,
+    diversity_mode: str = 'cls_entropy',
+    diversity_ortho_alpha: float = 0.5,
     diversity_layer_mode: str = 'top_half',
     diversity_start_layer: int | None = None,
     diversity_end_layer: int | None = None,
@@ -439,6 +445,8 @@ def build_stage1_dino_simmim_trainer(
         selfpatch_proj_dim=selfpatch_proj_dim,
         selfpatch_top_k=selfpatch_top_k,
         selfpatch_temperature=selfpatch_temperature,
+        diversity_mode=diversity_mode,
+        diversity_ortho_alpha=diversity_ortho_alpha,
         diversity_layer_mode=diversity_layer_mode,
         diversity_start_layer=diversity_start_layer,
         diversity_end_layer=diversity_end_layer,
