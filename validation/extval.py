@@ -226,15 +226,53 @@ def extract_representations(
 # ──────────────────────────────────────────────────────────────
 
 def _is_cnn_encoder(stage2_model) -> bool:
+    """CNN vs ViT encoder 판별 — 이름 하드코딩 대신 구조 기반 탐지.
+
+    판별 우선순위
+    ─────────────
+    1. encoder 객체 내 MultiHeadAttention layer 존재 → ViT (False)
+    2. encoder 객체 내 GlobalAveragePooling2D 존재   → CNN  (True)
+    3. encoder.name 에 'vit' / 'transformer' 포함    → ViT  (False)
+    4. 위 셋 모두 해당 없으면 → CNN 간주             (True)
+
+    지원 backbone 예시
+    ──────────────────
+    CNN  : EfficientNetV2S/M, ResNet50V2, ResNet101V2, DenseNet121,
+           ConvNeXtSmall/Tiny/Base, MobileNetV3 등 GAP 기반 모델
+    ViT  : DINOv2-ViT-S/B, ViT-B/L, Swin-Transformer 등 MHA 기반 모델
+    """
     try:
-        name = (
-            stage2_model.model.encoder.name
-            if hasattr(stage2_model, 'model')
-            else stage2_model.encoder.name
+        encoder = (
+            stage2_model.model.encoder
+            if hasattr(stage2_model, 'model') and hasattr(stage2_model.model, 'encoder')
+            else stage2_model.encoder
         )
-        return any(k in name.lower() for k in ('convnext', 'efficientnet', 'cnn', 'resnet'))
-    except Exception:
+    except AttributeError:
         return False
+
+    try:
+        layer_types = {type(l).__name__ for l in encoder.layers}
+    except AttributeError:
+        layer_types = set()
+
+    # 1. MHA 가 있으면 ViT 계열
+    if 'MultiHeadAttention' in layer_types:
+        return False
+
+    # 2. GAP 가 있으면 CNN 계열
+    if 'GlobalAveragePooling2D' in layer_types:
+        return True
+
+    # 3. 이름 기반 보조 판별 (ViT 쪽만 — CNN 이름은 다양해서 양성 판별 불가)
+    try:
+        name = encoder.name.lower()
+        if any(k in name for k in ('vit', 'transformer', 'dino', 'swin')):
+            return False
+    except AttributeError:
+        pass
+
+    # 4. 판별 불가 → CNN 간주 (GAP 없어도 Dense 연결 CNN 일 수 있음)
+    return True
 
 
 def _attention_overlay_single(
