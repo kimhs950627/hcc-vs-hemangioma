@@ -11,6 +11,7 @@ from training.losses import (
     multilayer_cls_diversity_with_entropy,
     normalize_patch_targets,
     patchify_images,
+    diversity_loss as _diversity_loss,
 )
 from training.ssl_schedules import LrInput
 from training.selfpatch import SelfPatch
@@ -33,9 +34,12 @@ class DINOSimMIMPretrainModel(keras.Model):
                        + lambda_selfpatch * L_SelfPatch
                        + lambda_diversity * L_Diversity
 
-    Diversity is a blended objective:
-        L_Diversity = (1 - ortho_alpha_var) * L_entropy + ortho_alpha_var * L_ortho
-    ortho_alpha_var is a tf.Variable controlled by OrthoAlphaScheduleCallback.
+    Diversity is mode-dependent:
+        cls_entropy  : L_div = L_cosine_sim + entropy_weight * L_entropy_floor
+        ortho_entropy: L_div = ortho_alpha * L_ortho + (1-ortho_alpha) * L_entropy_floor
+
+    ortho_alpha_var is a tf.Variable controlled at runtime by
+    OrthoAlphaScheduleCallback (0.0 hold -> linear ramp -> target).
 
     Note: norm_target is hardcoded to False to preserve echogenicity
     (absolute patch intensity), which is a diagnostic feature in ultrasound.
@@ -90,9 +94,9 @@ class DINOSimMIMPretrainModel(keras.Model):
         self.use_pe = bool(use_pe)
         self.lambda_selfpatch = float(lambda_selfpatch)
         self.lambda_diversity = float(lambda_diversity)
-        self.diversity_mode = diversity_mode
-        # ── ortho_alpha: exposed as tf.Variable so OrthoAlphaScheduleCallback
-        #    can write to it at runtime without recompilation. ──────────────────
+        self.diversity_mode = diversity_mode   # 'cls_entropy' | 'ortho_entropy'
+        # ── ortho_alpha_var: tf.Variable so OrthoAlphaScheduleCallback
+        #    can write to it at runtime without graph recompilation. ─────────
         self.ortho_alpha_var = tf.Variable(
             float(diversity_ortho_alpha),
             trainable=False,
@@ -281,32 +285,20 @@ class DINOSimMIMPretrainModel(keras.Model):
             return zero, zero, zero
         layer_indices = self._resolve_diversity_layer_indices(len(attn_list))
 
-        # ── ortho_alpha_var controls entropy/ortho blend ──────────────────────
-        # ortho_alpha_var == 0.0  → pure entropy (hold phase)
-        # ortho_alpha_var  > 0.0  → blended: (1-α)*entropy + α*ortho (ramp phase)
-        # Pass ortho_alpha as a keyword arg; multilayer_cls_diversity_with_entropy
-        # ignores it gracefully if it does not accept it (pure-entropy path).
-        ortho_alpha = self.ortho_alpha_var  # tf.Variable, read at trace time
-
-        try:
-            return multilayer_cls_diversity_with_entropy(
-                attn_list,
-                layer_indices=layer_indices,
-                exclude_cls_col=self.diversity_exclude_cls_col,
-                entropy_min=self.diversity_entropy_min,
-                entropy_weight=self.diversity_entropy_weight,
-                ortho_alpha=ortho_alpha,
-            )
-        except TypeError:
-            # multilayer_cls_diversity_with_entropy does not yet accept ortho_alpha
-            # → fall back to pure-entropy call (backward compatible)
-            return multilayer_cls_diversity_with_entropy(
-                attn_list,
-                layer_indices=layer_indices,
-                exclude_cls_col=self.diversity_exclude_cls_col,
-                entropy_min=self.diversity_entropy_min,
-                entropy_weight=self.diversity_entropy_weight,
-            )
+        # ── Route through diversity_loss() directly so diversity_mode and
+        #    ortho_alpha_var are both honoured. ─────────────────────────────
+        #    cls_entropy  : L_div = L_cosine_sim + entropy_weight * L_entropy_floor
+        #    ortho_entropy: L_div = alpha * L_ortho + (1-alpha) * L_entropy_floor
+        #      where alpha == self.ortho_alpha_var (written by OrthoAlphaScheduleCallback)
+        return _diversity_loss(
+            attn_list,
+            mode=self.diversity_mode,
+            ortho_alpha=self.ortho_alpha_var,
+            layer_indices=layer_indices,
+            exclude_cls_col=self.diversity_exclude_cls_col,
+            entropy_min=self.diversity_entropy_min,
+            entropy_weight=self.diversity_entropy_weight,
+        )
 
     def train_step(self, data):
         views = tf.nest.flatten(data)
@@ -390,7 +382,6 @@ class DINOSimMIMPretrainModel(keras.Model):
         lambda_s = tf.cast(self.lambda_simmim, tf.float32)
         lambda_p = tf.cast(self.lambda_selfpatch, tf.float32)
         lambda_d = tf.cast(self.lambda_diversity, tf.float32)
-        # Additive formulation: DINO is never penalized by other loss weights
         total_loss = dino_loss + lambda_s * simmim_loss + lambda_p * selfpatch_loss + lambda_d * diversity_loss
         return {
             'loss': total_loss,
