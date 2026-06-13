@@ -1,8 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+"""External validation utilities.
+
+Group A  (cfg.split_names)     : prototype-based quantitative eval (K-Means)
+Ext-Val  (cfg.ext_val_dir)     : *정성 평가* — per-image score + attention overlay, no K-Means
+                                  hcc_score, hemangioma_score, margin = hcc - hem,
+                                  attention overlay (last_layer or rollout)
+"""
+
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence, Optional
+from typing import Iterable, Literal, Optional, Sequence
 
 import csv
 import math
@@ -32,6 +40,8 @@ SPLIT_DIRS = {
     'test': 'test_clean',
 }
 
+AttentionMode = Literal['last_layer', 'rollout']
+
 
 @dataclass
 class ExtValConfig:
@@ -39,26 +49,38 @@ class ExtValConfig:
 
     Parameters
     ----------
-    data_root:
+    data_root :
         학습 데이터 루트. split_names 에 해당하는 {split}_clean/HCC 등이 여기에 있다.
-    ext_val_dir:
+    ext_val_dir :
         완전히 별도의 external-validation 디렉토리 (예: Atlas dataset).
         None 이면 ext-val 단계를 건너뛴다.
         이 경로 아래에도 HCC/ Hemangioma/ 서브폴더가 있다고 가정한다.
-    work_dir:         결과물 저장 루트.
-    model_id:         실험 식별자 (파일명/WandB prefix 에 사용).
-    image_size:       리사이즈 목표 (H, W).
-    batch_size:       추론 배치 크기.
-    n_proto:          prototype K-means cluster 수.
-    split_names:      data_root 기반 evaluation 에 사용할 split 이름들.
-    stage_name:       로그/파일명 prefix.
-    wandb_prefix:     WandB log key prefix.
-    random_state:     재현성 seed.
+        **Ext-val 은 정성 평가만 수행한다 — K-Means prototype 없음.**
+    work_dir         : 결과물 저장 루트.
+    model_id         : 실험 식별자 (파일명/WandB prefix 에 사용).
+    ext_val_attention_mode :
+        Ext-val attention overlay 방법.
+        'last_layer' (기본값) 또는 'rollout'.
+    ext_val_rollout_discard_ratio :
+        rollout 전용 noise 제거 비율 (0.0 ~ 1.0).
+    ext_val_max_vis :
+        Ext-val 에서 attention overlay를 저장할 최대 이미지 수 (per class).
+        None 이면 전체 저장.
+    image_size       : 리사이즈 목표 (H, W).
+    batch_size       : 추론 배치 크기.
+    n_proto          : Group A prototype K-means cluster 수.
+    split_names      : data_root 기반 evaluation 에 사용할 split 이름들.
+    stage_name       : 로그/파일명 prefix.
+    wandb_prefix     : WandB log key prefix.
+    random_state     : 재현성 seed.
     """
     data_root: str
     work_dir: str
     model_id: str
-    ext_val_dir: Optional[str] = None          # <-- 추가된 필드
+    ext_val_dir: Optional[str] = None
+    ext_val_attention_mode: AttentionMode = 'last_layer'
+    ext_val_rollout_discard_ratio: float = 0.0
+    ext_val_max_vis: Optional[int] = 20
     image_size: tuple[int, int] = (384, 384)
     batch_size: int = 32
     n_proto: int = 8
@@ -69,7 +91,7 @@ class ExtValConfig:
 
 
 # ──────────────────────────────────────────────────────────────
-# Internal helpers
+# I/O helpers
 # ──────────────────────────────────────────────────────────────
 
 def _find_class_dir(split_dir: Path, class_key: str) -> Path:
@@ -83,7 +105,6 @@ def _find_class_dir(split_dir: Path, class_key: str) -> Path:
 
 
 def _collect_image_paths(data_root: str, split: str) -> dict[str, list[Path]]:
-    """data_root/{split}_clean/{HCC,Hemangioma} 에서 경로 수집."""
     split_dir = Path(data_root) / SPLIT_DIRS[split]
     if not split_dir.exists():
         raise FileNotFoundError(f'split directory not found: {split_dir}')
@@ -98,11 +119,7 @@ def _collect_image_paths(data_root: str, split: str) -> dict[str, list[Path]]:
 
 
 def _collect_extval_paths(ext_val_dir: str) -> dict[str, list[Path]]:
-    """ext_val_dir 아래의 HCC/ Hemangioma/ 폴더에서 경로를 수집한다.
-
-    data_root 기반과 달리 split 서브폴더 없이 flat 구조를 가정한다.
-    즉 ext_val_dir/HCC/*.png, ext_val_dir/Hemangioma/*.png.
-    """
+    """ext_val_dir/HCC/ + ext_val_dir/Hemangioma/ flat 구조를 가정."""
     root = Path(ext_val_dir)
     out: dict[str, list[Path]] = {}
     for class_key in ('hcc', 'hemangioma'):
@@ -126,16 +143,16 @@ def _chunked(seq: Sequence[Path], size: int) -> Iterable[list[Path]]:
         yield list(seq[i:i + size])
 
 
+# ──────────────────────────────────────────────────────────────
+# Math helpers
+# ──────────────────────────────────────────────────────────────
+
 def _l2_normalize(x: np.ndarray, eps: float = 1e-8) -> np.ndarray:
     denom = np.linalg.norm(x, axis=1, keepdims=True)
-    denom = np.maximum(denom, eps)
-    return x / denom
+    return x / np.maximum(denom, eps)
 
 
-def _fit_prototypes(
-    rep: np.ndarray, n_proto: int, random_state: int
-) -> np.ndarray:
-    """K-Means cluster centers as prototypes."""
+def _fit_prototypes(rep: np.ndarray, n_proto: int, random_state: int) -> np.ndarray:
     n_clusters = min(n_proto, len(rep))
     if n_clusters < 1:
         raise ValueError('empty representation matrix')
@@ -145,15 +162,12 @@ def _fit_prototypes(
 
 
 def _mean_similarity(rep: np.ndarray, proto: np.ndarray) -> np.ndarray:
-    """Per-sample mean cosine similarity to prototype set."""
     rep_n   = _l2_normalize(rep)
     proto_n = _l2_normalize(proto)
-    sim     = rep_n @ proto_n.T          # [N, K]
-    return sim.mean(axis=-1)             # [N]
+    return (rep_n @ proto_n.T).mean(axis=-1)
 
 
 def _sem(x: np.ndarray) -> float:
-    """Standard Error of the Mean  (ddof=1)."""
     if len(x) == 0:
         return float('nan')
     if len(x) == 1:
@@ -168,28 +182,24 @@ def _ttest(a: np.ndarray, b: np.ndarray) -> dict[str, float]:
     return {'t_value': float(stat), 'p_value': float(p)}
 
 
+# ──────────────────────────────────────────────────────────────
+# Encoder / representation extraction
+# ──────────────────────────────────────────────────────────────
+
 def _extract_encoder_output(stage2_model, batch: np.ndarray) -> np.ndarray:
-    """Stage2TrainWrapper / SupervisedClassifier / bare encoder 모두 지원."""
-    # Stage2TrainWrapper → .model.encoder
     if hasattr(stage2_model, 'model') and hasattr(stage2_model.model, 'encoder'):
         encoder = stage2_model.model.encoder
-    # SupervisedClassifier → .encoder
     elif hasattr(stage2_model, 'encoder'):
         encoder = stage2_model.encoder
     else:
         encoder = stage2_model
-
     out = encoder(tf.convert_to_tensor(batch, dtype=tf.float32), training=False)
     if isinstance(out, dict):
-        if 'embedding' in out:
-            emb = out['embedding']
-        elif 'cls_token' in out:
-            emb = out['cls_token']
-        else:
+        emb = out.get('embedding', out.get('cls_token'))
+        if emb is None:
             raise KeyError('encoder output dict must contain "embedding" or "cls_token"')
     else:
         emb = out
-
     emb = tf.convert_to_tensor(emb)
     if len(emb.shape) > 2:
         emb = emb[:, 0]
@@ -212,7 +222,106 @@ def extract_representations(
 
 
 # ──────────────────────────────────────────────────────────────
-# Save utilities
+# Attention overlay (wraps visualization/interpret.py)
+# ──────────────────────────────────────────────────────────────
+
+def _is_cnn_encoder(stage2_model) -> bool:
+    try:
+        name = (
+            stage2_model.model.encoder.name
+            if hasattr(stage2_model, 'model')
+            else stage2_model.encoder.name
+        )
+        return any(k in name.lower() for k in ('convnext', 'efficientnet', 'cnn', 'resnet'))
+    except Exception:
+        return False
+
+
+def _attention_overlay_single(
+    stage2_model,
+    image_arr: np.ndarray,
+    attention_mode: AttentionMode,
+    rollout_discard_ratio: float,
+) -> np.ndarray:
+    """단일 이미지 (H,W,3) → attention overlay (H,W,3) float32.
+
+    visualization/interpret.py 의 attention_overlay / gradcam_overlay 를 재사용.
+    """
+    from visualization.interpret import attention_overlay, gradcam_overlay
+
+    if _is_cnn_encoder(stage2_model):
+        return gradcam_overlay(stage2_model, image=image_arr, class_index=1)
+    return attention_overlay(
+        stage2_model,
+        image=image_arr,
+        head_reduction='mean',
+        mode=attention_mode,
+        rollout_discard_ratio=rollout_discard_ratio,
+    )
+
+
+# ──────────────────────────────────────────────────────────────
+# Per-image score computation (no K-Means)
+# ──────────────────────────────────────────────────────────────
+
+def _score_single_image(
+    stage2_model,
+    image_arr: np.ndarray,
+    hcc_prototypes: np.ndarray,
+    hem_prototypes: np.ndarray,
+) -> dict[str, float]:
+    """단일 이미지 forward → hcc_score, hemangioma_score, margin.
+
+    Group A 의 fit된 prototype bank를 넘겨받아 그대로 사용한다.
+    K-Means 없음.
+    """
+    from inference.scorer import dual_bank_scores
+
+    x = tf.convert_to_tensor(image_arr[None], dtype=tf.float32)  # [1,H,W,3]
+
+    # 모델 forward — classifier wrapper 또는 bare encoder 모두 지원
+    if hasattr(stage2_model, '__call__'):
+        out = stage2_model(x, training=False)
+    else:
+        raise TypeError('stage2_model must be callable')
+
+    embedding       = out.get('embedding', None)
+    encoded_patches = out.get('encoded_patches', None)
+
+    # embedding이 출력에 없으면 encoder를 직접 호출
+    if embedding is None:
+        enc = (
+            stage2_model.model.encoder
+            if hasattr(stage2_model, 'model')
+            else stage2_model.encoder
+        )
+        enc_out = enc(x, training=False)
+        if isinstance(enc_out, dict):
+            embedding       = enc_out.get('embedding', enc_out.get('cls_token'))
+            encoded_patches = enc_out.get('encoded_patches', encoded_patches)
+        else:
+            embedding = enc_out
+        if len(tf.shape(embedding)) > 2:
+            embedding = embedding[:, 0]
+
+    scores = dual_bank_scores(
+        embedding       = embedding,
+        encoded_patches = encoded_patches,
+        hemangioma_prototypes = tf.convert_to_tensor(hem_prototypes, dtype=tf.float32),
+        hcc_prototypes        = tf.convert_to_tensor(hcc_prototypes, dtype=tf.float32),
+        alpha=0.5,
+    )
+    return {
+        'hcc_score'        : float(scores['hcc_score'].numpy()[0]),
+        'hemangioma_score' : float(scores['hemangioma_score'].numpy()[0]),
+        'margin'           : float(
+            scores['hcc_score'].numpy()[0] - scores['hemangioma_score'].numpy()[0]
+        ),
+    }
+
+
+# ──────────────────────────────────────────────────────────────
+# Save helpers
 # ──────────────────────────────────────────────────────────────
 
 def _save_matrix(path: Path, arr: np.ndarray, header_prefix: str) -> None:
@@ -234,8 +343,17 @@ def _save_paths(path: Path, paths: Sequence[Path]) -> None:
             writer.writerow([str(p)])
 
 
+def _save_overlay(save_path: Path, original: np.ndarray, overlay: np.ndarray) -> None:
+    """원본 | overlay 를 나란히 붙여 PNG로 저장."""
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    # overlay는 float32 [0,1], original은 float32 [0,1]
+    side = np.concatenate([original, overlay], axis=1)  # 좌우 병합
+    img_uint8 = (np.clip(side, 0.0, 1.0) * 255).astype(np.uint8)
+    Image.fromarray(img_uint8).save(save_path)
+
+
 # ──────────────────────────────────────────────────────────────
-# Visualisation helpers
+# Visualisation helpers (Group A)
 # ──────────────────────────────────────────────────────────────
 
 def _pca_3d(
@@ -305,22 +423,16 @@ def _make_boxplot(
     box_colors = [_palette[i % len(_palette)] for i in range(len(labels))]
     fig, ax    = plt.subplots(figsize=(6, 5), dpi=150)
     bp = ax.boxplot(
-        list(arrays),
-        patch_artist=True,
-        notch=False,
-        widths=0.50,
+        list(arrays), patch_artist=True, notch=False, widths=0.50,
         medianprops=dict(color='black', linewidth=2.0),
-        whiskerprops=dict(linewidth=1.2),
-        capprops=dict(linewidth=1.2),
+        whiskerprops=dict(linewidth=1.2), capprops=dict(linewidth=1.2),
         flierprops=dict(marker='o', markersize=4, linestyle='none', markeredgewidth=0.6),
         boxprops=dict(linewidth=1.0),
     )
     for patch, color in zip(bp['boxes'], box_colors):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.75)
+        patch.set_facecolor(color); patch.set_alpha(0.75)
     for flier, color in zip(bp['fliers'], box_colors):
-        flier.set_markerfacecolor(color)
-        flier.set_markeredgecolor(color)
+        flier.set_markerfacecolor(color); flier.set_markeredgecolor(color)
     ax.set_title(title, fontsize=12, fontweight='bold', pad=10)
     ax.set_ylabel(ylabel, fontsize=10)
     ax.set_xticks(range(1, len(labels) + 1))
@@ -355,13 +467,11 @@ def _log_summary_plots(
         f'{prefix}/{model_id}/{group_tag}_margin_similarity_box'   : wandb.Image(fig_margin),
         f'{prefix}/{model_id}/{group_tag}_ttest_table'             : wandb.Table(dataframe=ttest_df),
     })
-    plt.close(fig_hcc)
-    plt.close(fig_hem)
-    plt.close(fig_margin)
+    plt.close(fig_hcc); plt.close(fig_hem); plt.close(fig_margin)
 
 
 # ──────────────────────────────────────────────────────────────
-# Core eval block (reused for groupA and ext_val)
+# Group A: quantitative eval block (internal val/test)
 # ──────────────────────────────────────────────────────────────
 
 def _eval_block(
@@ -371,33 +481,33 @@ def _eval_block(
     cfg: ExtValConfig,
     out_dir: Path,
     group_tag: str,
-) -> tuple[pd.DataFrame, dict]:
-    """주어진 경로 목록으로 prototype eval을 실행하고 stats + ttest_df를 반환.
+) -> tuple[pd.DataFrame, dict, np.ndarray, np.ndarray]:
+    """K-Means prototype eval → stats, ttest_df, hcc_proto, hem_proto 반환.
 
-    group_tag: 'groupA' (internal val/test) 또는 'extval' (Atlas 등 외부)
+    반환된 prototype bank 는 ext-val score 계산에 재사용된다.
     """
     hcc_rep = extract_representations(stage2_model, hcc_paths, cfg.image_size, cfg.batch_size)
     hem_rep = extract_representations(stage2_model, hem_paths, cfg.image_size, cfg.batch_size)
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    _save_matrix(out_dir / f'{group_tag}_hcc_rep',        hcc_rep, 'emb')
-    _save_matrix(out_dir / f'{group_tag}_hemangioma_rep', hem_rep, 'emb')
-    _save_paths(out_dir / f'{group_tag}_hcc_paths.csv',        hcc_paths)
-    _save_paths(out_dir / f'{group_tag}_hemangioma_paths.csv', hem_paths)
+    _save_matrix(out_dir / 'hcc_rep',        hcc_rep, 'emb')
+    _save_matrix(out_dir / 'hemangioma_rep', hem_rep, 'emb')
+    _save_paths(out_dir / 'hcc_paths.csv',        hcc_paths)
+    _save_paths(out_dir / 'hemangioma_paths.csv', hem_paths)
 
     hcc_3d, hem_3d, pca_var = _pca_3d(hcc_rep, hem_rep)
-    _save_matrix(out_dir / f'{group_tag}_hcc_3d_rep',        hcc_3d, 'pc')
-    _save_matrix(out_dir / f'{group_tag}_hemangioma_3d_rep', hem_3d, 'pc')
+    _save_matrix(out_dir / 'hcc_3d_rep',        hcc_3d, 'pc')
+    _save_matrix(out_dir / 'hemangioma_3d_rep', hem_3d, 'pc')
     pd.DataFrame([{
         'pc1': float(pca_var[0]),
         'pc2': float(pca_var[1]),
         'pc3': float(pca_var[2]),
-    }]).to_csv(out_dir / f'{group_tag}_pca_explained_variance_ratio.csv', index=False)
+    }]).to_csv(out_dir / 'pca_explained_variance_ratio.csv', index=False)
 
     hcc_proto = _fit_prototypes(hcc_rep, cfg.n_proto, cfg.random_state)
     hem_proto = _fit_prototypes(hem_rep, cfg.n_proto, cfg.random_state)
-    _save_matrix(out_dir / f'{group_tag}_hcc_prototype',        hcc_proto, 'proto')
-    _save_matrix(out_dir / f'{group_tag}_hemangioma_prototype', hem_proto, 'proto')
+    _save_matrix(out_dir / 'hcc_prototype',        hcc_proto, 'proto')
+    _save_matrix(out_dir / 'hemangioma_prototype', hem_proto, 'proto')
 
     A = _mean_similarity(hcc_rep, hcc_proto)
     B = _mean_similarity(hcc_rep, hem_proto)
@@ -407,38 +517,37 @@ def _eval_block(
     margin_hem = C - D
 
     stats = {
-        'model_id'                 : cfg.model_id,
-        'group'                    : group_tag,
-        'n_hcc'                    : int(len(hcc_rep)),
-        'n_hemangioma'             : int(len(hem_rep)),
-        'embed_dim'                : int(hcc_rep.shape[1]),
-        'n_hcc_prototype'          : int(hcc_proto.shape[0]),
-        'n_hemangioma_prototype'   : int(hem_proto.shape[0]),
-        'A_hcc_to_hccproto_mean'   : float(np.mean(A)),
-        'A_hcc_to_hccproto_sem'    : _sem(A),
-        'B_hcc_to_hemproto_mean'   : float(np.mean(B)),
-        'B_hcc_to_hemproto_sem'    : _sem(B),
-        'C_hem_to_hccproto_mean'   : float(np.mean(C)),
-        'C_hem_to_hccproto_sem'    : _sem(C),
-        'D_hem_to_hemproto_mean'   : float(np.mean(D)),
-        'D_hem_to_hemproto_sem'    : _sem(D),
-        'A_minus_B_mean'           : float(np.mean(margin_hcc)),
-        'A_minus_B_sem'            : _sem(margin_hcc),
-        'C_minus_D_mean'           : float(np.mean(margin_hem)),
-        'C_minus_D_sem'            : _sem(margin_hem),
+        'model_id'               : cfg.model_id,
+        'group'                  : group_tag,
+        'n_hcc'                  : int(len(hcc_rep)),
+        'n_hemangioma'           : int(len(hem_rep)),
+        'embed_dim'              : int(hcc_rep.shape[1]),
+        'n_hcc_prototype'        : int(hcc_proto.shape[0]),
+        'n_hemangioma_prototype' : int(hem_proto.shape[0]),
+        'A_hcc_to_hccproto_mean' : float(np.mean(A)),
+        'A_hcc_to_hccproto_sem'  : _sem(A),
+        'B_hcc_to_hemproto_mean' : float(np.mean(B)),
+        'B_hcc_to_hemproto_sem'  : _sem(B),
+        'C_hem_to_hccproto_mean' : float(np.mean(C)),
+        'C_hem_to_hccproto_sem'  : _sem(C),
+        'D_hem_to_hemproto_mean' : float(np.mean(D)),
+        'D_hem_to_hemproto_sem'  : _sem(D),
+        'A_minus_B_mean'         : float(np.mean(margin_hcc)),
+        'A_minus_B_sem'          : _sem(margin_hcc),
+        'C_minus_D_mean'         : float(np.mean(margin_hem)),
+        'C_minus_D_sem'          : _sem(margin_hem),
     }
 
     ttest_hcc    = _ttest(A, C)
     ttest_margin = _ttest(margin_hcc, margin_hem)
     ttest_df     = pd.DataFrame([
-        {'metric': 'hcc_similarity',         **ttest_hcc},
+        {'metric': 'hcc_similarity',           **ttest_hcc},
         {'metric': 'hcc_minus_hem_similarity', **ttest_margin},
     ])
 
-    pd.DataFrame([stats]).to_csv(out_dir / f'{group_tag}_summary_stats.csv', index=False)
-    ttest_df.to_csv(out_dir / f'{group_tag}_ttest.csv', index=False)
+    pd.DataFrame([stats]).to_csv(out_dir / 'summary_stats.csv', index=False)
+    ttest_df.to_csv(out_dir / 'ttest.csv', index=False)
 
-    # WandB logging
     if wandb is not None and wandb.run is not None:
         wandb.log({
             f'{cfg.wandb_prefix}/{cfg.model_id}/{group_tag}_n_hcc'                  : stats['n_hcc'],
@@ -465,7 +574,150 @@ def _eval_block(
             group_tag=group_tag,
         )
 
-    return ttest_df, stats
+    return ttest_df, stats, hcc_proto, hem_proto
+
+
+# ──────────────────────────────────────────────────────────────
+# Ext-Val: qualitative block (score + attention overlay, no K-Means)
+# ──────────────────────────────────────────────────────────────
+
+def _extval_qualitative_block(
+    stage2_model,
+    hcc_paths: list[Path],
+    hem_paths: list[Path],
+    hcc_prototypes: np.ndarray,    # Group A 에서 fit된 bank 재사용
+    hem_prototypes: np.ndarray,
+    cfg: ExtValConfig,
+    out_dir: Path,
+) -> pd.DataFrame:
+    """External dataset 정성 평가.
+
+    수행 내용
+    ---------
+    1. 이미지별 hcc_score / hemangioma_score / margin 산출
+       → extval_scores.csv 저장
+    2. attention overlay (last_layer or rollout)
+       → out_dir/overlays/{hcc,hemangioma}/{stem}_overlay.png 저장
+    3. WandB 에 score table + overlay 이미지 panel 로깅 (run 있을 때만)
+
+    Parameters
+    ----------
+    hcc_prototypes, hem_prototypes :
+        Group A _eval_block() 이 반환한 K-Means prototype bank.
+        ext-val 은 이를 그대로 사용해 score를 산출한다.
+    cfg.ext_val_max_vis :
+        overlay 저장 최대 수 (None = 전체). 가장 앞 max_vis 개 처리.
+
+    Returns
+    -------
+    DataFrame  (path, true_label, hcc_score, hemangioma_score, margin)
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    overlay_dir = out_dir / 'overlays'
+    records: list[dict] = []
+    wandb_images: dict[str, list] = {'hcc': [], 'hemangioma': []}
+
+    for class_key, paths, true_label in [
+        ('hcc',        hcc_paths, 'HCC'),
+        ('hemangioma', hem_paths, 'Hemangioma'),
+    ]:
+        cls_overlay_dir = overlay_dir / class_key
+        cls_overlay_dir.mkdir(parents=True, exist_ok=True)
+
+        max_vis = cfg.ext_val_max_vis
+        vis_paths  = paths[:max_vis] if max_vis is not None else paths
+        # score는 전체 이미지 계산 (overlay만 max_vis 제한)
+        score_paths = paths
+
+        print(f'[ext_val] {class_key}: scoring {len(score_paths)} images …')
+        for path in score_paths:
+            img = _load_image(path, cfg.image_size)   # float32 [H,W,3]
+            score = _score_single_image(
+                stage2_model, img, hcc_prototypes, hem_prototypes
+            )
+            records.append({
+                'path'             : str(path),
+                'true_label'       : true_label,
+                'hcc_score'        : score['hcc_score'],
+                'hemangioma_score' : score['hemangioma_score'],
+                'margin'           : score['margin'],
+            })
+
+        print(f'[ext_val] {class_key}: generating attention overlays for {len(vis_paths)} images …')
+        for path in vis_paths:
+            img = _load_image(path, cfg.image_size)
+            try:
+                overlay = _attention_overlay_single(
+                    stage2_model, img,
+                    cfg.ext_val_attention_mode,
+                    cfg.ext_val_rollout_discard_ratio,
+                )
+            except Exception as e:
+                print(f'  [WARN] attention failed for {path.name}: {e}')
+                continue
+
+            save_path = cls_overlay_dir / f'{path.stem}_overlay.png'
+            _save_overlay(save_path, img, overlay)
+
+            if wandb is not None and wandb.run is not None:
+                wandb_images[class_key].append(
+                    wandb.Image(
+                        str(save_path),
+                        caption=f'{path.name}',
+                    )
+                )
+
+    # --- CSV 저장 ---
+    score_df = pd.DataFrame(records)
+    score_df.to_csv(out_dir / 'extval_scores.csv', index=False)
+    print(f'[ext_val] scores saved → {out_dir / "extval_scores.csv"}')
+
+    # --- 집계 stats ---
+    for cls, label in [('hcc', 'HCC'), ('hemangioma', 'Hemangioma')]:
+        sub = score_df[score_df['true_label'] == label]
+        if len(sub):
+            print(
+                f'  {label}  n={len(sub)} '
+                f'hcc_score={sub["hcc_score"].mean():.4f}±{sub["hcc_score"].std():.4f}  '
+                f'margin={sub["margin"].mean():.4f}±{sub["margin"].std():.4f}'
+            )
+
+    # --- WandB 로깅 ---
+    if wandb is not None and wandb.run is not None:
+        prefix  = cfg.wandb_prefix
+        mid     = cfg.model_id
+        if wandb_images['hcc']:
+            wandb.log({f'{prefix}/{mid}/extval_hcc_overlays': wandb_images['hcc']})
+        if wandb_images['hemangioma']:
+            wandb.log({f'{prefix}/{mid}/extval_hemangioma_overlays': wandb_images['hemangioma']})
+        wandb.log({f'{prefix}/{mid}/extval_score_table': wandb.Table(dataframe=score_df)})
+
+        # boxplot: hcc_score distribution per true label
+        hcc_scores_hcc = score_df[score_df['true_label'] == 'HCC']['hcc_score'].values
+        hcc_scores_hem = score_df[score_df['true_label'] == 'Hemangioma']['hcc_score'].values
+        margin_hcc     = score_df[score_df['true_label'] == 'HCC']['margin'].values
+        margin_hem     = score_df[score_df['true_label'] == 'Hemangioma']['margin'].values
+        if len(hcc_scores_hcc) and len(hcc_scores_hem):
+            fig_score  = _make_boxplot(
+                'Ext-Val: HCC score by true label',
+                'HCC score (a.u.)',
+                [hcc_scores_hcc, hcc_scores_hem],
+                ['HCC', 'Hemangioma'],
+            )
+            fig_margin = _make_boxplot(
+                'Ext-Val: Score margin (HCC - Hem) by true label',
+                'Margin (a.u.)',
+                [margin_hcc, margin_hem],
+                ['HCC', 'Hemangioma'],
+            )
+            wandb.log({
+                f'{prefix}/{mid}/extval_hcc_score_box'    : wandb.Image(fig_score),
+                f'{prefix}/{mid}/extval_margin_score_box' : wandb.Image(fig_margin),
+            })
+            plt.close(fig_score)
+            plt.close(fig_margin)
+
+    return score_df
 
 
 # ──────────────────────────────────────────────────────────────
@@ -475,15 +727,24 @@ def _eval_block(
 def run_extval(stage2_model, cfg: ExtValConfig) -> pd.DataFrame:
     """Prototype-based external validation.
 
-    1. groupA  : cfg.data_root 의 split_names (val/test)
-    2. extval  : cfg.ext_val_dir  (None 이면 skip)
+    Pipeline
+    --------
+    1. Group A (cfg.split_names, data_root)
+       → K-Means prototype fit + quantitative eval (similarity, ttest, PCA)
+       → prototype bank 저장
+    2. Ext-Val (cfg.ext_val_dir, optional)
+       → Group A prototype bank 재사용
+       → 정성 평가: per-image hcc_score / hemangioma_score / margin
+       → attention overlay 저장 (PNG + WandB)
+       → K-Means 없음
 
-    Returns a combined ttest_df (both groups stacked).
+    Returns
+    -------
+    ext-val score DataFrame (ext_val_dir 없으면 빈 DataFrame).
     """
     base_out = Path(cfg.work_dir) / 'output' / 'extval' / cfg.model_id
-    all_results: list[pd.DataFrame] = []
 
-    # ── Group A: internal val/test splits ────────────────────
+    # ── Group A ─────────────────────────────────────────────
     all_hcc_paths_A: list[Path] = []
     all_hem_paths_A: list[Path] = []
     for split in cfg.split_names:
@@ -492,34 +753,30 @@ def run_extval(stage2_model, cfg: ExtValConfig) -> pd.DataFrame:
         all_hem_paths_A.extend(paths['hemangioma'])
 
     print(f'[groupA] hcc={len(all_hcc_paths_A)}  hemangioma={len(all_hem_paths_A)}')
-    ttest_A, _ = _eval_block(
+    _, _, hcc_proto, hem_proto = _eval_block(
         stage2_model,
-        hcc_paths  = all_hcc_paths_A,
-        hem_paths  = all_hem_paths_A,
-        cfg        = cfg,
-        out_dir    = base_out / 'groupA',
-        group_tag  = 'groupA',
+        hcc_paths = all_hcc_paths_A,
+        hem_paths = all_hem_paths_A,
+        cfg       = cfg,
+        out_dir   = base_out / 'groupA',
+        group_tag = 'groupA',
     )
-    ttest_A.insert(0, 'group', 'groupA')
-    all_results.append(ttest_A)
 
-    # ── Ext-Val: Atlas (or any separate dataset) ─────────────
-    if cfg.ext_val_dir is not None:
-        print(f'[extval] loading from {cfg.ext_val_dir}')
-        ext_paths  = _collect_extval_paths(cfg.ext_val_dir)
-        ttest_ext, _ = _eval_block(
-            stage2_model,
-            hcc_paths  = ext_paths['hcc'],
-            hem_paths  = ext_paths['hemangioma'],
-            cfg        = cfg,
-            out_dir    = base_out / 'extval',
-            group_tag  = 'extval',
-        )
-        ttest_ext.insert(0, 'group', 'extval')
-        all_results.append(ttest_ext)
-    else:
-        print('[extval] ext_val_dir is None — skipping external validation.')
+    # ── Ext-Val (정성 평가) ───────────────────────────────────
+    if cfg.ext_val_dir is None:
+        print('[ext_val] ext_val_dir is None — skipping external validation.')
+        return pd.DataFrame()
 
-    combined = pd.concat(all_results, ignore_index=True)
-    combined.to_csv(base_out / 'combined_ttest.csv', index=False)
-    return combined
+    print(f'[ext_val] loading from {cfg.ext_val_dir}')
+    ext_paths = _collect_extval_paths(cfg.ext_val_dir)
+
+    score_df = _extval_qualitative_block(
+        stage2_model,
+        hcc_paths      = ext_paths['hcc'],
+        hem_paths      = ext_paths['hemangioma'],
+        hcc_prototypes = hcc_proto,
+        hem_prototypes = hem_proto,
+        cfg            = cfg,
+        out_dir        = base_out / 'extval',
+    )
+    return score_df
