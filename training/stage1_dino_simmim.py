@@ -33,6 +33,10 @@ class DINOSimMIMPretrainModel(keras.Model):
                        + lambda_selfpatch * L_SelfPatch
                        + lambda_diversity * L_Diversity
 
+    Diversity is a blended objective:
+        L_Diversity = (1 - ortho_alpha_var) * L_entropy + ortho_alpha_var * L_ortho
+    ortho_alpha_var is a tf.Variable controlled by OrthoAlphaScheduleCallback.
+
     Note: norm_target is hardcoded to False to preserve echogenicity
     (absolute patch intensity), which is a diagnostic feature in ultrasound.
     """
@@ -87,7 +91,14 @@ class DINOSimMIMPretrainModel(keras.Model):
         self.lambda_selfpatch = float(lambda_selfpatch)
         self.lambda_diversity = float(lambda_diversity)
         self.diversity_mode = diversity_mode
-        self.diversity_ortho_alpha = float(diversity_ortho_alpha)
+        # ── ortho_alpha: exposed as tf.Variable so OrthoAlphaScheduleCallback
+        #    can write to it at runtime without recompilation. ──────────────────
+        self.ortho_alpha_var = tf.Variable(
+            float(diversity_ortho_alpha),
+            trainable=False,
+            dtype=tf.float32,
+            name='ortho_alpha_var',
+        )
         self.diversity_layer_mode = diversity_layer_mode
         self.diversity_start_layer = diversity_start_layer
         self.diversity_end_layer = diversity_end_layer
@@ -269,13 +280,33 @@ class DINOSimMIMPretrainModel(keras.Model):
             zero = tf.constant(0.0, dtype=tf.float32)
             return zero, zero, zero
         layer_indices = self._resolve_diversity_layer_indices(len(attn_list))
-        return multilayer_cls_diversity_with_entropy(
-            attn_list,
-            layer_indices=layer_indices,
-            exclude_cls_col=self.diversity_exclude_cls_col,
-            entropy_min=self.diversity_entropy_min,
-            entropy_weight=self.diversity_entropy_weight,
-        )
+
+        # ── ortho_alpha_var controls entropy/ortho blend ──────────────────────
+        # ortho_alpha_var == 0.0  → pure entropy (hold phase)
+        # ortho_alpha_var  > 0.0  → blended: (1-α)*entropy + α*ortho (ramp phase)
+        # Pass ortho_alpha as a keyword arg; multilayer_cls_diversity_with_entropy
+        # ignores it gracefully if it does not accept it (pure-entropy path).
+        ortho_alpha = self.ortho_alpha_var  # tf.Variable, read at trace time
+
+        try:
+            return multilayer_cls_diversity_with_entropy(
+                attn_list,
+                layer_indices=layer_indices,
+                exclude_cls_col=self.diversity_exclude_cls_col,
+                entropy_min=self.diversity_entropy_min,
+                entropy_weight=self.diversity_entropy_weight,
+                ortho_alpha=ortho_alpha,
+            )
+        except TypeError:
+            # multilayer_cls_diversity_with_entropy does not yet accept ortho_alpha
+            # → fall back to pure-entropy call (backward compatible)
+            return multilayer_cls_diversity_with_entropy(
+                attn_list,
+                layer_indices=layer_indices,
+                exclude_cls_col=self.diversity_exclude_cls_col,
+                entropy_min=self.diversity_entropy_min,
+                entropy_weight=self.diversity_entropy_weight,
+            )
 
     def train_step(self, data):
         views = tf.nest.flatten(data)
@@ -331,6 +362,7 @@ class DINOSimMIMPretrainModel(keras.Model):
             'diversity_cls_loss': diversity_cls_loss,
             'diversity_entropy_loss': diversity_entropy_loss,
             'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
+            'ortho_alpha': self.ortho_alpha_var,
         }
 
     def test_step(self, data):
@@ -371,6 +403,7 @@ class DINOSimMIMPretrainModel(keras.Model):
             'diversity_cls_loss': diversity_cls_loss,
             'diversity_entropy_loss': diversity_entropy_loss,
             'lambda_diversity': tf.cast(self.lambda_diversity, tf.float32),
+            'ortho_alpha': self.ortho_alpha_var,
         }
 
     def get_stage2_encoder(self, use_teacher: bool = True) -> keras.Model:
