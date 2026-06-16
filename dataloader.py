@@ -439,7 +439,7 @@ def build_base_augmentation_255(img_size: tuple[int, int]) -> keras.Sequential:
             layers.RandomBrightness(factor=0.15),
             layers.RandomContrast(factor=0.25),
             RandomGamma(gamma_range=(0.80, 1.25), p=0.8, name="base_random_gamma_255"),
-            layers.GaussianNoise(stddev=6.375),  # 0.025 × 255
+            layers.GaussianNoise(stddev=0.025),  # Keras GaussianNoise는 stddev를 0~1 범위만 허용
             # Rescaling 없음 → [0,255] float32 유지
         ],
         name="base_augmentation_255",
