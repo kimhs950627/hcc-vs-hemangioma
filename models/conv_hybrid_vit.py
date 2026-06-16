@@ -180,6 +180,7 @@ class ConvPatchEmbedding(layers.Layer):
         "resnet50v2":       (keras.applications.ResNet50V2,       2048),
         "densenet121":      (keras.applications.DenseNet121,      1024),
         "convnext_small":   (keras.applications.ConvNeXtSmall,    768),
+        "convnext_tiny":    (keras.applications.ConvNeXtTiny,     768),
     }
 
     def __init__(
