@@ -175,12 +175,15 @@ class ConvPatchEmbedding(layers.Layer):
     """
 
     BACKBONE_MAP = {
-        "efficientnetv2_s": (keras.applications.EfficientNetV2S, 1280),
-        "efficientnetv2_m": (keras.applications.EfficientNetV2M, 1280),
-        "resnet50v2":       (keras.applications.ResNet50V2,       2048),
-        "densenet121":      (keras.applications.DenseNet121,      1024),
-        "convnext_small":   (keras.applications.ConvNeXtSmall,    768),
-        "convnext_tiny":    (keras.applications.ConvNeXtTiny,     768),
+        # ⚠️  EfficientNetV2S/M: output_stride=8 → 512×512 input → 4096 patches → OOM risk
+        #    Use efficientnetv2_b0 (stride=32, 7.1M params) for memory-safe EfficientNet.
+        "efficientnetv2_b0": (keras.applications.EfficientNetV2B0, 1280),
+        "efficientnetv2_s": (keras.applications.EfficientNetV2S,  1280),  # ⚠️ stride=8, OOM risk
+        "efficientnetv2_m": (keras.applications.EfficientNetV2M,  1280),  # ⚠️ stride=8, OOM risk
+        "resnet50v2":       (keras.applications.ResNet50V2,        2048),
+        "densenet121":      (keras.applications.DenseNet121,       1024),
+        "convnext_small":   (keras.applications.ConvNeXtSmall,     768),
+        "convnext_tiny":    (keras.applications.ConvNeXtTiny,      768),
     }
 
     def __init__(
@@ -204,6 +207,14 @@ class ConvPatchEmbedding(layers.Layer):
 
         if backbone_name not in self.BACKBONE_MAP:
             raise ValueError(f"Unknown backbone: {backbone_name}")
+        if backbone_name in ("efficientnetv2_s", "efficientnetv2_m"):
+            import warnings
+            warnings.warn(
+                f"[ConvPatchEmbedding] '{backbone_name}' has output_stride=8. "
+                f"512×512 input → 4096 patches → severe OOM risk. "
+                f"Consider 'efficientnetv2_b0' (stride=32) instead.",
+                ResourceWarning, stacklevel=2,
+            )
         BackboneCls, _ = self.BACKBONE_MAP[backbone_name]
 
         self._cnn = BackboneCls(
