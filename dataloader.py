@@ -32,14 +32,22 @@ Usage
 -----
     from dataloader import build_dataset, MaskedMultiViewDataset
 
-    # 1. Vanilla supervised loader
+    # 1. Vanilla supervised loader (normalize=True → [0,1], default)
     ds_train, ds_val, ds_test = build_dataset(
         data_root="./clean_ver_for_train",
         img_size=(224, 224),
         batch_size=32,
     )
 
-    # 2. 권장 B+ SSL loader (DINO + SimMIM hybrid)
+    # 2. Stage2 supervised loader (normalize=False → [0,255], backbone preprocess_input 호환)
+    ds_train, ds_val, ds_test = build_dataset(
+        data_root="./clean_ver_for_train",
+        img_size=(384, 384),
+        batch_size=16,
+        normalize=False,   # ← [0,255] float32, backbone과 일치
+    )
+
+    # 3. 권장 B+ SSL loader (DINO + SimMIM hybrid)
     ds = MaskedMultiViewDataset(
         data_root="./clean_ver_for_train",
         split="train",
@@ -72,6 +80,14 @@ Design rationale (권장 B+ 구조)
           + CE(cls_local_i,   cls_teacher) × N_local
             → global-global loss 제거 시 student가 224px full-res를 never 처리
               → fine-tuning distribution shift 문제 발생 (검증 완료)
+
+normalize parameter (build_dataset)
+------------------------------------
+  normalize=True  (default) : Rescaling(1/255) 포함 → float32 [0, 1]
+                               기존 Stage1 호환, MaskedMultiViewDataset과 동일 range
+  normalize=False           : Rescaling 없음 → float32 [0, 255]
+                               Stage2 backbone preprocess_input 기대값과 일치
+                               _us_augment (VICReg ConvHybrid) 출력과도 일치
 
 References
 ----------
@@ -395,6 +411,41 @@ def build_base_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
     )
 
 
+def build_base_augmentation_255(img_size: tuple[int, int]) -> keras.Sequential:
+    """Supervised training augmentation — moderate strength, [0,255] output.
+
+    Stage2 전용: backbone preprocess_input이 [0,255] float32를 기대할 때 사용.
+    build_base_augmentation과 동일한 augmentation이나 마지막 Rescaling 없음.
+
+    GaussianNoise stddev: [0,1] 기준 0.025 → [0,255] 기준 6.375 (×255)
+
+    Input  : (B, H, W, C) uint8 [0, 255]
+    Output : (B, H, W, C) float32 [0, 255]  ← backbone preprocess_input 기대값
+    """
+    return keras.Sequential(
+        [
+            layers.RandomFlip("horizontal_and_vertical"),
+            layers.RandomRotation(factor=0.042, fill_mode="reflect"),
+            layers.RandomZoom(
+                height_factor=(-0.15, 0.15),
+                width_factor=(-0.15, 0.15),
+                fill_mode="reflect",
+            ),
+            layers.RandomTranslation(
+                height_factor=0.05,
+                width_factor=0.05,
+                fill_mode="reflect",
+            ),
+            layers.RandomBrightness(factor=0.15),
+            layers.RandomContrast(factor=0.25),
+            RandomGamma(gamma_range=(0.80, 1.25), p=0.8, name="base_random_gamma_255"),
+            layers.GaussianNoise(stddev=6.375),  # 0.025 × 255
+            # Rescaling 없음 → [0,255] float32 유지
+        ],
+        name="base_augmentation_255",
+    )
+
+
 def build_strong_augmentation(img_size: tuple[int, int]) -> keras.Sequential:
     """Student global-view augmentation — strong, NO solarization.
 
@@ -587,26 +638,50 @@ def build_dataset(
     shuffle_val: bool = True,
     shuffle_test: bool = True,
     seed: int = 42,
+    normalize: bool = True,
 ) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
     """Build train / val / test tf.data.Dataset from SMC-LUD flat structure.
 
+    Args:
+        normalize : True  → float32 [0, 1]   (default, Stage1/기존 호환)
+                    False → float32 [0, 255]  (Stage2 backbone preprocess_input 호환)
+
     Returns:
         (ds_train, ds_val, ds_test)
-        images : float32 [B, H, W, 3]  in [0, 1]
+        images : float32 [B, H, W, 3]  in [0,1] if normalize else [0,255]
         labels : int32   [B]            {0=Hemangioma, 1=HCC}
     """
     set_seed(seed)
-    print("[build_dataset] Collecting samples ...")
+    print(f"[build_dataset] normalize={normalize}  Collecting samples ...")
     train_s = _collect_split(data_root, "train")
     val_s   = _collect_split(data_root, "val")
     test_s  = _collect_split(data_root, "test")
 
-    aug = build_base_augmentation(img_size) if use_augmentation else None
-    rescale_only = keras.Sequential([layers.Rescaling(scale=1.0 / 255.0)])
+    if normalize:
+        # 기존 동작: augmentation 파이프라인 마지막에 Rescaling(1/255) 포함 → [0,1]
+        train_aug    = build_base_augmentation(img_size) if use_augmentation else None
+        rescale_only = keras.Sequential(
+            [layers.Rescaling(scale=1.0 / 255.0)],
+            name="rescale_only",
+        )
+        val_aug  = rescale_only
+        test_aug = rescale_only
+    else:
+        # Stage2용: Rescaling 없음 → [0,255] float32
+        # val/test: uint8 → float32 cast만 (값 유지)
+        train_aug = build_base_augmentation_255(img_size) if use_augmentation else keras.Sequential(
+            [layers.Rescaling(scale=1.0)], name="cast_only_train"
+        )
+        cast_only = keras.Sequential(
+            [layers.Rescaling(scale=1.0)],  # uint8 → float32, [0,255] 유지
+            name="cast_only",
+        )
+        val_aug  = cast_only
+        test_aug = cast_only
 
-    ds_train = _make_tf_dataset(train_s, img_size, batch_size, shuffle=shuffle_train, augment_layer=aug,          seed=seed)
-    ds_val   = _make_tf_dataset(val_s,   img_size, batch_size, shuffle=shuffle_val,   augment_layer=rescale_only, seed=seed)
-    ds_test  = _make_tf_dataset(test_s,  img_size, batch_size, shuffle=shuffle_test,  augment_layer=rescale_only, seed=seed)
+    ds_train = _make_tf_dataset(train_s, img_size, batch_size, shuffle=shuffle_train, augment_layer=train_aug, seed=seed)
+    ds_val   = _make_tf_dataset(val_s,   img_size, batch_size, shuffle=shuffle_val,   augment_layer=val_aug,   seed=seed)
+    ds_test  = _make_tf_dataset(test_s,  img_size, batch_size, shuffle=shuffle_test,  augment_layer=test_aug,  seed=seed)
 
     return ds_train, ds_val, ds_test
 
@@ -948,23 +1023,47 @@ if __name__ == "__main__":
     DATA_ROOT = sys.argv[1] if len(sys.argv) > 1 else "./clean_ver_for_train"
 
     print("=" * 60)
-    print("Smoke-test 1: build_dataset (supervised)")
+    print("Smoke-test 1: build_dataset (normalize=True, [0,1])")
     print("=" * 60)
     try:
         ds_tr, ds_va, ds_te = build_dataset(
             DATA_ROOT, img_size=(224, 224), batch_size=4,
-            shuffle_train=True, shuffle_val=True, shuffle_test=True
+            shuffle_train=True, shuffle_val=True, shuffle_test=True,
+            normalize=True,
         )
         for imgs, lbls in ds_tr.take(1):
             print(f"  imgs  : {imgs.shape}  dtype={imgs.dtype}")
             print(f"  labels: {lbls.numpy()}")
             print(f"  pixel range: [{imgs.numpy().min():.3f}, {imgs.numpy().max():.3f}]")
+            assert imgs.numpy().max() <= 1.01, "FAIL: expected [0,1]"
+            print("  PASS: normalize=True")
     except Exception as e:
         print(f"  [WARN] {e}")
 
     print()
     print("=" * 60)
-    print("Smoke-test 2: MaskedMultiViewDataset (권장 B+ 구조)")
+    print("Smoke-test 2: build_dataset (normalize=False, [0,255])")
+    print("=" * 60)
+    try:
+        ds_tr2, ds_va2, ds_te2 = build_dataset(
+            DATA_ROOT, img_size=(224, 224), batch_size=4,
+            shuffle_train=True, shuffle_val=True, shuffle_test=True,
+            normalize=False,
+        )
+        for imgs, lbls in ds_tr2.take(1):
+            print(f"  imgs  : {imgs.shape}  dtype={imgs.dtype}")
+            print(f"  labels: {lbls.numpy()}")
+            print(f"  pixel range: [{imgs.numpy().min():.1f}, {imgs.numpy().max():.1f}]")
+            assert imgs.numpy().max() > 1.5, "FAIL: expected [0,255]"
+            print("  PASS: normalize=False")
+        for imgs, lbls in ds_va2.take(1):
+            print(f"  val pixel range: [{imgs.numpy().min():.1f}, {imgs.numpy().max():.1f}]")
+    except Exception as e:
+        print(f"  [WARN] {e}")
+
+    print()
+    print("=" * 60)
+    print("Smoke-test 3: MaskedMultiViewDataset (권장 B+ 구조)")
     print("=" * 60)
     try:
         mmv = MaskedMultiViewDataset(
@@ -988,7 +1087,7 @@ if __name__ == "__main__":
 
     print()
     print("=" * 60)
-    print("Smoke-test 3: MultiViewDataset (legacy, backward compat)")
+    print("Smoke-test 4: MultiViewDataset (legacy, backward compat)")
     print("=" * 60)
     try:
         mvd = MultiViewDataset(
