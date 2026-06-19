@@ -16,7 +16,7 @@ except Exception:
     wandb = None
 
 
-AttentionMode = Literal["last_layer", "rollout"]
+AttentionMode = Literal["last_layer", "rollout", "last"]
 
 
 @dataclass
@@ -271,7 +271,9 @@ def _extract_attention_maps(
     Returns:
         (merged, headwise) 또는 None (attention 없을 때)
     """
-    if mode == "rollout":
+    normalized_mode = "last_layer" if mode == "last" else mode
+
+    if normalized_mode == "rollout":
         attn_list = _get_attention_list_from_outputs(outputs)
         if attn_list is None:
             return None
@@ -285,11 +287,17 @@ def _extract_attention_maps(
         cls_last = last[:, :, 0, 1:]                  # [B, H, N]
         headwise = cls_last.reshape(last.shape[0], last.shape[1], gh, gw)
         return merged, headwise
-    else:  # last_layer (default)
+
+    if normalized_mode == "last_layer":
         attn = _get_attention_from_outputs(outputs)
         if attn is None:
             return None
         return _extract_cls_attention_map(attn)
+
+    raise ValueError(
+        f"Unsupported attention_mode: {mode!r}. "
+        "Use 'rollout' or 'last_layer' (alias: 'last')."
+    )
 
 
 def _get_predictions(outputs: Any) -> tuple[np.ndarray | None, np.ndarray | None]:
