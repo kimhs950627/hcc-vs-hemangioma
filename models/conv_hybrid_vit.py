@@ -1,15 +1,15 @@
 """conv_hybrid_vit.py
 
-EfficientNetV2S → Conv1x1 projection → CLS token prepend → Shallow Transformer
+EfficientNetV2S → Conv1x1 projection → CLS token prepend → PE → Shallow Transformer
 
 Shape contract (512×512 input, stride-32 backbone)
 ---------------------------------------------------
   Input       : [B, 512, 512, 3]
   CNN fmap    : [B, 16, 16, 2048]   (ResNet50V2 output stride=32)
   Proj fmap   : [B, 16, 16, d_model]
-  Tokens      : [B, 256, d_model]   flatten
-  + CLS       : [B, 257, d_model]
-  + Learnable PE : applied to patch tokens only (shape [1, n_patches, d_model])
+  Patches     : [B, 256, d_model]   flatten
+  + CLS       : [B, 257, d_model]   prepend CLS first
+  + PE        : [B, 257, d_model]   PE applied to full sequence (CLS + patches)
   Transformer : n_layers × TransformerEncoderBlock
   Output dict:
     'embedding'          : [B, d_model]          <- CLS token (VICReg loss 용)
@@ -18,84 +18,82 @@ Shape contract (512×512 input, stride-32 backbone)
     'attention_weights'  : list[ [B, n_heads, seq_len, seq_len] ] × n_layers
     'feature_map'        : [B, gh, gw, d_model]   <- projected fmap (vis 용)
     'patch_grid_size'    : [gh, gw]               <- e.g. [16, 16]
+
+PE mode (cfg.pe_mode):
+    'learnable'   : learnable absolute PE [1, 1+n_patches, d_model] — CLS 포함
+    'sinusoidal'  : fixed 2-D sinusoidal PE (default) — not updated by optimizer
+    False / None : PE 없음 — content-only attention
 """
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Literal
 
 import keras
+import numpy as np
 import tensorflow as tf
 from keras import layers
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 1. Learnable Positional Embedding (bicubic, variable resolution)
+# Helpers
 # ──────────────────────────────────────────────────────────────────────────────
-@keras.saving.register_keras_serializable(package="hcc")
-class OptionalAbsolutePositionalEmbedding(layers.Layer):
-    """Learnable absolute positional embedding with bicubic interpolation.
 
-    Stored as a [1, base_gh, base_gw, embed_dim] grid, bicubic-resized at
-    runtime to actual (gh, gw). CLS token gets its own learnable embedding.
+def _build_2d_sinusoidal_pe(seq_len: int, d_model: int) -> np.ndarray:
+    """Build 2-D sinusoidal PE for a sequence of length seq_len (CLS + patches).
+
+    Index 0  → CLS : all zeros (no spatial info for CLS)
+    Index 1..seq_len-1 → sqrt(seq_len-1) × sqrt(seq_len-1) 2-D grid
+
+    Returns
+    -------
+    pe : np.ndarray  shape [1, seq_len, d_model]
     """
+    n_patches = seq_len - 1
+    gh = gw = int(round(math.sqrt(n_patches)))
+    assert gh * gw == n_patches, (
+        f"n_patches={n_patches} must be a perfect square for 2D sinusoidal PE"
+    )
+    d_half = d_model // 2          # half for row, half for col
+    d_row  = d_half
+    d_col  = d_model - d_half
 
-    def __init__(
-        self,
-        embed_dim: int,
-        base_grid_size: tuple[int, int] = (12, 12),
-        use_cls_token: bool = True,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.embed_dim = int(embed_dim)
-        self.base_grid_size = tuple(base_grid_size)
-        self.use_cls_token = bool(use_cls_token)
+    def _1d_sinusoidal(pos: np.ndarray, dim: int) -> np.ndarray:
+        """pos: [N], returns [N, dim]"""
+        i = np.arange(dim // 2, dtype=np.float32)
+        denom = np.power(10000.0, 2.0 * i / dim)
+        angles = pos[:, None] / denom[None, :]          # [N, dim//2]
+        pe = np.concatenate([np.sin(angles), np.cos(angles)], axis=-1)  # [N, dim]
+        if dim % 2 == 1:
+            pe = np.concatenate([pe, np.zeros((len(pos), 1), dtype=np.float32)], axis=-1)
+        return pe.astype(np.float32)
 
-    def build(self, input_shape):
-        gh, gw = self.base_grid_size
-        self.pos_grid = self.add_weight(
-            shape=(1, gh, gw, self.embed_dim),
-            initializer=keras.initializers.TruncatedNormal(stddev=0.02),
-            trainable=True,
-            name="pos_grid",
-        )
-        if self.use_cls_token:
-            self.cls_pos = self.add_weight(
-                shape=(1, 1, self.embed_dim),
-                initializer="zeros",
-                trainable=True,
-                name="cls_pos",
-            )
-        else:
-            self.cls_pos = None
-        super().build(input_shape)
+    rows = np.arange(gh, dtype=np.float32)
+    cols = np.arange(gw, dtype=np.float32)
 
-    def call(
-        self, x: tf.Tensor, grid_hw: tuple[tf.Tensor, tf.Tensor]
-    ) -> tf.Tensor:
-        gh, gw = grid_hw
-        pos = tf.image.resize(self.pos_grid, size=(gh, gw), method="bicubic")
-        pos = tf.reshape(pos, [1, gh * gw, self.embed_dim])
-        if self.use_cls_token:
-            cls_pos = tf.cast(self.cls_pos, x.dtype)
-            pos = tf.concat([cls_pos, tf.cast(pos, x.dtype)], axis=1)  # [1, 1+N, D]
-        else:
-            pos = tf.cast(pos, x.dtype)
-        return x + pos
+    row_pe = _1d_sinusoidal(rows, d_row)   # [gh, d_row]
+    col_pe = _1d_sinusoidal(cols, d_col)   # [gw, d_col]
 
-    def get_config(self):
-        cfg = super().get_config()
-        cfg.update(
-            embed_dim=self.embed_dim,
-            base_grid_size=self.base_grid_size,
-            use_cls_token=self.use_cls_token,
-        )
-        return cfg
+    # broadcast to 2D grid [gh, gw, d_model]
+    grid_pe = np.concatenate(
+        [
+            np.broadcast_to(row_pe[:, None, :], (gh, gw, d_row)),
+            np.broadcast_to(col_pe[None, :, :], (gh, gw, d_col)),
+        ],
+        axis=-1,
+    )  # [gh, gw, d_model]
+
+    patch_pe = grid_pe.reshape(n_patches, d_model)  # [N, d_model]
+
+    # CLS slot: zero vector
+    cls_pe = np.zeros((1, d_model), dtype=np.float32)
+
+    pe = np.concatenate([cls_pe, patch_pe], axis=0)[None]  # [1, 1+N, d_model]
+    return pe.astype(np.float32)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2. TransformerEncoderBlock  (always returns attention scores)
+# 1. TransformerEncoderBlock  (always returns attention scores)
 # ──────────────────────────────────────────────────────────────────────────────
 @keras.saving.register_keras_serializable(package="hcc")
 class TransformerEncoderBlock(layers.Layer):
@@ -161,39 +159,44 @@ class TransformerEncoderBlock(layers.Layer):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 3. ConvPatchEmbedding  — CNN → Conv1x1 proj → flatten → CLS → learnable PE
-# ────────────────────────────────────────��─────────────────────────────────────
+# 2. ConvPatchEmbedding  — CNN → proj → flatten → CLS prepend → PE → Transformer
+# ──────────────────────────────────────────────────────────────────────────────
 @keras.saving.register_keras_serializable(package="hcc")
 class ConvPatchEmbedding(layers.Layer):
-    """CNN-based patch tokenizer.
+    """CNN-based patch tokenizer with ablation-ready PE.
 
-    CNN backbone (output stride 32)
-      → Conv1x1 bottleneck → d_model
-      → flatten patches [B, n_patches, d_model]
-      → prepend CLS token  → [B, seq_len, d_model]  (seq_len = 1 + n_patches)
-      → learnable PE [1, n_patches, d_model] added to patch tokens only
+    Ordering (fixed):
+      1. CNN backbone → Conv1x1 proj → LN   [B, gh, gw, d_model]
+      2. flatten patches                    [B, N, d_model]
+      3. prepend CLS token                  [B, 1+N, d_model]
+      4. add PE (mode-dependent)            [B, 1+N, d_model]  ← PE after CLS concat
+      5. → TransformerEncoderBlock(s)
+
+    pe_mode:
+      'learnable'  — learnable abs PE over full seq (CLS + patches); CLS slot init zeros
+      'sinusoidal' — fixed 2-D sinusoidal PE; CLS slot = 0; non-trainable (default)
+      False/None   — no PE; content-only attention
     """
 
     BACKBONE_MAP = {
-        # ⚠️  EfficientNetV2S/M: output_stride=8 → 512×512 input → 4096 patches → OOM risk
-        #    Use efficientnetv2_b0 (stride=32, 7.1M params) for memory-safe EfficientNet.
         "efficientnetv2_b0": (keras.applications.EfficientNetV2B0, 1280),
-        "efficientnetv2_s": (keras.applications.EfficientNetV2S,  1280),  # ⚠️ stride=8, OOM risk
-        "efficientnetv2_m": (keras.applications.EfficientNetV2M,  1280),  # ⚠️ stride=8, OOM risk
-        "resnet50v2":       (keras.applications.ResNet50V2,        2048),
-        "densenet121":      (keras.applications.DenseNet121,       1024),
-        "convnext_small":   (keras.applications.ConvNeXtSmall,     768),
-        "convnext_tiny":    (keras.applications.ConvNeXtTiny,      768),
+        "efficientnetv2_s":  (keras.applications.EfficientNetV2S,  1280),  # ⚠️ stride=8
+        "efficientnetv2_m":  (keras.applications.EfficientNetV2M,  1280),  # ⚠️ stride=8
+        "resnet50v2":        (keras.applications.ResNet50V2,        2048),
+        "densenet121":       (keras.applications.DenseNet121,       1024),
+        "convnext_small":    (keras.applications.ConvNeXtSmall,     768),
+        "convnext_tiny":     (keras.applications.ConvNeXtTiny,      768),
     }
 
     def __init__(
         self,
-        backbone_name: str = "efficientnetv2_s",
+        backbone_name: str = "resnet50v2",
         d_model: int = 256,
-        n_patches: int = 256,           # cfg.n_patches  (e.g. 16*16=256 for res=512)
+        n_patches: int = 256,
         imagenet_pretrained: bool = True,
         backbone_trainable: bool = False,
-        # kept for backward-compat; ignored (learnable PE is always used)
+        pe_mode: str | bool | None = "sinusoidal",
+        # legacy compat — ignored internally; use pe_mode
         use_sinusoidal_pe: bool = True,
         **kwargs,
     ):
@@ -203,44 +206,63 @@ class ConvPatchEmbedding(layers.Layer):
         self.n_patches           = int(n_patches)
         self.imagenet_pretrained = bool(imagenet_pretrained)
         self.backbone_trainable  = bool(backbone_trainable)
-        self.use_sinusoidal_pe   = use_sinusoidal_pe  # stored only for get_config compat
+        # normalise pe_mode
+        if pe_mode is None or pe_mode is False or pe_mode == "none":
+            self.pe_mode: str | bool = False
+        else:
+            self.pe_mode = str(pe_mode)  # "learnable" | "sinusoidal"
+        self.use_sinusoidal_pe = use_sinusoidal_pe  # kept for get_config compat only
 
         if backbone_name not in self.BACKBONE_MAP:
-            raise ValueError(f"Unknown backbone: {backbone_name}")
+            raise ValueError(f"Unknown backbone: {backbone_name!r}. "
+                             f"Choose from {list(self.BACKBONE_MAP)}")
         if backbone_name in ("efficientnetv2_s", "efficientnetv2_m"):
             import warnings
             warnings.warn(
                 f"[ConvPatchEmbedding] '{backbone_name}' has output_stride=8. "
-                f"512×512 input → 4096 patches → severe OOM risk. "
-                f"Consider 'efficientnetv2_b0' (stride=32) instead.",
+                f"512×512 → 4096 patches → OOM risk. Consider 'efficientnetv2_b0'.",
                 ResourceWarning, stacklevel=2,
             )
         BackboneCls, _ = self.BACKBONE_MAP[backbone_name]
-
         self._cnn = BackboneCls(
             include_top=False,
             weights="imagenet" if imagenet_pretrained else None,
         )
         self._cnn.trainable = backbone_trainable
-
         self._proj      = layers.Conv2D(d_model, kernel_size=1, use_bias=False, name="conv_proj")
         self._proj_norm = layers.LayerNormalization(epsilon=1e-6)
 
     def build(self, input_shape):
-        # CLS token
+        seq_len = 1 + self.n_patches  # CLS + patches
+
+        # CLS token  [1, 1, d_model]
         self.cls_token = self.add_weight(
             shape=(1, 1, self.d_model),
             initializer=keras.initializers.TruncatedNormal(stddev=0.02),
             trainable=True,
             name="cls_token",
         )
-        # Learnable PE for patch tokens only: [1, n_patches, d_model]
-        self.pos_embed = self.add_weight(
-            shape=(1, self.n_patches, self.d_model),
-            initializer=keras.initializers.TruncatedNormal(stddev=0.02),
-            trainable=True,
-            name="pos_embed",
-        )
+
+        # PE weights — applied AFTER CLS concat, over full seq [1, 1+N, d_model]
+        if self.pe_mode == "learnable":
+            self.pos_embed = self.add_weight(
+                shape=(1, seq_len, self.d_model),
+                initializer=keras.initializers.TruncatedNormal(stddev=0.02),
+                trainable=True,
+                name="pos_embed_learnable",
+            )
+        elif self.pe_mode == "sinusoidal":
+            pe_np = _build_2d_sinusoidal_pe(seq_len, self.d_model)
+            self.pos_embed = self.add_weight(
+                shape=(1, seq_len, self.d_model),
+                initializer=keras.initializers.Constant(pe_np),
+                trainable=False,   # ← fixed; not updated by optimizer
+                name="pos_embed_sinusoidal",
+            )
+        else:
+            # pe_mode is False — no weight needed
+            self.pos_embed = None
+
         super().build(input_shape)
 
     def call(
@@ -249,9 +271,9 @@ class ConvPatchEmbedding(layers.Layer):
         """
         Returns
         -------
-        tokens  : [B, seq_len, d_model]   (seq_len = 1 + n_patches)
-        fmap    : [B, gh, gw, d_model]
-        gh, gw  : scalar tensors
+        tokens : [B, 1+N, d_model]
+        fmap   : [B, gh, gw, d_model]
+        gh, gw : scalar tensors
         """
         fmap_raw = self._cnn(x, training=(training and self.backbone_trainable))
         fmap     = self._proj(fmap_raw, training=training)
@@ -260,17 +282,18 @@ class ConvPatchEmbedding(layers.Layer):
         B  = tf.shape(x)[0]
         gh = tf.shape(fmap)[1]
         gw = tf.shape(fmap)[2]
-        N  = gh * gw  # == self.n_patches at runtime
+        N  = gh * gw
 
-        # Flatten: [B, N, d_model]
+        # 1. flatten patches  [B, N, d_model]
         patches = tf.reshape(fmap, [B, N, self.d_model])
 
-        # Learnable PE — pos_embed is [1, n_patches, d_model], cast for mixed-precision
-        patches = patches + tf.cast(self.pos_embed, patches.dtype)
-
-        # Prepend CLS: [B, seq_len, d_model]
+        # 2. prepend CLS  [B, 1+N, d_model]
         cls    = tf.cast(tf.tile(self.cls_token, [B, 1, 1]), patches.dtype)
         tokens = tf.concat([cls, patches], axis=1)
+
+        # 3. add PE over full sequence (CLS + patches)
+        if self.pos_embed is not None:
+            tokens = tokens + tf.cast(self.pos_embed, tokens.dtype)
 
         return tokens, fmap, gh, gw
 
@@ -282,23 +305,29 @@ class ConvPatchEmbedding(layers.Layer):
             n_patches=self.n_patches,
             imagenet_pretrained=self.imagenet_pretrained,
             backbone_trainable=self.backbone_trainable,
+            pe_mode=self.pe_mode if self.pe_mode else False,
             use_sinusoidal_pe=self.use_sinusoidal_pe,
         )
         return cfg
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 4. ConvHybridViTBackbone  — full encoder
+# 3. ConvHybridViTBackbone  — full encoder
 # ──────────────────────────────────────────────────────────────────────────────
 @keras.saving.register_keras_serializable(package="hcc")
 class ConvHybridViTBackbone(keras.Model):
     """CNN backbone + Shallow Transformer with CLS token.
 
+    PE ablation controlled by cfg.pe_mode:
+        'sinusoidal'  (default) — fixed 2-D sinusoidal, CLS slot = 0
+        'learnable'             — learnable abs PE over full seq
+        False / None             — no PE
+
     Output dict
     -----------
-    'embedding'          : [B, d_model]                  <- CLS (VICReg용)
+    'embedding'          : [B, d_model]
     'patch_tokens'       : [B, n_patches, d_model]
-    'encoded_patches'    : [B, seq_len, d_model]         <- CLS + patches
+    'encoded_patches'    : [B, seq_len, d_model]
     'attention_weights'  : list of [B, n_heads, seq_len, seq_len]
     'feature_map'        : [B, gh, gw, d_model]
     'patch_grid_size'    : [gh, gw]
@@ -310,15 +339,16 @@ class ConvHybridViTBackbone(keras.Model):
         input_shape: tuple = (512, 512, 3),
         backbone_name: str = "resnet50v2",
         d_model: int = 256,
-        n_patches: int = 256,           # cfg.n_patches
+        n_patches: int = 256,
         depth: int = 2,
         num_heads: int = 8,
         mlp_dim: int = 512,
         dropout: float = 0.1,
         imagenet_pretrained: bool = True,
         backbone_trainable: bool = False,
-        use_sinusoidal_pe: bool = True,  # kept for compat; ignored
-        # Legacy compat params
+        pe_mode: str | bool | None = "sinusoidal",
+        # legacy compat
+        use_sinusoidal_pe: bool = True,
         patch_size: int = 24,
         embed_dim: int = 256,
         conv_stem_depth: int = 1,
@@ -339,15 +369,21 @@ class ConvHybridViTBackbone(keras.Model):
         self.backbone_name       = backbone_name
         self.imagenet_pretrained = bool(imagenet_pretrained)
         self.backbone_trainable  = bool(backbone_trainable)
-        self.use_sinusoidal_pe   = use_sinusoidal_pe
         self.pool_mode           = pool_mode
+        # normalise
+        if pe_mode is None or pe_mode is False or pe_mode == "none":
+            self.pe_mode: str | bool = False
+        else:
+            self.pe_mode = str(pe_mode)
+        self.use_sinusoidal_pe = use_sinusoidal_pe  # compat
 
         self.patch_embed = ConvPatchEmbedding(
             backbone_name=backbone_name,
             d_model=d_model,
-            n_patches=n_patches,           # ← cfg.n_patches passed here
+            n_patches=n_patches,
             imagenet_pretrained=imagenet_pretrained,
             backbone_trainable=backbone_trainable,
+            pe_mode=pe_mode,
             use_sinusoidal_pe=use_sinusoidal_pe,
             name="patch_embed",
         )
@@ -407,6 +443,7 @@ class ConvHybridViTBackbone(keras.Model):
             dropout=self.dropout_rate,
             imagenet_pretrained=self.imagenet_pretrained,
             backbone_trainable=self.backbone_trainable,
+            pe_mode=self.pe_mode if self.pe_mode else False,
             use_sinusoidal_pe=self.use_sinusoidal_pe,
             pool_mode=self.pool_mode,
         )
@@ -414,23 +451,32 @@ class ConvHybridViTBackbone(keras.Model):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 5. Factory
+# 4. Factory
 # ──────────────────────────────────────────────────────────────────────────────
 def build_conv_hybrid_vit(
     input_shape: tuple = (512, 512, 3),
     backbone_name: str = "resnet50v2",
     d_model: int = 256,
-    n_patches: int = 256,           # cfg.n_patches
+    n_patches: int = 256,
     depth: int = 2,
     num_heads: int = 8,
     mlp_dim: int = 512,
     dropout: float = 0.1,
     imagenet_pretrained: bool = True,
     backbone_trainable: bool = False,
+    pe_mode: str | bool | None = "sinusoidal",
+    # legacy compat
     use_sinusoidal_pe: bool = True,
     pool_mode: str = "cls",
 ) -> ConvHybridViTBackbone:
-    """Build and warm-start ConvHybridViTBackbone."""
+    """Build and warm-start ConvHybridViTBackbone.
+
+    pe_mode options
+    ---------------
+    'sinusoidal'  — fixed 2-D sinusoidal PE (default; recommended for ablation)
+    'learnable'   — fully trainable absolute PE over CLS + patch tokens
+    False          — no PE (content-only attention baseline)
+    """
     model = ConvHybridViTBackbone(
         input_shape=input_shape,
         backbone_name=backbone_name,
@@ -442,6 +488,7 @@ def build_conv_hybrid_vit(
         dropout=dropout,
         imagenet_pretrained=imagenet_pretrained,
         backbone_trainable=backbone_trainable,
+        pe_mode=pe_mode,
         use_sinusoidal_pe=use_sinusoidal_pe,
         pool_mode=pool_mode,
     )
@@ -450,11 +497,12 @@ def build_conv_hybrid_vit(
     h, w, _ = input_shape
     gh, gw  = h // 32, w // 32
     n_patch = gh * gw
+    pe_label = pe_mode if pe_mode else "none"
     print(
         f"[ConvHybridViT] backbone={backbone_name}  "
         f"input={input_shape}  fmap={gh}×{gw}  n_patch={n_patch}  "
         f"seq_len=1+{n_patch}={1+n_patch}  d_model={d_model}  "
-        f"depth={depth}  n_heads={num_heads}  PE=learnable"
+        f"depth={depth}  n_heads={num_heads}  PE={pe_label}"
     )
     print(
         f"[ConvHybridViT] total_params={model.count_params():,}  "
