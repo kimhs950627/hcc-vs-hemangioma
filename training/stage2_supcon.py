@@ -15,14 +15,14 @@ class SupConClassifier(keras.Model):
         encoder_name: str,
         input_shape=(224, 224, 3),
         num_classes: int = 2,
-        supcon_weight: float = 0.3,
+        supcon_weight: float = 0.1,
         projection_dim: int = 128,
         classifier_hidden_dim: int = 256,
         dropout_rate: float = 0.2,
         encoder_init_weights: str | None = None,
     ):
         super().__init__()
-        self.supcon_weight = supcon_weight
+        self.supcon_weight = supcon_weight   # L_total = CE + supcon_weight * SC
         self.model = Classifier(
             encoder_name=encoder_name,
             input_shape=input_shape,
@@ -114,13 +114,31 @@ class SupConClassifier(keras.Model):
             'fn': fn,
         }
 
+    def _compute_loss(self, y, out, training: bool) -> tuple:
+        """
+        L_total = CE + supcon_weight * SC
+
+        - supcon_weight == 0.0 → CE only (SC는 logging만)
+        - supcon_weight  > 0.0 → CE + w * SC
+          w=0.1 권장: SC 초기값(~2.7) vs CE 초기값(~0.69), ratio ≈ 4x
+          w=0.1이면 weighted SC ≈ 0.27로 CE와 비슷한 scale
+
+        Returns:
+            total_loss, ce_loss, sc_loss
+        """
+        ce = self.ce_loss(y, out['logits'])
+        sc = supervised_contrastive_loss(y, out['projection'])
+        if self.supcon_weight <= 0.0:
+            total = ce
+        else:
+            total = ce + self.supcon_weight * sc
+        return total, ce, sc
+
     def train_step(self, data: Any):
         x, y = data
         with tf.GradientTape() as tape:
             out = self.model(x, training=True)
-            ce = self.ce_loss(y, out['logits'])
-            scl = supervised_contrastive_loss(y, out['projection'])
-            loss = ce if self.supcon_weight <= 0.0 else 0.5 * (ce + scl)
+            loss, ce, scl = self._compute_loss(y, out, training=True)
         grads = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
         self.loss_tracker.update_state(loss)
@@ -133,9 +151,7 @@ class SupConClassifier(keras.Model):
     def test_step(self, data: Any):
         x, y = data
         out = self.model(x, training=False)
-        ce = self.ce_loss(y, out['logits'])
-        scl = supervised_contrastive_loss(y, out['projection'])
-        loss = ce if self.supcon_weight <= 0.0 else 0.5 * (ce + scl)
+        loss, ce, scl = self._compute_loss(y, out, training=False)
         self.loss_tracker.update_state(loss)
         self.ce_loss_tracker.update_state(ce)
         self.supcon_loss_tracker.update_state(scl)
@@ -148,13 +164,21 @@ def build_stage2_trainer(
     encoder_name: str,
     input_shape=(224, 224, 3),
     num_classes: int = 2,
-    supcon_weight: float = 0.3,
+    supcon_weight: float = 0.1,
     projection_dim: int = 128,
     classifier_hidden_dim: int = 256,
     dropout_rate: float = 0.2,
     lr: float = 1e-4,
     teacher_encoder_weights: str | None = None,
 ):
+    """
+    Stage 2 trainer factory.
+
+    Loss: L_total = CE + supcon_weight * SC
+      supcon_weight=0.0  → CE only
+      supcon_weight=0.1  → 권장 (SC scale ~2.7, CE scale ~0.69; w=0.1이면 균형)
+      supcon_weight=0.5  → SC dominant (class collapse 위험, 비권장)
+    """
     model = SupConClassifier(
         encoder_name=encoder_name,
         input_shape=input_shape,
@@ -167,7 +191,6 @@ def build_stage2_trainer(
     )
     model.compile(optimizer=keras.optimizers.AdamW(learning_rate=lr))
     return model
-
 
 
 def stage2_encoder_recommendation() -> str:
