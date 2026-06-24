@@ -53,6 +53,13 @@ class WandbVisualizationConfig:
     rollout_discard_ratio  : 0.0~1.0. 각 layer에서 하위 비율 attention을 0으로 버림
                              (noise 제거). 0.0이면 vanilla rollout.
     """
+    enable_eigen: bool = False
+    """EigenAttention 시각화 활성화 여부.
+
+    True 로 설정하면 WandB table에 k=1,2,3 eigenattention map 및 overlay columns 이
+    기존 rollout/last_layer columns 뒤에 추가로 logging됨.
+    선언하지 않으면 False(비활성) 로 간주. 기존 호출 코드 수정 불필요.
+    """
 
 
 def _require_wandb():
@@ -223,6 +230,92 @@ def compute_attention_rollout(
         rollout = np.einsum("bij,bjk->bik", mat, rollout)  # [B,T,T]
 
     return rollout
+
+
+# ── EigenAttention ────────────────────────────────────────────────────────
+
+_EIGEN_K = 3  # hardcoded
+
+
+def compute_eigen_attention(
+    attn_list: list[np.ndarray],
+    k: int = _EIGEN_K,
+    head_reduction: str = "mean",
+) -> np.ndarray:
+    """EigenAttention: patch-to-patch rollout matrix의 top-k eigenvector 반환.
+
+    Args:
+        attn_list      : List[[B, H, N+1, N+1]] — 모든 block attention list
+        k              : 반환할 eigenvector 수 (기본값 = 3, 하드코딩)
+        head_reduction : 'mean' | 'max'
+
+    Returns:
+        eigenmaps : [B, k, N] — reshape(gh, gw) 가능한 patch-level eigenmap.
+                   부호는 max absolute value 원소가 양수가 되도록 flip됨.
+    """
+    if head_reduction == "mean":
+        mats = [np.mean(a, axis=1) for a in attn_list]
+    else:
+        mats = [np.max(a, axis=1) for a in attn_list]
+
+    n_tokens = mats[0].shape[-1]
+    eye = np.eye(n_tokens, dtype=np.float32)
+    rollout = eye[None].repeat(mats[0].shape[0], axis=0)
+    for mat in mats:
+        aug = 0.5 * mat + 0.5 * eye[None]
+        aug = aug / (aug.sum(axis=-1, keepdims=True) + 1e-8)
+        rollout = np.einsum("bij,bjk->bik", aug, rollout)
+
+    # patch-to-patch sub-matrix [B, N, N] (CLS row/col 제거)
+    patch_attn = rollout[:, 1:, 1:]
+    B, N, _ = patch_attn.shape
+
+    # symmetrize for numerically stable eigh
+    sym = 0.5 * (patch_attn + patch_attn.transpose(0, 2, 1))  # [B, N, N]
+
+    eigenmaps = np.zeros((B, k, N), dtype=np.float32)
+    for b in range(B):
+        vals, vecs = np.linalg.eigh(sym[b])   # ascending eigenvalue order
+        # top-k: last k (largest eigenvalues) → reverse to descending
+        topk_vecs = vecs[:, -k:][:, ::-1]     # [N, k]
+        for ki in range(k):
+            ev = topk_vecs[:, ki]
+            # sign convention: max-abs element 이 양수가 되도록 flip
+            if ev[np.argmax(np.abs(ev))] < 0:
+                ev = -ev
+            eigenmaps[b, ki] = ev.astype(np.float32)
+
+    return eigenmaps   # [B, k, N]
+
+
+def _append_eigen_to_row(
+    row: dict,
+    outputs: Any,
+    img_uint8: np.ndarray,
+    head_reduction: str,
+    alpha: float,
+) -> dict:
+    """outputs에서 eigenattention을 계산해 row dict에 컬럼을 추가하고 반환.
+
+    enable_eigen=True 인 경우에만 호출됨. 실패 시 row를 그대로 반환.
+    """
+    attn_list = _get_attention_list_from_outputs(outputs)
+    if attn_list is None:
+        return row
+    try:
+        eigenmaps = compute_eigen_attention(attn_list, k=_EIGEN_K, head_reduction=head_reduction)
+        gh, gw = _infer_patch_grid(attn_list[-1][0])
+        target_hw = img_uint8.shape[:2]
+        for ki in range(_EIGEN_K):
+            ev = eigenmaps[0, ki].reshape(gh, gw)   # [gh, gw]
+            ev_up = _resize_heatmap(ev, target_hw)
+            row[f"eigenattn_k{ki + 1}"] = wandb.Image(_colormap_heatmap(ev_up))
+            row[f"eigen_overlay_k{ki + 1}"] = wandb.Image(
+                _overlay_image(img_uint8, ev_up, alpha)
+            )
+    except Exception as e:
+        print(f"[EigenAttention] 계산 실패 (skip): {e}")
+    return row
 
 
 def _get_attention_list_from_outputs(outputs: Any) -> list[np.ndarray] | None:
@@ -411,19 +504,21 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
         - ``"last_layer"`` (기본값): 마지막 block attention만 사용.
         - ``"rollout"``: Attention Rollout (모든 block 합산).
 
+    enable_eigen=True 시 k=1,2,3 EigenAttention map 및 overlay가
+    기존 columns 뒤에 추가 logging됨. 선언하지 않으면 False로 간주.
+
     사용 예시::
 
-        # last_layer (기본값)
+        # last_layer (기본값, eigen 없음)
         cb = WandbAttentionVisualizer(WandbVisualizationConfig(
             test_dir="/data/test",
         ))
 
-        # rollout 사용
+        # rollout + eigen 활성화
         cb = WandbAttentionVisualizer(WandbVisualizationConfig(
             test_dir="/data/test",
             attention_mode="rollout",
-            rollout_head_reduction="mean",
-            rollout_discard_ratio=0.1,
+            enable_eigen=True,
         ))
     """
 
@@ -476,6 +571,15 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
         for h in range(headwise.shape[1]):
             hm_up = _resize_heatmap(headwise[0, h], target_hw)
             row[f"overlay_head_{h+1}"] = wandb.Image(_overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha))
+
+        # ── EigenAttention k=1,2,3 (enable_eigen=True 시에만) ─────────────
+        if getattr(self.cfg, "enable_eigen", False):
+            row = _append_eigen_to_row(
+                row, outputs, img_uint8,
+                head_reduction=self.cfg.rollout_head_reduction,
+                alpha=self.cfg.overlay_alpha,
+            )
+
         return row
 
     def on_epoch_end(self, epoch, logs=None):
@@ -503,6 +607,9 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
     attention_mode 옵션:
         - ``"last_layer"`` (기본값): 마지막 block attention만 사용.
         - ``"rollout"``: Attention Rollout (모든 block 합산).
+
+    enable_eigen=True 시 k=1,2,3 EigenAttention map 및 overlay가
+    기존 columns 뒤에 추가 logging됨. 선언하지 않으면 False로 간주.
     """
 
     def __init__(self, vis_cfg: WandbVisualizationConfig):
@@ -560,6 +667,14 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
             for h in range(headwise.shape[1]):
                 hm_up = _resize_heatmap(headwise[0, h], img_uint8.shape[:2])
                 row[f"overlay_head_{h+1}"] = wandb.Image(_overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha))
+
+        # ── EigenAttention k=1,2,3 (enable_eigen=True 시에만) ─────────────
+        if getattr(self.cfg, "enable_eigen", False):
+            row = _append_eigen_to_row(
+                row, attn_outputs, img_uint8,
+                head_reduction=self.cfg.rollout_head_reduction,
+                alpha=self.cfg.overlay_alpha,
+            )
 
         grad_model = self._resolve_model_for_gradcam()
         layer_name = _resolve_gradcam_layer(grad_model, self.cfg.gradcam_layer_name)
