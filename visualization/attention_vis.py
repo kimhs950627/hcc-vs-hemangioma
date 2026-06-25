@@ -22,7 +22,7 @@ SA mode  (token_attention_mode='sa'):
 CA mode  (token_attention_mode='ca'):
     attn per layer: [B, n_heads, 1, N_patches]  (Q dim = 1, non-square)
 
-All public functions auto-detect mode from tensor shape (Q dim == 1 → CA).
+All public functions auto-detect mode from tensor shape (Q dim == 1 -> CA).
 
 Usage
 -----
@@ -33,12 +33,9 @@ Usage
     )
 
     out = encoder(images, training=False, return_attention=True)
-    # SA Rollout  [B, N]
     rollout = attention_rollout(out['attention_weights'])
-    # CA Rollout  [B, N]  — same call; shape auto-detected
-    rollout = attention_rollout(out['attention_weights'])
-    # EigenAttention  [B, N, k_components]
     eigenmaps, eigenvalues = eigen_attention(out['attention_weights'], k_components=3)
+    # eigen_attention returns (None, None) on any error -- always check!
 """
 from __future__ import annotations
 
@@ -47,9 +44,9 @@ import cv2
 import wandb
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # Internal helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 def _to_np(t) -> np.ndarray:
     if hasattr(t, "numpy"):
         return t.numpy()
@@ -64,16 +61,14 @@ def _is_ca_shape(a: np.ndarray) -> bool:
 def _head_fuse(a: np.ndarray, mode: str = "mean") -> np.ndarray:
     """Head-axis fusion.
 
-    SA mode: [B, H, T, T] → [B, T, T]
-    CA mode: [B, H, 1, N] → [B, N]   (squeeze Q dim after head fusion)
+    SA mode: [B, H, T, T] -> [B, T, T]
+    CA mode: [B, H, 1, N] -> [B, N]   (squeeze Q dim after head fusion)
     """
     if _is_ca_shape(a):
-        # CA: fuse heads then squeeze Q dim
         if mode == "mean":
             return a.mean(axis=1)[:, 0, :]   # [B, N]
         else:
             return a.max(axis=1)[:, 0, :]    # [B, N]
-    # SA: standard
     if mode == "mean":
         return a.mean(axis=1)
     elif mode == "max":
@@ -92,46 +87,31 @@ def _infer_patch_grid_from_n(n_patches: int) -> tuple[int, int]:
     return 1, n_patches
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # 1. Attention Rollout  (SA + CA unified)
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 def attention_rollout(
     attn_weights_list: list,
     discard_ratio: float = 0.0,
     head_fusion: str = "mean",
 ) -> np.ndarray:
-    """Compute attention rollout / layer-accumulation for CLS→patch attention.
+    """Compute attention rollout / layer-accumulation for CLS->patch attention.
 
     SA mode: standard Abnar & Zuidema rollout over square [B,H,T,T] matrices.
-    CA mode: [B,H,1,N] — square-matrix rollout is undefined; instead accumulate
-             layer-wise head-mean CLS→patch maps with weighted averaging
-             (same fallback as wandb_viz.compute_attention_rollout).
-
-    Parameters
-    ----------
-    attn_weights_list : list of tensors
-        SA: each [B, n_heads, seq, seq].  seq = 1 + N (CLS first).
-        CA: each [B, n_heads, 1, N].
-    discard_ratio : float  (0.0~1.0)
-        Fraction of lowest-attention tokens zeroed before accumulation.
-    head_fusion : 'mean' | 'max'
+    CA mode: [B,H,1,N] -- layer-wise weighted averaging fallback.
 
     Returns
     -------
     rollout : np.ndarray  [B, N]
-        CLS-to-patch attention.  NOT yet reshaped to spatial grid.
     """
     assert head_fusion in ("mean", "max", "min")
     attn_list = [_to_np(a).astype(np.float32) for a in attn_weights_list]
-
     first = attn_list[0]
 
-    # ── CA mode fallback ───────────────────────────────────────────────────
     if _is_ca_shape(first):
         per_layer: list[np.ndarray] = []
         for a in attn_list:
-            # [B, H, 1, N] → head-fuse → [B, N]
-            layer_map = _head_fuse(a, "mean")
+            layer_map = _head_fuse(a, "mean")  # [B, N]
             if discard_ratio > 0.0:
                 thresh = np.quantile(layer_map, discard_ratio, axis=-1, keepdims=True)
                 layer_map = np.where(layer_map >= thresh, layer_map, 0.0)
@@ -143,9 +123,7 @@ def attention_rollout(
             accumulated = alpha * accumulated + (1 - alpha) * lm
         return accumulated  # [B, N]
 
-    # ── SA mode: standard rollout ─────────────────────────────────────────
     B, n_heads, seq, _ = first.shape
-
     fused = []
     for a in attn_list:
         if head_fusion == "mean":
@@ -154,28 +132,24 @@ def attention_rollout(
             f = a.max(axis=1)
         else:
             f = a.min(axis=1)
-
         if discard_ratio > 0.0:
             flat = f.reshape(B, seq * seq)
             threshold = np.quantile(flat, discard_ratio, axis=1, keepdims=True)
             flat = np.where(flat >= threshold, flat, 0.0)
             f = flat.reshape(B, seq, seq)
-
         fused.append(f)
 
-    result = np.eye(seq)[None].repeat(B, axis=0)   # [B, seq, seq]
+    result = np.eye(seq)[None].repeat(B, axis=0)
     for f in fused:
         a_hat = 0.5 * f + 0.5 * np.eye(seq)[None]
         a_hat = a_hat / (a_hat.sum(axis=-1, keepdims=True) + 1e-8)
         result = np.matmul(a_hat, result)
-
-    cls_attn = result[:, 0, 1:]   # [B, N]
-    return cls_attn
+    return result[:, 0, 1:]  # [B, N]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. EigenAttention  (SA + CA unified)
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 2. EigenAttention  (SA + CA unified, returns None on any error)
+# ---------------------------------------------------------------------------
 def eigen_attention(
     attn_weights_list: list,
     k_components: int = 3,
@@ -183,127 +157,112 @@ def eigen_attention(
     layer_fusion: str = "last",
     take_abs: bool = True,
     flip_sign: bool = True,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray] | tuple[None, None]:
     """EigenAttention: top-k eigenvectors of the symmetrised attention matrix.
 
-    SA mode: patch-to-patch sub-matrix [B,N,N] is available → full SVD.
-    CA mode: [B,H,1,N] — patch-to-patch square matrix is undefined.
-             Fallback: cosine-modulated rollout maps are used as synthetic
-             eigenmaps (same strategy as wandb_viz.compute_eigen_attention).
+    SA mode: patch-to-patch sub-matrix SVD.
+    CA mode: cosine-modulated rollout fallback (patch-to-patch square undefined).
 
-    Parameters
-    ----------
-    attn_weights_list : list of tensors
-        SA: each [B, n_heads, seq, seq]
-        CA: each [B, n_heads, 1, N]
-    k_components  : number of eigenvectors / synthetic components to return
-    head_fusion   : 'mean' | 'max'
-    layer_fusion  : 'last' | 'mean' | 'rollout'  (SA only; CA uses rollout always)
-    take_abs      : return |eigenvectors| for unsigned heatmap
-    flip_sign     : flip each vector so dominant value is positive
+    Returns (None, None) on ANY error -- callers must check before using.
 
     Returns
     -------
-    eigenmaps   : np.ndarray  [B, N, k_components]  float32
-    eigenvalues : np.ndarray  [B, k_components]     float32
-        SA: true SVD singular values.  CA: synthetic (normalised rollout norm).
+    eigenmaps   : np.ndarray [B, N, k_components]  or None
+    eigenvalues : np.ndarray [B, k_components]     or None
     """
-    attn_list = [_to_np(a).astype(np.float32) for a in attn_weights_list]
-    first = attn_list[0]
+    try:
+        attn_list = [_to_np(a).astype(np.float32) for a in attn_weights_list]
+        first = attn_list[0]
 
-    # ── CA mode: cosine-modulated rollout fallback ─────────────────────────
-    if _is_ca_shape(first):
-        accumulated = attention_rollout(attn_list, discard_ratio=0.0, head_fusion=head_fusion)
-        B, N = accumulated.shape
-        eigenmaps   = np.zeros((B, N, k_components), dtype=np.float32)
-        eigenvalues = np.zeros((B, k_components), dtype=np.float32)
-        freq_x = np.arange(N, dtype=np.float32)
-        for ki in range(k_components):
-            if ki == 0:
-                ev = accumulated.copy()
-            else:
-                modulator = np.cos(ki * np.pi * freq_x / max(N - 1, 1))
-                ev = accumulated * modulator[None, :]
-            if flip_sign:
-                for b in range(B):
-                    if ev[b, np.argmax(np.abs(ev[b]))] < 0:
-                        ev[b] = -ev[b]
-            if take_abs:
-                ev = np.abs(ev)
-            eigenmaps[:, :, ki]   = ev.astype(np.float32)
-            eigenvalues[:, ki]    = np.linalg.norm(ev, axis=-1).astype(np.float32)
-        return eigenmaps, eigenvalues
+        if _is_ca_shape(first):
+            accumulated = attention_rollout(attn_list, discard_ratio=0.0,
+                                            head_fusion=head_fusion)
+            B, N = accumulated.shape
+            eigenmaps   = np.zeros((B, N, k_components), dtype=np.float32)
+            eigenvalues = np.zeros((B, k_components), dtype=np.float32)
+            freq_x = np.arange(N, dtype=np.float32)
+            for ki in range(k_components):
+                if ki == 0:
+                    ev = accumulated.copy()
+                else:
+                    modulator = np.cos(ki * np.pi * freq_x / max(N - 1, 1))
+                    ev = accumulated * modulator[None, :]
+                if flip_sign:
+                    for b in range(B):
+                        if ev[b, np.argmax(np.abs(ev[b]))] < 0:
+                            ev[b] = -ev[b]
+                if take_abs:
+                    ev = np.abs(ev)
+                eigenmaps[:, :, ki]   = ev.astype(np.float32)
+                eigenvalues[:, ki]    = np.linalg.norm(ev, axis=-1).astype(np.float32)
+            return eigenmaps, eigenvalues
 
-    # ── SA mode: standard SVD EigenAttention ──────────────────────────────
-    B, n_heads, seq, _ = first.shape
+        # SA mode: standard SVD
+        B, n_heads, seq, _ = first.shape
+        fused = [_head_fuse(a, head_fusion) for a in attn_list]
 
-    fused = [_head_fuse(a, head_fusion) for a in attn_list]   # list of [B,seq,seq]
+        if layer_fusion == "last":
+            A = fused[-1]
+        elif layer_fusion == "mean":
+            A = np.mean(np.stack(fused, axis=0), axis=0)
+        elif layer_fusion == "rollout":
+            A = fused[0]
+            for f in fused[1:]:
+                A = np.matmul(f, A)
+            A = A / (A.sum(axis=-1, keepdims=True) + 1e-8)
+        else:
+            raise ValueError(f"Unknown layer_fusion: {layer_fusion}")
 
-    if layer_fusion == "last":
-        A = fused[-1]
-    elif layer_fusion == "mean":
-        A = np.mean(np.stack(fused, axis=0), axis=0)
-    elif layer_fusion == "rollout":
-        A = fused[0]
-        for f in fused[1:]:
-            A = np.matmul(f, A)
-        A = A / (A.sum(axis=-1, keepdims=True) + 1e-8)
-    else:
-        raise ValueError(f"Unknown layer_fusion: {layer_fusion}")
+        A_sym   = 0.5 * (A + A.transpose(0, 2, 1))
+        A_patch = A_sym[:, 1:, 1:]                        # [B, N, N]
+        U, s, Vt = np.linalg.svd(A_patch, full_matrices=False)
+        eigenmaps   = U[:, :, :k_components]              # [B, N, k]
+        eigenvalues = s[:, :k_components]                 # [B, k]
 
-    A_sym   = 0.5 * (A + A.transpose(0, 2, 1))
-    A_patch = A_sym[:, 1:, 1:]                    # [B, N, N]
+        if flip_sign:
+            for b in range(B):
+                for c in range(k_components):
+                    vec = eigenmaps[b, :, c]
+                    if vec[np.abs(vec).argmax()] < 0:
+                        eigenmaps[b, :, c] = -vec
+        if take_abs:
+            eigenmaps = np.abs(eigenmaps)
+        return eigenmaps.astype(np.float32), eigenvalues.astype(np.float32)
 
-    U, s, Vt = np.linalg.svd(A_patch, full_matrices=False)
-    eigenmaps   = U[:, :, :k_components]           # [B, N, k]
-    eigenvalues = s[:, :k_components]              # [B, k]
-
-    if flip_sign:
-        for b in range(B):
-            for c in range(k_components):
-                vec = eigenmaps[b, :, c]
-                if vec[np.abs(vec).argmax()] < 0:
-                    eigenmaps[b, :, c] = -vec
-
-    if take_abs:
-        eigenmaps = np.abs(eigenmaps)
-
-    return eigenmaps.astype(np.float32), eigenvalues.astype(np.float32)
+    except Exception as e:
+        print(f"[eigen_attention] skipped: {e}")
+        return None, None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # 3. Per-head CLS attention  (SA + CA unified)
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 def per_head_cls_attention(
     attn_weights: np.ndarray,
 ) -> np.ndarray:
-    """CLS→patch attention per head.
+    """CLS->patch attention per head.
 
-    SA mode: [B, n_heads, seq, seq] → [B, n_heads, N]  (skip CLS self-attn col)
-    CA mode: [B, n_heads, 1, N]     → [B, n_heads, N]  (squeeze Q dim)
+    SA: [B, n_heads, seq, seq] -> [B, n_heads, N]  (skip CLS self-attn col)
+    CA: [B, n_heads, 1,   N]   -> [B, n_heads, N]  (squeeze Q dim)
     """
     if hasattr(attn_weights, "numpy"):
         attn_weights = attn_weights.numpy()
     attn_weights = np.array(attn_weights, dtype=np.float32)
-
     if _is_ca_shape(attn_weights):
-        # CA: Q dim is already 1; squeeze it
         return attn_weights[:, :, 0, :]   # [B, n_heads, N]
-    else:
-        # SA: CLS row, skip CLS self-attn column
-        return attn_weights[:, :, 0, 1:]  # [B, n_heads, N]
+    return attn_weights[:, :, 0, 1:]      # [B, n_heads, N]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Heatmap helpers  (unchanged)
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 4. Heatmap helpers
+# ---------------------------------------------------------------------------
 def _attn_to_heatmap(
     attn_1d: np.ndarray,
     patch_grid: tuple[int, int],
     input_hw: tuple[int, int],
     colormap: int = cv2.COLORMAP_JET,
 ) -> np.ndarray:
-    """[N] float → [H, W, 3] uint8 heatmap, upsampled to input_hw."""
+    """[N] float -> [H, W, 3] uint8 heatmap, upsampled to input_hw."""
     gh, gw = patch_grid
     H, W   = input_hw
     amap = attn_1d.reshape(gh, gw).astype(np.float32)
@@ -312,7 +271,7 @@ def _attn_to_heatmap(
     amap_u8    = (amap * 255).astype(np.uint8)
     heat_small = cv2.applyColorMap(amap_u8, colormap)
     heat_large = cv2.resize(heat_small, (W, H), interpolation=cv2.INTER_LINEAR)
-    return heat_large   # BGR uint8
+    return heat_large
 
 
 def overlay_heatmap(
@@ -330,9 +289,9 @@ def overlay_heatmap(
     return cv2.cvtColor(blended, cv2.COLOR_BGR2RGB)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. WandB Table builder  (SA + CA unified, mode_suffix column labels)
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 5. WandB Table builder  (SA + CA unified, eigenmap-safe)
+# ---------------------------------------------------------------------------
 def build_attention_wandb_table(
     paths: list[str],
     images_np: np.ndarray,
@@ -346,46 +305,33 @@ def build_attention_wandb_table(
     last_layer_only_heads: bool = True,
     token_attention_mode: str = "sa",
 ) -> wandb.Table:
-    """Build WandB Table with Rollout + EigenAttention + per-head overlays.
+    """Build WandB Table: Rollout + (optional) EigenAttention + per-head overlays.
 
-    Supports both SA mode (square attn [B,H,T,T]) and CA mode ([B,H,1,N]).
-    Auto-detects mode from tensor shape; column names suffixed with _SA or _CA.
+    Works for both SA [B,H,T,T] and CA [B,H,1,N] attention shapes.
+    Pass token_attention_mode=cfg.token_attention_mode for correct column suffix.
 
-    Columns
-    -------
-    path | raw_image
-    | overlay_rollout_{SA|CA}
-    | eigen_map_1_{SA|CA} .. eigen_map_k_{SA|CA}
-    | overlay_eigen_1_{SA|CA} .. overlay_eigen_k_{SA|CA}
-    | overlay_head_1_{SA|CA} .. overlay_head_N_{SA|CA}
+    EigenAttention is skipped entirely (no column, no crash) if eigen_attention
+    returns (None, None) for any reason (shape mismatch, SVD failure, etc.).
 
-    Parameters
-    ----------
-    paths               : list[str]  image file paths
-    images_np           : [B, H, W, 3]  float32  0-1
-    attn_weights_list   : list of tensors (all layers)
-                          SA: each [B, n_heads, seq, seq]
-                          CA: each [B, n_heads, 1, N]
-    patch_grid          : (gh, gw)  e.g. (16, 16)
-    input_hw            : (H, W)    e.g. (512, 512)
-    discard_ratio       : rollout discard fraction
-    alpha               : overlay blend weight
-    k_eigen             : number of eigenvectors to visualise
-    eigen_layer_fusion  : 'last' | 'mean' | 'rollout'  (SA only)
-    last_layer_only_heads : use last layer for per-head maps
-    token_attention_mode  : 'sa' | 'ca'  — used for column suffix only;
-                            actual shape is auto-detected from tensor.
+    Column layout
+    -------------
+    Always present:
+        path | raw_image | overlay_rollout_{SA|CA}
+        | overlay_head_1_{SA|CA} .. overlay_head_N_{SA|CA}
+    Present only if eigen succeeded:
+        | eigen_map_1_{SA|CA} .. eigen_map_k_{SA|CA}
+        | overlay_eigen_1_{SA|CA} .. overlay_eigen_k_{SA|CA}
     """
     B       = images_np.shape[0]
     n_heads = int(_to_np(attn_weights_list[0]).shape[1])
-    sfx     = f"_{token_attention_mode.upper()}"   # '_SA' or '_CA'
+    sfx     = f"_{token_attention_mode.upper()}"  # '_SA' or '_CA'
 
-    # ── Rollout [B, N] ────────────────────────────────────────────────────
+    # -- Rollout [B, N] -- always succeeds for both SA and CA
     rollout_all = attention_rollout(
         attn_weights_list, discard_ratio=discard_ratio, head_fusion="mean"
     )
 
-    # ── EigenAttention [B, N, k_eigen] ───────────────────────────────────
+    # -- Eigen: probe once; if it fails, skip eigen columns for all rows
     eigenmaps, eigenvalues = eigen_attention(
         attn_weights_list,
         k_components   = k_eigen,
@@ -394,37 +340,39 @@ def build_attention_wandb_table(
         take_abs       = True,
         flip_sign      = True,
     )
+    eigen_ok = eigenmaps is not None  # bool flag controls column layout
 
-    # ── Per-head from last layer [B, n_heads, N] ──────────────────────────
+    # -- Per-head from last layer [B, n_heads, N]
     last_attn    = attn_weights_list[-1]
-    per_head_all = per_head_cls_attention(last_attn)   # [B, n_heads, N]
+    per_head_all = per_head_cls_attention(last_attn)
 
-    # ── Column names ──────────────────────────────────────────────────────
-    eigen_raw_cols     = [f"eigen_map_{k+1}{sfx}"     for k in range(k_eigen)]
-    eigen_overlay_cols = [f"overlay_eigen_{k+1}{sfx}" for k in range(k_eigen)]
-    head_cols          = [f"overlay_head_{h+1}{sfx}"  for h in range(n_heads)]
-    columns = (
-        ["path", "raw_image", f"overlay_rollout{sfx}"]
-        + eigen_raw_cols
-        + eigen_overlay_cols
-        + head_cols
-    )
-    table = wandb.Table(columns=columns)
+    # -- Build column list dynamically
+    base_cols  = ["path", "raw_image", f"overlay_rollout{sfx}"]
+    eigen_raw_cols     = [f"eigen_map_{k+1}{sfx}"     for k in range(k_eigen)] if eigen_ok else []
+    eigen_overlay_cols = [f"overlay_eigen_{k+1}{sfx}" for k in range(k_eigen)] if eigen_ok else []
+    head_cols  = [f"overlay_head_{h+1}{sfx}" for h in range(n_heads)]
+    columns    = base_cols + eigen_raw_cols + eigen_overlay_cols + head_cols
+    table      = wandb.Table(columns=columns)
 
     for i in range(B):
-        img = images_np[i]   # [H, W, 3] float32 0-1
+        img = images_np[i]
 
         rollout_heat    = _attn_to_heatmap(rollout_all[i], patch_grid, input_hw)
         rollout_overlay = overlay_heatmap(img, rollout_heat, alpha=alpha)
 
-        eigen_raw_imgs     = []
-        eigen_overlay_imgs = []
-        for k in range(k_eigen):
-            e_heat = _attn_to_heatmap(eigenmaps[i, :, k], patch_grid, input_hw)
-            e_raw  = cv2.cvtColor(e_heat, cv2.COLOR_BGR2RGB)
-            e_ov   = overlay_heatmap(img, e_heat, alpha=alpha)
-            eigen_raw_imgs.append(wandb.Image(e_raw))
-            eigen_overlay_imgs.append(wandb.Image(e_ov))
+        eigen_raw_imgs, eigen_overlay_imgs = [], []
+        if eigen_ok:
+            for k in range(k_eigen):
+                try:
+                    e_heat = _attn_to_heatmap(eigenmaps[i, :, k], patch_grid, input_hw)
+                    e_raw  = cv2.cvtColor(e_heat, cv2.COLOR_BGR2RGB)
+                    e_ov   = overlay_heatmap(img, e_heat, alpha=alpha)
+                    eigen_raw_imgs.append(wandb.Image(e_raw))
+                    eigen_overlay_imgs.append(wandb.Image(e_ov))
+                except Exception as e:
+                    print(f"[eigen render i={i} k={k}] skipped: {e}")
+                    eigen_raw_imgs.append(None)
+                    eigen_overlay_imgs.append(None)
 
         head_overlays = []
         for h in range(n_heads):
@@ -433,7 +381,6 @@ def build_attention_wandb_table(
             head_overlays.append(wandb.Image(h_ov))
 
         raw_u8 = (np.clip(img, 0, 1) * 255).astype(np.uint8)
-
         row = (
             [paths[i], wandb.Image(raw_u8), wandb.Image(rollout_overlay)]
             + eigen_raw_imgs
@@ -445,9 +392,9 @@ def build_attention_wandb_table(
     return table
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. Standalone EigenAttention WandB Table  (lightweight — no head maps)
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# 6. Standalone EigenAttention WandB Table  (lightweight)
+# ---------------------------------------------------------------------------
 def build_eigen_wandb_table(
     paths: list[str],
     images_np: np.ndarray,
@@ -458,15 +405,10 @@ def build_eigen_wandb_table(
     layer_fusion: str = "last",
     alpha: float = 0.5,
     token_attention_mode: str = "sa",
-) -> tuple[wandb.Table, np.ndarray]:
+) -> tuple[wandb.Table | None, np.ndarray | None]:
     """Lightweight table: raw eigenmap + overlay for top-k eigenvectors.
 
-    SA + CA mode unified.  Column names suffixed with _SA or _CA.
-
-    Returns
-    -------
-    table       : wandb.Table
-    eigenvalues : np.ndarray [B, k_components]
+    Returns (None, None) if eigen_attention fails.
     """
     B   = images_np.shape[0]
     sfx = f"_{token_attention_mode.upper()}"
@@ -479,6 +421,9 @@ def build_eigen_wandb_table(
         take_abs     = True,
         flip_sign    = True,
     )
+    if eigenmaps is None:
+        print("[build_eigen_wandb_table] eigen_attention failed, skipping table.")
+        return None, None
 
     raw_cols     = [f"eigen_raw_{k+1}{sfx}"     for k in range(k_components)]
     overlay_cols = [f"eigen_overlay_{k+1}{sfx}" for k in range(k_components)]
@@ -487,15 +432,18 @@ def build_eigen_wandb_table(
     table        = wandb.Table(columns=columns)
 
     for i in range(B):
-        img = images_np[i]
+        img    = images_np[i]
         raw_u8 = (np.clip(img, 0, 1) * 255).astype(np.uint8)
-
         raw_imgs, ov_imgs = [], []
         for k in range(k_components):
-            heat = _attn_to_heatmap(eigenmaps[i, :, k], patch_grid, input_hw)
-            raw_imgs.append(wandb.Image(cv2.cvtColor(heat, cv2.COLOR_BGR2RGB)))
-            ov_imgs.append(wandb.Image(overlay_heatmap(img, heat, alpha=alpha)))
-
+            try:
+                heat = _attn_to_heatmap(eigenmaps[i, :, k], patch_grid, input_hw)
+                raw_imgs.append(wandb.Image(cv2.cvtColor(heat, cv2.COLOR_BGR2RGB)))
+                ov_imgs.append(wandb.Image(overlay_heatmap(img, heat, alpha=alpha)))
+            except Exception as e:
+                print(f"[eigen render i={i} k={k}] skipped: {e}")
+                raw_imgs.append(None)
+                ov_imgs.append(None)
         ev_vals = [float(eigenvalues[i, k]) for k in range(k_components)]
         row = [paths[i], wandb.Image(raw_u8)] + raw_imgs + ov_imgs + ev_vals
         table.add_data(*row)
