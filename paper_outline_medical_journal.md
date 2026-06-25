@@ -90,26 +90,9 @@
 
 **Transformer Encoder**: depth 1/2/4/8층을 실험. 각 층은 Multi-Head Self-Attention(MHSA)과 Feed-Forward Network(FFN)으로 구성. 최종 [CLS] 토큰을 분류 헤드 입력으로 사용.
 
-```
-Input US image (384×384)
-    │
-    ▼
-CNN Backbone (ResNet50V2 or EfficientNetV2B0)
-    │  → Feature map (H' × W' × C)
-    ▼
-Flatten + Linear projection → Patch tokens (N, d_model)
-    │
-Prepend [CLS] token
-    │
-    ▼
-Transformer Encoder (depth = 1/2/4/8)
-    │  Multi-Head Self/Cross-Attention × depth
-    ▼
-[CLS] token → Classification Head: Dense(2) → Softmax
-    │
-    ▼
-Output: P(HCC) ∈ [0,1]  ← HCC Score
-```
+![Model Architecture — Hybrid CNN + Transformer](figures/model_architecture.jpg)
+
+*Figure. Model architecture of the proposed Hybrid Vision Transformer. Input B-mode ultrasound image (384×384) is processed through a CNN backbone (ResNet50V2 or EfficientNetV2B0) to extract feature maps, which are flattened into patch tokens and fed into a Transformer encoder (depth = 1/2/4/8). The final [CLS] token is passed to the classification head to yield the continuous HCC Score ∈ [0, 1].*
 
 ### 2.4 학습 방법론 비교
 
