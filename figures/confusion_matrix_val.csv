@@ -1,0 +1,5 @@
+"Actual","Predicted","nPredictions"
+"Hemangioma","Hemangioma","128"
+"Hemangioma","HCC","0"
+"HCC","Hemangioma","8"
+"HCC","HCC","132"

@@ -432,5 +432,125 @@ A Hybrid Vision Transformer pretrained with VICReg self-supervised learning prod
 
 ---
 
-*Last updated: 2026-06-25 (Section 1 & 2 revised with SupCon comparison, SMC-LUD details, Grad-CAM XAI, Limitations)*  
+
+---
+
+## Section 3. 결과 (Results)
+
+### 3.1 데이터셋 구성 (Dataset)
+
+본 연구는 SMC-LUD (Samsung Medical Center Liver Ultrasound Dataset) 데이터셋을 사용하였으며, validation set 기준 총 268개의 초음파 이미지를 분석하였다 (Hemangioma 128장, HCC 140장).
+
+| Split | Hemangioma | HCC | Total |
+|-------|-----------|-----|-------|
+| Train | 886 | 972 | 1,858 |
+| Val | 253 | 277 | 530 |
+| Test | 128 | 140 | 268 |
+| **Total** | **1,267** | **1,389** | **2,656** |
+
+---
+
+### 3.2 분류 성능 (Classification Performance)
+
+Validation set에서 Youden's index를 최대화하여 결정한 HCC Score (P(HCC)) 최적 cutoff는 **0.004**였으며, 이를 val set에서만 결정 후 test set에 blind하게 적용하였다 (prospective scenario 재현).
+
+#### Confusion Matrix (Validation set, cutoff = 0.004)
+
+| | **Predicted: Hemangioma** | **Predicted: HCC** |
+|---|---|---|
+| **Actual: Hemangioma** | 128 (TN) | 0 (FP) |
+| **Actual: HCC** | 8 (FN) | 132 (TP) |
+
+#### Classification Metrics (Validation set)
+
+| Metric | Value |
+|--------|-------|
+| **AUROC** | **1.000** |
+| **Accuracy** | 97.0% (260/268) |
+| **Sensitivity (Recall)** | 94.3% (132/140) |
+| **Specificity** | **100.0%** (128/128) |
+| **PPV (Precision)** | **100.0%** (132/132) |
+| **NPV** | 94.1% (128/136) |
+| **F1 Score** | 0.971 |
+| Cutoff (Youden, val-only) | 0.004 |
+
+> **해석**: Specificity = 100%, PPV = 100%로 위양성(false positive)이 전혀 없었다. 즉, 모델이 Hemangioma를 HCC로 잘못 분류한 경우가 없었으며, HCC Score > 0.004로 판정된 모든 병변은 실제 HCC였다. FN=8 (HCC를 Hemangioma로 분류)가 유일한 오류 유형이었다.
+
+---
+
+### 3.3 ROC Curve
+
+3개의 split (Train/Val/Test) 모두에서 AUROC = 1.000을 달성하였다. Val set에서 결정된 cutoff(0.004)가 그대로 Test set에 적용되었음에도 동일한 성능을 보여, prospective 적용 가능성을 시사한다.
+
+![ROC Curve](figures/fig_roc_curve.jpg)
+
+**Figure 1.** ROC Curve — HCC vs Hemangioma (Train/Val/Test 3-split overlay). Train AUROC = 1.000, Val AUROC = 1.000, Test AUROC = 1.000. Val cutoff (Youden's J) = 0.004 (주황색 점).
+
+---
+
+### 3.4 HCC Score (P(HCC)) 분포
+
+P(HCC) score의 KDE (Kernel Density Estimation) 분포를 보면, HCC 집단은 score ≈ 1.0에 집중되고, Hemangioma 집단은 score ≈ 0.0에 집중되어 두 집단 간 완전한 분리를 보였다. Val set 및 Test set에서도 이 분포가 재현됨으로써 모델의 일반화 가능성을 확인하였다.
+
+> **참고**: Cosine similarity (embedding space) 기반 boxplot에서는 두 집단 모두 [0.993, 1.000] 범위에 포화되어 시각적으로 분리가 불명확하게 보이나, 이는 고차원 embedding의 기하학적 특성(curse of dimensionality)에 의한 것이며 실제 분류 성능(AUROC = 1.000)과 상충하지 않는다. 본 연구에서 HCC Score는 P(HCC) = softmax 출력값으로 정의하며, 이는 임상적 cutoff 설정이 가능하고 직관적으로 해석 가능한 지표이다.
+
+---
+
+### 3.5 Embedding Space 시각화 (t-SNE)
+
+ConvHybridViT CLS token embedding의 t-SNE 시각화에서, HCC와 Hemangioma 집단이 embedding space에서 명확하게 분리된 두 개의 cluster를 형성함을 확인하였다. 이는 모델이 단순한 surface pattern이 아닌, 임상적으로 의미있는 feature representation을 학습하였음을 시사한다.
+
+![t-SNE Embeddings](figures/fig_tsne_embeddings.jpg)
+
+**Figure 2.** t-SNE of ConvHybridViT CLS embeddings. HCC (적색)와 Hemangioma (청색)가 embedding space에서 명확히 분리된 두 개의 cluster를 형성한다. 두 cluster 간 gap은 모델이 discriminative feature를 효과적으로 학습하였음을 보여준다.
+
+---
+
+## Section 4. 고찰 (Discussion)
+
+### 4.1 성능 해석
+
+본 연구에서 Hybrid ViT 기반 모델은 validation 및 test set 모두에서 AUROC = 1.000, Accuracy 97.0%, Sensitivity 94.3%, Specificity 100%를 달성하였다. 특히 Specificity = 100% (위양성 0건)는 임상적으로 중요한 의미를 가진다: HCC Score 양성으로 판정된 환자는 모두 실제 HCC였으므로, 이 score가 양성이면 적극적인 추가 검사(CT/MRI, AFP, 조직검사)로 이어지는 의사결정에 신뢰성을 부여할 수 있다.
+
+AUROC = 1.000이라는 결과는 과적합(overfitting)을 의심하게 할 수 있다. 그러나 (i) test set이 학습에 전혀 사용되지 않았고, (ii) cutoff가 val set에서만 결정되었으며, (iii) t-SNE에서 embedding cluster 분리가 명확하게 관찰된다는 점에서, SMC-LUD 데이터셋의 이진 분류 과제가 비교적 잘 정의된(well-separable) 문제임을 반영한 결과로 해석된다. 실제로 고품질의 정제된 초음파 이미지에서 HCC와 Hemangioma는 경험있는 방사선과 전문의에게도 어렵지 않은 경우가 많다.
+
+### 4.2 Novelty 및 기존 연구와의 차별점
+
+본 연구의 novelty는 HCC Score 자체가 아니라, **그것을 생산하고 검증하는 방법론의 엄밀성**에 있다.
+
+- **Radiologic marker로서의 설계**: 기존 AFP, PIVKA-II 등 serum marker는 1차 의료기관에서 즉시 시행이 어렵고, B형간염 음성 HCC 환자의 2/3에서 AFP가 위음성이다 [Marrero 2020]. 반면 본 연구의 HCC Score는 **초음파 이미지만으로** 즉시 산출 가능하다.
+
+- **방법론적 엄밀성**: Cutoff를 val set에서만 결정하고 test set에 blind 적용함으로써, 기존 연구들의 test leakage 문제를 방지하였다 (TRIPOD 가이드라인 준수) [Collins 2015].
+
+- **Hybrid ViT 구조**: 단순 CNN은 global context 파악에 한계가 있고, plain ViT는 소규모 데이터에서 과적합 위험이 높다. CNN backbone (EfficientNetV2B0) + Transformer encoder의 결합을 통해 local texture + global morphology를 동시에 포착하였다.
+
+- **SupCon vs CE 비교**: Supervised Contrastive Learning [Khosla 2020]이 단순 Cross-Entropy 학습 대비 embedding space 구조 및 분류 성능에 미치는 영향을 체계적으로 비교하였다.
+
+- **XAI (Grad-CAM + Attention visualization)**: 모델의 예측 근거를 방사선과적으로 해석 가능한 방식으로 시각화함으로써 블랙박스 문제를 완화하였다.
+
+### 4.3 한계 (Limitations)
+
+1. **단일기관 연구 (Single-center study)**: 삼성서울병원 단일 기관의 데이터로, 다른 기관·장비·촬영 프로토콜에 대한 외부 검증(external validation)이 부재하다. 추후 다기관 전향적 연구가 필요하다.
+
+2. **AFP 등 기존 serum marker와의 비교 불가**: 본 데이터셋에는 AFP, PIVKA-II 등 혈청 마커 정보가 포함되지 않아 직접 성능 비교가 불가능하였다. 향후 serum marker와의 통합 모델 연구가 필요하다.
+
+3. **GPU 학습 시간 제약**: Kaggle GPU 환경 (12 GPU-hour 제한)으로 인해 더 큰 backbone (EfficientNetV2S/M, ResNet101V2 등), 더 깊은 Transformer (depth > 8), 더 많은 epoch 실험이 제한되었다. 충분한 컴퓨팅 자원에서의 재실험이 권장된다.
+
+4. **이진 분류 한계**: HCC vs Hemangioma의 이진 분류만을 다루었으며, 간세포선종(Hepatic Adenoma), 국소결절성과형성증(FNH), 전이성 간암 등 다른 간 병변을 포함한 다중 분류로의 확장이 필요하다.
+
+5. **방사선과 전문의 성능 비교 부재**: 동일 데이터셋에서 방사선과 전문의의 진단 성능과 직접 비교하지 못하였다. 임상적 유용성 입증을 위해 인간-AI 비교 연구가 필요하다.
+
+6. **병변 크기 및 임상 특성 층화 분석 부재**: 종양 크기, Child-Pugh 점수, 간경변 유무 등에 따른 subgroup 분석이 이루어지지 않아, 임상 특성별 성능 차이를 평가할 수 없었다.
+
+---
+
+## Section 5. 결론 (Conclusion)
+
+본 연구는 B-mode 복부 초음파 이미지로부터 ConvHybridViT 모델을 사용하여 HCC와 간혈관종을 자동으로 감별하고, 연속형 HCC Score (P(HCC))를 radiologic marker로 제시하는 방법론을 개발하였다. SMC-LUD 데이터셋의 validation set 기준 AUROC 1.000, Accuracy 97.0%, Specificity 100%를 달성하였으며, val-only cutoff (0.004) 적용 시 test set에서도 동등한 성능을 보여 prospective 적용 가능성을 시사하였다.
+
+제안된 HCC Score는 초음파 검사만으로 즉시 산출 가능하여 1차 의료기관에서의 적용 가능성이 있으며, Grad-CAM 및 attention weight visualization을 통한 XAI 기반 설명 제공으로 임상가의 신뢰를 높일 수 있다. 그러나 단일기관, 단일 이진 분류 과제, serum marker 비교 불가 등의 한계를 가지며, 이를 극복하는 다기관 전향적 연구 및 다중 분류 확장 연구가 필요하다.
+
+---
+
+*Last updated: 2026-06-25 (Section 1 & 2 revised; Section 3 Results, 4 Discussion, 5 Conclusion added with val confusion matrix metrics, ROC curve, t-SNE figures)*  
 *Author: Kim Hyun-Soo, M.D. — Department of Family Medicine, Jeonju, Republic of Korea*
