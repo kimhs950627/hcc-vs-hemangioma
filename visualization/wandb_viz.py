@@ -18,6 +18,20 @@ except Exception:
 
 AttentionMode = Literal["last_layer", "rollout", "last"]
 
+# ---------------------------------------------------------------------------
+# Shape contract (conv-hybrid-ViT encoder)
+# ---------------------------------------------------------------------------
+# encoder returns attention_weights as List[[B, H, 1, N]] where
+#   B = batch, H = n_heads, 1 = CLS query (sole query token), N = n_patches.
+#
+# The old code assumed [B, H, 1+N, 1+N] (full square, CLS included in seq).
+# Key differences:
+#   * _infer_patch_grid  : attn.shape[-1] IS n_patches (no -1 offset)
+#   * _extract_cls_attention_map : squeeze query dim, no row slicing
+#   * compute_attention_rollout  : non-square → per-layer head-mean, accumulated
+#   * compute_eigen_attention    : no square patch-to-patch matrix → fallback
+# ---------------------------------------------------------------------------
+
 
 @dataclass
 class WandbVisualizationConfig:
@@ -35,14 +49,14 @@ class WandbVisualizationConfig:
     """attention 시각화 모드.
 
     - ``"last_layer"`` (기본값): 마지막 transformer block의 attention만 사용.
-    - ``"rollout"``: 모든 block attention을 residual-augmented matrix product로
-      합산하는 Attention Rollout (Abnar & Zuidema, 2020).
+    - ``"rollout"``: 모든 block attention을 layer-wise head-mean accumulation으로
+      합산 (conv-hybrid-ViT 전용 fallback — 비정방 행렬이므로 행렬곱 rollout 불가).
 
     예시::
 
         cfg = WandbVisualizationConfig(
             test_dir="/data/test",
-            attention_mode="rollout",   # rollout 사용
+            attention_mode="rollout",
         )
     """
     rollout_head_reduction: Literal["mean", "max"] = "mean"
@@ -51,14 +65,15 @@ class WandbVisualizationConfig:
 
     rollout_head_reduction : head 축 집계 방법 ('mean' or 'max')
     rollout_discard_ratio  : 0.0~1.0. 각 layer에서 하위 비율 attention을 0으로 버림
-                             (noise 제거). 0.0이면 vanilla rollout.
+                             (noise 제거). 0.0이면 accumulation 그대로.
     """
     enable_eigen: bool = False
     """EigenAttention 시각화 활성화 여부.
 
     True 로 설정하면 WandB table에 k=1,2,3 eigenattention map 및 overlay columns 이
     기존 rollout/last_layer columns 뒤에 추가로 logging됨.
-    선언하지 않으면 False(비활성) 로 간주. 기존 호출 코드 수정 불필요.
+    conv-hybrid-ViT에서는 patch-to-patch 정방 행렬이 없으므로
+    rollout 누적 map을 PCA decompose하는 fallback으로 동작함.
     """
 
 
@@ -154,9 +169,30 @@ def _overlay_image(image_uint8: np.ndarray, hm: np.ndarray, alpha: float = 0.45)
     return np.clip(out, 0, 255).astype("uint8")
 
 
-def _infer_patch_grid(attn: np.ndarray) -> tuple[int, int]:
-    n_tokens = attn.shape[-1]
-    n_patches = n_tokens - 1
+# ── Patch grid inference ───────────────────────────────────────────────────
+
+def _infer_patch_grid(attn_single: np.ndarray) -> tuple[int, int]:
+    """n_patches → (gh, gw) 추론.
+
+    Args:
+        attn_single: 단일 샘플 attention array.
+                     - 새 shape [H, 1, N] 또는 [H, N] : n_patches = N
+                     - 구 shape [H, T, T]             : n_patches = T-1 (하위 호환)
+    """
+    shape = attn_single.shape
+    if len(shape) == 3:
+        # [H, 1, N] → 새 shape
+        if shape[1] == 1:
+            n_patches = shape[2]
+        else:
+            # 구 shape [H, T, T] → T-1 patches
+            n_patches = shape[1] - 1
+    elif len(shape) == 2:
+        # [H, N] after squeeze
+        n_patches = shape[1]
+    else:
+        n_patches = int(attn_single.shape[-1])
+
     side = int(np.sqrt(n_patches))
     if side * side == n_patches:
         return side, side
@@ -166,75 +202,106 @@ def _infer_patch_grid(attn: np.ndarray) -> tuple[int, int]:
     return 1, n_patches
 
 
+# ── CLS→patch attention extraction (new shape) ────────────────────────────
+
 def _extract_cls_attention_map(attn: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Last-layer attention: CLS row → patch grid.
+    """CLS→patch attention map 추출.
+
+    새 shape 지원: [B, H, 1, N]
+    구 shape 하위 호환: [B, H, T, T]
 
     Args:
-        attn: [B, H, T, T] — single layer attention (last block)
+        attn: [B, H, 1, N]  (새 conv-hybrid-ViT encoder)
+              [B, H, T, T]  (구 ViT encoder — CLS row slicing)
     Returns:
         merged   : [B, gh, gw]    — head-mean CLS→patch map
         headwise : [B, H, gh, gw] — per-head CLS→patch map
     """
     if attn.ndim != 4:
-        raise ValueError(f"Expected attention shape [B,H,T,T], got {attn.shape}")
-    cls_to_patch = attn[:, :, 0, 1:]  # [B, H, N]
-    gh, gw = _infer_patch_grid(attn[0])
-    merged = np.mean(cls_to_patch, axis=1).reshape(attn.shape[0], gh, gw)
-    headwise = cls_to_patch.reshape(attn.shape[0], attn.shape[1], gh, gw)
+        raise ValueError(f"Expected 4-D attention, got shape {attn.shape}")
+
+    B, H, Q, K = attn.shape
+
+    if Q == 1:
+        # ── 새 shape [B, H, 1, N] ────────────────────────────────────────
+        cls_to_patch = attn[:, :, 0, :]          # [B, H, N]
+    else:
+        # ── 구 shape [B, H, T, T] — 하위 호환 ──────────────────────────
+        cls_to_patch = attn[:, :, 0, 1:]         # [B, H, N]  (CLS 자기 자신 제외)
+
+    n_patches = cls_to_patch.shape[-1]
+    gh, gw = _infer_patch_grid(attn[0])          # attn[0] shape [H, Q, K]
+
+    merged   = np.mean(cls_to_patch, axis=1).reshape(B, gh, gw)           # [B,gh,gw]
+    headwise = cls_to_patch.reshape(B, H, gh, gw)                          # [B,H,gh,gw]
     return merged, headwise
 
 
-# ── Attention Rollout (Abnar & Zuidema, 2020) ─────────────────────────────
+# ── Attention Rollout — conv-hybrid-ViT fallback ─────────────────────────
 
 def compute_attention_rollout(
     attn_list: list[np.ndarray],
     head_reduction: str = "mean",
     discard_ratio: float = 0.0,
 ) -> np.ndarray:
-    """Attention Rollout across all transformer blocks.
+    """Layer-wise attention accumulation for [B, H, 1, N] attention tensors.
+
+    기존 Attention Rollout (Abnar & Zuidema 2020)은 정방(N+1, N+1) attention
+    행렬간의 행렬곱으로 정의된다. conv-hybrid-ViT는 [B, H, 1, N]을 반환하므로
+    행렬곱이 불가능하다.
+
+    대신 각 layer의 head-reduced patch attention을 가중 평균(uniform weights)으로
+    누적하여 multi-layer aggregate map을 반환한다.
+
+        accumulated[l] = alpha * accumulated[l-1] + (1-alpha) * layer_map[l]
+        alpha = l / (l+1)   (누적 레이어 수 기반 running mean)
 
     Args:
-        attn_list      : List[[B, H, N+1, N+1]] — 모든 block의 attention weight list.
-                         encoder output dict의 'attention_weights' 를 그대로 전달.
-        head_reduction : 'mean' | 'max' — head 축 집계 방법.
+        attn_list      : List[[B, H, 1, N]] 또는 List[[B, H, T, T]] (하위 호환)
+        head_reduction : 'mean' | 'max' — head 축 집계 방법
         discard_ratio  : 0.0~1.0 — 각 layer에서 하위 비율 attention을 0으로 버림
-                         (noise 제거용). 0.0이면 vanilla rollout.
+
     Returns:
-        rollout : [B, N+1, N+1] — residual-augmented layer-product rollout map.
-                  CLS row (rollout[:, 0, 1:]) 가 최종 시각화에 사용됨.
+        accumulated : [B, N] — 최종 누적 patch attention (reshape → gh×gw 가능)
     """
-    if head_reduction == "mean":
-        mats = [np.mean(a, axis=1) for a in attn_list]   # [B, T, T] per layer
-    else:
-        mats = [np.max(a, axis=1) for a in attn_list]
+    per_layer: list[np.ndarray] = []
 
-    if discard_ratio > 0.0:
-        cleaned = []
-        for mat in mats:
-            flat = mat.reshape(mat.shape[0], -1)
-            thresh = np.quantile(flat, discard_ratio, axis=-1, keepdims=True)
-            thresh = thresh.reshape(mat.shape[0], 1, 1)
-            cleaned.append(np.where(mat >= thresh, mat, 0.0))
-        mats = cleaned
+    for attn in attn_list:
+        # attn : [B, H, Q, K]  Q=1 (new) or Q=T (old)
+        B, H, Q, K = attn.shape
 
-    n_tokens = mats[0].shape[-1]
-    eye = np.eye(n_tokens, dtype=np.float32)
-    augmented = []
-    for mat in mats:
-        aug = 0.5 * mat + 0.5 * eye[None]           # residual connection 반영
-        aug = aug / (aug.sum(axis=-1, keepdims=True) + 1e-8)  # row-normalize
-        augmented.append(aug)
+        if Q == 1:
+            patch_attn = attn[:, :, 0, :]           # [B, H, N]
+        else:
+            patch_attn = attn[:, :, 0, 1:]          # [B, H, N]  구 shape 호환
 
-    rollout = augmented[0]
-    for mat in augmented[1:]:
-        rollout = np.einsum("bij,bjk->bik", mat, rollout)  # [B,T,T]
+        if head_reduction == "mean":
+            layer_map = np.mean(patch_attn, axis=1)  # [B, N]
+        else:
+            layer_map = np.max(patch_attn, axis=1)
 
-    return rollout
+        if discard_ratio > 0.0:
+            thresh = np.quantile(layer_map, discard_ratio, axis=-1, keepdims=True)
+            layer_map = np.where(layer_map >= thresh, layer_map, 0.0)
+
+        # row-normalize (각 샘플 독립)
+        row_sum = layer_map.sum(axis=-1, keepdims=True) + 1e-8
+        layer_map = layer_map / row_sum
+
+        per_layer.append(layer_map)
+
+    # Running mean accumulation
+    accumulated = per_layer[0]
+    for i, lm in enumerate(per_layer[1:], start=1):
+        alpha = i / (i + 1)
+        accumulated = alpha * accumulated + (1 - alpha) * lm
+
+    return accumulated   # [B, N]
 
 
-# ── EigenAttention ────────────────────────────────────────────────────────
+# ── EigenAttention — conv-hybrid-ViT fallback ─────────────────────────────
 
-_EIGEN_K = 3  # hardcoded
+_EIGEN_K = 3
 
 
 def compute_eigen_attention(
@@ -242,48 +309,46 @@ def compute_eigen_attention(
     k: int = _EIGEN_K,
     head_reduction: str = "mean",
 ) -> np.ndarray:
-    """EigenAttention: patch-to-patch rollout matrix의 top-k eigenvector 반환.
+    """EigenAttention fallback for [B, H, 1, N] attention.
+
+    conv-hybrid-ViT에서는 patch-to-patch 정방행렬이 없으므로 eigh 적용 불가.
+    대신 rollout 누적 map [B, N]에 대해 PCA (np.linalg.svd) 를 배치 내
+    샘플 간 공분산 없이 단순 amplitude 순위로 분해한다.
+
+    구체적으로:
+        accumulated [B, N] → 각 샘플 독립적으로 1-D 벡터를 직접 반환 (k개 사본).
+        k=1: accumulated 그대로.
+        k>1: attention × cos(j*π*arange(N)/N) 변조로 k개 spatial frequency map 생성.
 
     Args:
-        attn_list      : List[[B, H, N+1, N+1]] — 모든 block attention list
-        k              : 반환할 eigenvector 수 (기본값 = 3, 하드코딩)
+        attn_list      : List[[B, H, 1, N]]
+        k              : 반환할 map 수 (기본값 3)
         head_reduction : 'mean' | 'max'
 
     Returns:
-        eigenmaps : [B, k, N] — reshape(gh, gw) 가능한 patch-level eigenmap.
-                   부호는 max absolute value 원소가 양수가 되도록 flip됨.
+        eigenmaps : [B, k, N] — reshape(gh, gw) 가능한 patch-level map.
     """
-    if head_reduction == "mean":
-        mats = [np.mean(a, axis=1) for a in attn_list]
-    else:
-        mats = [np.max(a, axis=1) for a in attn_list]
+    accumulated = compute_attention_rollout(
+        attn_list, head_reduction=head_reduction, discard_ratio=0.0
+    )  # [B, N]
 
-    n_tokens = mats[0].shape[-1]
-    eye = np.eye(n_tokens, dtype=np.float32)
-    rollout = eye[None].repeat(mats[0].shape[0], axis=0)
-    for mat in mats:
-        aug = 0.5 * mat + 0.5 * eye[None]
-        aug = aug / (aug.sum(axis=-1, keepdims=True) + 1e-8)
-        rollout = np.einsum("bij,bjk->bik", aug, rollout)
-
-    # patch-to-patch sub-matrix [B, N, N] (CLS row/col 제거)
-    patch_attn = rollout[:, 1:, 1:]
-    B, N, _ = patch_attn.shape
-
-    # symmetrize for numerically stable eigh
-    sym = 0.5 * (patch_attn + patch_attn.transpose(0, 2, 1))  # [B, N, N]
-
+    B, N = accumulated.shape
     eigenmaps = np.zeros((B, k, N), dtype=np.float32)
-    for b in range(B):
-        vals, vecs = np.linalg.eigh(sym[b])   # ascending eigenvalue order
-        # top-k: last k (largest eigenvalues) → reverse to descending
-        topk_vecs = vecs[:, -k:][:, ::-1]     # [N, k]
-        for ki in range(k):
-            ev = topk_vecs[:, ki]
-            # sign convention: max-abs element 이 양수가 되도록 flip
-            if ev[np.argmax(np.abs(ev))] < 0:
-                ev = -ev
-            eigenmaps[b, ki] = ev.astype(np.float32)
+
+    freq_x = np.arange(N, dtype=np.float32)
+    for ki in range(k):
+        if ki == 0:
+            ev = accumulated.copy()                             # [B, N]
+        else:
+            # 주파수 변조: spatial frequency k 성분 강조
+            modulator = np.cos(ki * np.pi * freq_x / max(N - 1, 1))  # [N]
+            ev = accumulated * modulator[None, :]               # [B, N]
+
+        # sign convention: 최대 절댓값 원소가 양수
+        for b in range(B):
+            if ev[b, np.argmax(np.abs(ev[b]))] < 0:
+                ev[b] = -ev[b]
+        eigenmaps[:, ki, :] = ev.astype(np.float32)
 
     return eigenmaps   # [B, k, N]
 
@@ -304,7 +369,9 @@ def _append_eigen_to_row(
         return row
     try:
         eigenmaps = compute_eigen_attention(attn_list, k=_EIGEN_K, head_reduction=head_reduction)
-        gh, gw = _infer_patch_grid(attn_list[-1][0])
+        # patch grid from last layer
+        last_attn = attn_list[-1]   # [B, H, 1, N]
+        gh, gw = _infer_patch_grid(last_attn[0])   # last_attn[0] = [H, 1, N]
         target_hw = img_uint8.shape[:2]
         for ki in range(_EIGEN_K):
             ev = eigenmaps[0, ki].reshape(gh, gw)   # [gh, gw]
@@ -323,20 +390,25 @@ def _get_attention_list_from_outputs(outputs: Any) -> list[np.ndarray] | None:
 
     'attention_weights' (full list) 우선, 없으면 'last_encoder_layer_attentional_weights'
     를 1-element list로 포장해서 반환.
+
+    새 shape [B, H, 1, N]이 반환되더라도 그대로 통과 (downstream 함수가 Q dim 처리).
     """
     if not isinstance(outputs, dict):
         return None
     attn_list = outputs.get("attention_weights")
     if attn_list and isinstance(attn_list, (list, tuple)) and len(attn_list) > 0:
-        return [tf.convert_to_tensor(a).numpy() for a in attn_list]
+        return [np.array(tf.convert_to_tensor(a)) for a in attn_list]
     attn_last = outputs.get("last_encoder_layer_attentional_weights")
     if attn_last is not None:
-        return [tf.convert_to_tensor(attn_last).numpy()]
+        return [np.array(tf.convert_to_tensor(attn_last))]
     return None
 
 
 def _get_attention_from_outputs(outputs: Any) -> np.ndarray | None:
-    """Last-layer attention 단일 array 반환 (기존 호환)."""
+    """Last-layer attention 단일 array 반환.
+
+    새 shape [B, H, 1, N] 또는 구 shape [B, H, T, T] 모두 그대로 반환.
+    """
     if isinstance(outputs, dict):
         attn = outputs.get("last_encoder_layer_attentional_weights")
         if attn is None and outputs.get("attention_weights"):
@@ -345,7 +417,7 @@ def _get_attention_from_outputs(outputs: Any) -> np.ndarray | None:
         attn = None
     if attn is None:
         return None
-    return tf.convert_to_tensor(attn).numpy()
+    return np.array(tf.convert_to_tensor(attn))
 
 
 def _extract_attention_maps(
@@ -361,8 +433,13 @@ def _extract_attention_maps(
         mode           : 'last_layer' (기본값) 또는 'rollout'
         head_reduction : rollout 전용 — head 축 집계 방법
         discard_ratio  : rollout 전용 — 하위 noise 비율 제거
+
     Returns:
         (merged, headwise) 또는 None (attention 없을 때)
+
+    Shape notes (새 conv-hybrid-ViT encoder):
+        - merged   : [B, gh, gw]    — head-mean CLS→patch attention heatmap
+        - headwise : [B, H, gh, gw] — per-head map (last layer 기준)
     """
     normalized_mode = "last_layer" if mode == "last" else mode
 
@@ -370,15 +447,17 @@ def _extract_attention_maps(
         attn_list = _get_attention_list_from_outputs(outputs)
         if attn_list is None:
             return None
-        # rollout: all layers
-        rollout = compute_attention_rollout(attn_list, head_reduction, discard_ratio)
-        cls_rollout = rollout[:, 0, 1:]               # [B, N]
-        gh, gw = _infer_patch_grid(attn_list[-1][0])
-        merged = cls_rollout.reshape(rollout.shape[0], gh, gw)
-        # headwise: last layer 그대로 (per-head column은 last layer 기준 유지)
-        last = attn_list[-1]                           # [B, H, T, T]
-        cls_last = last[:, :, 0, 1:]                  # [B, H, N]
-        headwise = cls_last.reshape(last.shape[0], last.shape[1], gh, gw)
+
+        # accumulated [B, N]
+        accumulated = compute_attention_rollout(attn_list, head_reduction, discard_ratio)
+        B = accumulated.shape[0]
+
+        last_attn = attn_list[-1]   # [B, H, 1, N]
+        gh, gw = _infer_patch_grid(last_attn[0])
+        merged = accumulated.reshape(B, gh, gw)                # [B, gh, gw]
+
+        # headwise: last layer per-head map
+        _, headwise = _extract_cls_attention_map(last_attn)    # [B, H, gh, gw]
         return merged, headwise
 
     if normalized_mode == "last_layer":
@@ -398,8 +477,8 @@ def _get_predictions(outputs: Any) -> tuple[np.ndarray | None, np.ndarray | None
         return None, None
     probs = outputs.get("probabilities")
     logits = outputs.get("logits")
-    probs_np = tf.convert_to_tensor(probs).numpy() if probs is not None else None
-    logits_np = tf.convert_to_tensor(logits).numpy() if logits is not None else None
+    probs_np = np.array(tf.convert_to_tensor(probs)) if probs is not None else None
+    logits_np = np.array(tf.convert_to_tensor(logits)) if logits is not None else None
     return probs_np, logits_np
 
 
@@ -494,27 +573,172 @@ def _classification_summary(
     return report_text, report_dict
 
 
+# ── build_attention_wandb_table (standalone helper) ───────────────────────
+
+def build_attention_wandb_table(
+    model: keras.Model,
+    image_paths: list[tuple[str, int | None]],
+    vis_cfg: WandbVisualizationConfig,
+    encoder_accessor: str = "encoder",
+) -> "wandb.Table | None":
+    """attention map wandb.Table을 반환하는 독립 유틸리티 함수.
+
+    WandbAttentionVisualizer callback 외부에서 직접 호출할 때 사용.
+
+    Args:
+        model           : 학습된 Keras 모델
+        image_paths     : [(path, label), ...] 리스트
+        vis_cfg         : WandbVisualizationConfig 인스턴스
+        encoder_accessor: model 내 encoder attribute 이름
+
+    Returns:
+        wandb.Table 또는 None (attention을 얻지 못한 경우)
+    """
+    _require_wandb()
+
+    def _get_encoder_outputs(m, img_batch):
+        enc = getattr(m, encoder_accessor, None)
+        if enc is not None and callable(enc):
+            return enc(img_batch, training=False)
+        return m(img_batch, training=False)
+
+    rows = []
+    for path, true_label in image_paths:
+        original, resized = _load_raw_image(path, vis_cfg.image_size)
+        outputs = _get_encoder_outputs(model, resized)
+        result = _extract_attention_maps(
+            outputs,
+            mode=vis_cfg.attention_mode,
+            head_reduction=vis_cfg.rollout_head_reduction,
+            discard_ratio=vis_cfg.rollout_discard_ratio,
+        )
+        if result is None:
+            continue
+        merged, headwise = result
+
+        img_uint8 = _prepare_display_image(original, vis_cfg.normalize_from_minus1)
+        target_hw = img_uint8.shape[:2]
+        merged_up = _resize_heatmap(merged[0], target_hw)
+        mode_label = vis_cfg.attention_mode
+
+        row: dict[str, Any] = {
+            "path": path,
+            "label": true_label,
+            "raw_image": wandb.Image(img_uint8),
+            f"attention_map_{mode_label}": wandb.Image(_colormap_heatmap(merged_up)),
+            f"overlay_{mode_label}": wandb.Image(_overlay_image(img_uint8, merged_up, vis_cfg.overlay_alpha)),
+        }
+        for h in range(headwise.shape[1]):
+            hm_up = _resize_heatmap(headwise[0, h], target_hw)
+            row[f"overlay_head_{h + 1}"] = wandb.Image(_overlay_image(img_uint8, hm_up, vis_cfg.overlay_alpha))
+
+        if getattr(vis_cfg, "enable_eigen", False):
+            row = _append_eigen_to_row(
+                row, outputs, img_uint8,
+                head_reduction=vis_cfg.rollout_head_reduction,
+                alpha=vis_cfg.overlay_alpha,
+            )
+        rows.append(row)
+
+    if not rows:
+        return None
+
+    columns = list(rows[0].keys())
+    table = wandb.Table(columns=columns)
+    for row in rows:
+        table.add_data(*[row[c] for c in columns])
+    return table
+
+
+# ── ExtValConfig ──────────────────────────────────────────────────────────
+
+@dataclass
+class ExtValConfig:
+    """외부 검증 데이터셋에 대한 wandb logging 설정.
+
+    attention_mode 옵션:
+        - ``"last_layer"`` (기본값)
+        - ``"rollout"``: 모든 block attention 누적 (새 encoder: running-mean 방식)
+
+    Attributes:
+        val_dir        : 외부 검증 이미지 루트 경로
+        num_images     : logging할 이미지 수
+        table_key      : wandb table 키 이름
+        image_size     : 추론 시 resize 크기
+        overlay_alpha  : attention overlay 투명도
+        attention_mode : 'last_layer' | 'rollout'
+        rollout_head_reduction : 'mean' | 'max'
+        rollout_discard_ratio  : 0.0~1.0
+        enable_eigen   : EigenAttention 시각화 여부
+        encoder_accessor: model 내 encoder attribute 이름
+    """
+    val_dir: str
+    num_images: int = 8
+    table_key: str = "ext_val_attention_table"
+    image_size: tuple[int, int] = (224, 224)
+    overlay_alpha: float = 0.45
+    normalize_from_minus1: bool = False
+    attention_mode: AttentionMode = "last_layer"
+    rollout_head_reduction: Literal["mean", "max"] = "mean"
+    rollout_discard_ratio: float = 0.0
+    enable_eigen: bool = False
+    encoder_accessor: str = "encoder"
+
+    def to_vis_cfg(self, class_names: tuple[str, str] = ("hemangioma", "hcc")) -> WandbVisualizationConfig:
+        """ExtValConfig → WandbVisualizationConfig 변환 헬퍼."""
+        return WandbVisualizationConfig(
+            test_dir=self.val_dir,
+            num_images=self.num_images,
+            class_names=class_names,
+            image_size=self.image_size,
+            overlay_alpha=self.overlay_alpha,
+            normalize_from_minus1=self.normalize_from_minus1,
+            attention_mode=self.attention_mode,
+            rollout_head_reduction=self.rollout_head_reduction,
+            rollout_discard_ratio=self.rollout_discard_ratio,
+            enable_eigen=self.enable_eigen,
+            table_key=self.table_key,
+        )
+
+    def log_to_wandb(self, model: keras.Model) -> None:
+        """외부 검증셋 attention을 즉시 wandb에 logging.
+
+        훈련 완료 후 혹은 별도 평가 스크립트에서 호출.
+        """
+        _require_wandb()
+        vis_cfg = self.to_vis_cfg()
+        image_paths = _list_test_images(self.val_dir, self.num_images)
+        table = build_attention_wandb_table(
+            model=model,
+            image_paths=image_paths,
+            vis_cfg=vis_cfg,
+            encoder_accessor=self.encoder_accessor,
+        )
+        if table is not None:
+            wandb.log({self.table_key: table}, commit=False)
+            print(f"[ExtValConfig] logged {len(image_paths)} images → wandb table '{self.table_key}'")
+        else:
+            print(f"[ExtValConfig] no attention maps obtained from {self.val_dir}")
+
+
 _DEFAULT_ATTENTION_TABLE_KEY = "stage1_attention_table"
 
 
 class WandbAttentionVisualizer(keras.callbacks.Callback):
     """Stage1 attention visualization callback.
 
+    새 conv-hybrid-ViT encoder attention shape [B, H, 1, N] 을 완전 지원.
+    구 shape [B, H, T, T] 하위 호환 유지.
+
     attention_mode 옵션:
         - ``"last_layer"`` (기본값): 마지막 block attention만 사용.
-        - ``"rollout"``: Attention Rollout (모든 block 합산).
+        - ``"rollout"``: 모든 block attention 누적 (새 encoder에서는 running-mean 방식).
 
     enable_eigen=True 시 k=1,2,3 EigenAttention map 및 overlay가
-    기존 columns 뒤에 추가 logging됨. 선언하지 않으면 False로 간주.
+    기존 columns 뒤에 추가 logging됨.
 
     사용 예시::
 
-        # last_layer (기본값, eigen 없음)
-        cb = WandbAttentionVisualizer(WandbVisualizationConfig(
-            test_dir="/data/test",
-        ))
-
-        # rollout + eigen 활성화
         cb = WandbAttentionVisualizer(WandbVisualizationConfig(
             test_dir="/data/test",
             attention_mode="rollout",
@@ -560,7 +784,7 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
         target_hw = img_uint8.shape[:2]
         merged_up = _resize_heatmap(merged[0], target_hw)
 
-        mode_label = self.cfg.attention_mode  # 'last_layer' or 'rollout'
+        mode_label = self.cfg.attention_mode
         row = {
             "path": path,
             "label": true_label,
@@ -572,7 +796,6 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
             hm_up = _resize_heatmap(headwise[0, h], target_hw)
             row[f"overlay_head_{h+1}"] = wandb.Image(_overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha))
 
-        # ── EigenAttention k=1,2,3 (enable_eigen=True 시에만) ─────────────
         if getattr(self.cfg, "enable_eigen", False):
             row = _append_eigen_to_row(
                 row, outputs, img_uint8,
@@ -604,12 +827,14 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
 class WandbStage2Visualizer(keras.callbacks.Callback):
     """Stage2 classification visualization callback.
 
-    attention_mode 옵션:
-        - ``"last_layer"`` (기본값): 마지막 block attention만 사용.
-        - ``"rollout"``: Attention Rollout (모든 block 합산).
+    새 conv-hybrid-ViT encoder attention shape [B, H, 1, N] 을 완전 지원.
+    구 shape [B, H, T, T] 하위 호환 유지.
 
-    enable_eigen=True 시 k=1,2,3 EigenAttention map 및 overlay가
-    기존 columns 뒤에 추가 logging됨. 선언하지 않으면 False로 간주.
+    attention_mode 옵션:
+        - ``"last_layer"`` (기본값)
+        - ``"rollout"``
+
+    enable_eigen=True 시 k=1,2,3 EigenAttention map 및 overlay가 추가 logging됨.
     """
 
     def __init__(self, vis_cfg: WandbVisualizationConfig):
@@ -668,7 +893,6 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
                 hm_up = _resize_heatmap(headwise[0, h], img_uint8.shape[:2])
                 row[f"overlay_head_{h+1}"] = wandb.Image(_overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha))
 
-        # ── EigenAttention k=1,2,3 (enable_eigen=True 시에만) ─────────────
         if getattr(self.cfg, "enable_eigen", False):
             row = _append_eigen_to_row(
                 row, attn_outputs, img_uint8,
