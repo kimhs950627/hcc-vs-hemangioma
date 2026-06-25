@@ -1,177 +1,234 @@
 # hcc-vs-hemangioma
 
-Lightweight ultrasound representation learning and downstream classification framework for HCC vs hemangioma, with a stage-1 self-supervised encoder and a stage-2 supervised fine-tuning benchmark.
+> **B-mode Ultrasound 기반 HCC Score 개발 — Operator-Independent Radiologic Marker**  
+> Primary Care AI · Computer Vision · Self-Supervised Learning · Radiologic Marker Development
 
-## Ultimate goal
+---
 
-The project is not only to obtain a visually appealing attention map. The real target is to build a **lightweight encoder** that can be reused across downstream classification and dense-token tasks, while preserving interpretable attention behavior and enabling stage-2 HCC-vs-hemangioma decision support.
+## 🔬 Research Motivation
 
-Concretely, the project aims to achieve all of the following:
+일차의료(primary care) 현장에서 PIVKA-II, AFP 등 종양표지자를 폭넓게 검사하기 어려운 현실이 있다.  
+비용, 보험 급여, 추적 동선 등의 문제로 인해 **tumor marker 없이도 HCC를 스크리닝할 수 있는 도구**가 필요하다.
 
-- Stable stage-1 self-supervised learning without late collapse.
-- Headwise attention specialization instead of shortcut monoculture.
-- High-quality `encoded_patches` that remain useful for dense downstream tasks.
-- Strong and reproducible stage-2 supervised performance under both pretrained and random-init settings.
-- Clear experiment control from Kaggle notebooks, including model path, experiment mode, LR policy, WandB logging, confusion matrix, and attention-map upload.
+진료실에서 이미 사용 중인 **B-mode Ultrasound 이미지**만을 입력으로 받아,  
+딥러닝 기반 **HCC Score (0–1 continuous)** 를 산출하는 Computer Vision 모델을 개발한다.  
+이 score는 radiologic marker로 기능하며, 명확한 cutoff와 함께 임상적 의사결정을 지원한다.
 
-## Current stage-1 problem setting
+---
 
-Recent experiments showed two recurring failure modes.
+## 🧠 Model Architecture Overview
 
-1. **Shortcut monoculture**: plain DINO can avoid full representation collapse, but multiple attention heads often converge to the same hyperechoic region.
-2. **Unstable diversification**: when auxiliary diversity pressure is applied too naively, the model may temporarily diversify and then exhibit late-stage attention collapse, with diversity loss rapidly dropping toward zero.
+### SSL Pre-training: VICReg + Hybrid ViT
 
-Because of this, the stage-1 objective has been reframed around two requirements:
+본 연구는 **DINO를 사용하지 않는다.** 대신 아래 구조를 채택한다.
 
-- preserve DINO-style global invariance,
-- enforce stable headwise specialization without low-entropy collapse.
-
-## Stage-1 experiment plan
-
-The current experiment plan is intentionally simplified to three runs.
-
-| Experiment | `ssl_mode` | `simmim.weight` | `selfpatch.weight` | `diversity.weight` | Diversity type | Purpose |
-|---|---:|---:|---:|---:|---|---|
-| `dino` | `dino` | 0.0 | 0.0 | 0.0 | none | Global SSL baseline |
-| `dino_simmim` | `dino_simmim` | 0.3 | 0.0 | 0.0 | none | Improve patch-token quality and dense usability |
-| `dino_simmim_diversity` | `dino_simmim` | 0.3 | 0.0 | 1e-3 | top-half multi-layer CLS-row diversity + entropy floor | Add headwise specialization while controlling collapse |
-
-`SelfPatch` is intentionally kept in the codebase as a legacy/ablation option, but it is not part of the current primary plan.
-
-## Diversity design
-
-The old diversity path used a last-layer full attention-map disagreement loss. The current design replaces it with:
-
-- **CLS-row diversity**: headwise diversity is measured on CLS-to-patch attention rather than the full token-token attention matrix.
-- **Multi-layer aggregation**: diversity is computed from multiple transformer layers rather than only the last layer.
-- **Entropy floor**: a minimum entropy penalty is added so that attention heads do not collapse into pathological low-entropy states.
-
-The default plan uses the **top half** of transformer layers for diversity aggregation.
-
-## Data flow
-
-```text
-Stage 1: representation learning
-
-raw ultrasound image
-        |
-        +------------------------------+
-        |                              |
-        v                              v
-   DINO global/local views       masked image + patch mask
-        |                              |
-        |                              v
-        |                         SimMIM branch
-        |                              |
-        +-------------> online encoder <-------------+
-                               |                      |
-                               |                      |
-                               v                      v
-                         CLS embedding         encoded_patches
-                               |                      |
-                               |                      +--> patch-quality objective
-                               |
-                               +--> projector --> DINO loss
-                               |
-                               +--> attention weights (multi-layer)
-                                         |
-                                         +--> CLS-row diversity
-                                         +--> entropy floor
-
-Stage 2: supervised downstream learning
-
-selected stage-1 encoder checkpoint
-                |
-                +------------------------------------------+
-                |                                          |
-                v                                          v
-      finetune mode                                 scratch mode
-(load MODEL_PATH weights)                    (random initialize encoder)
-                |                                          |
-                v                                          v
-      supervised model                            supervised model
-                |                                          |
-                |                                          |
-                +------------------+-----------------------+
-                                   |
-                                   v
-                         train / val / test evaluation
-                                   |
-                                   +--> CE / SupCon / total loss logging
-                                   +--> accuracy logging
-                                   +--> test confusion matrix
-                                   +--> test attention-map table
+```
+┌─────────────────────────────────────────────────────┐
+│               Hybrid Vision Transformer              │
+│                                                     │
+│  Input 384×384 (grayscale, [0,255])                  │
+│       ↓                                             │
+│  CNN Stem (Conv 7×7, stride 4)                       │
+│       ↓  Patch embedding via CNN (not linear proj)   │
+│  Transformer Encoder (ViT-S/16 blocks)               │
+│       ↓  [CLS] token representation                  │
+│  Projector MLP (2048-2048-2048, BN, ReLU)            │
+│       ↓                                             │
+│  VICReg Loss: Variance + Invariance + Covariance     │
+└─────────────────────────────────────────────────────┘
+         ↓  (SSL pre-training finished)
+┌─────────────────────────────────────────────────────┐
+│          Supervised Fine-tuning (PureClassifier)     │
+│                                                     │
+│  Hybrid ViT Encoder (frozen or partial fine-tune)   │
+│       ↓  [CLS] token                               │
+│  Linear head → softmax(2) → [P(Hem), P(HCC)]        │
+│       ↓                                             │
+│  HCC Score = P(HCC) ∈ [0, 1]                        │
+└─────────────────────────────────────────────────────┘
 ```
 
-## Stage-2 experiment modes
+### Why Hybrid ViT (not plain ViT)?
 
-Stage 2 is now controlled directly from `Stage2_SSK_run.ipynb`.
+| Feature | Plain ViT | Hybrid ViT (ours) |
+|---|---|---|
+| Patch embedding | Linear projection | CNN stem (Conv 7×7 + stride) |
+| Low-level feature | Weak (needs huge data) | Strong (CNN inductive bias) |
+| Small dataset fit | Poor | **Better** |
+| Positional encoding | Fixed/learned 1D | CNN feature map → 2D spatial |
+| Memory (384×384) | High (576 patches) | Moderate (CNN reduces spatial early) |
 
-### Researcher-controlled inputs
+> **의료 이미징 맥락**: labeled 의료 데이터는 ImageNet 대비 절대적으로 적다.  
+> CNN stem의 inductive bias (locality, translation equivariance)는  
+> 초음파 병변의 texturally similar한 특징 추출에 효과적이다.
 
-- `MODEL_PATH`: path to the selected stage-1 encoder checkpoint.
-- `EXPERIMENT_MODE`: one of `scratch`, `finetune`, or `both`.
-- `LR_MODE`: one of `constant` or `cosine`.
-- `LR`: base learning rate value.
-- `WARMUP_EPOCHS`: warmup length when cosine schedule is used.
+### Why VICReg (not DINO)?
 
-### Mode behavior
+| 항목 | DINO | VICReg |
+|---|---|---|
+| Architecture | Teacher-Student (EMA) | Symmetric twin network |
+| Loss | Cross-entropy (softmax) | Variance + Invariance + Covariance |
+| Collapse 방지 | Centering + Sharpening | Variance regularization term |
+| Momentum update | ✅ 필요 | ❌ 불필요 (simpler) |
+| Batch sensitivity | 높음 | **낮음** (small batch 가능) |
+| Feature redundancy 제거 | 암묵적 | **명시적** (Covariance term) |
+| 의료 US 적합성 | 검증 있으나 복잡 | **구현 단순, 소규모 데이터 유리** |
 
-| Mode | Encoder initialization | Loss | Purpose |
-|---|---|---|---|
-| `scratch` | random initialization | CE only | Supervised baseline without stage-1 transfer |
-| `finetune` | load `MODEL_PATH` weights | mean(CE, SupCon) | Evaluate benefit of stage-1 representation transfer |
-| `both` | run `finetune` then `scratch` | each mode uses its own loss | Side-by-side comparison |
+> VICReg의 핵심: 세 loss의 합산으로 collapse 방지 + decorrelated feature 학습  
+> `L = λ·Invariance + μ·Variance + ν·Covariance`  
+> (default: λ=25, μ=25, ν=1 — Bardes et al., NeurIPS 2022)
 
-### WandB outputs
+---
 
-For each executed mode, the notebook logs:
+## 📊 Dataset
 
-- train metrics,
-- validation metrics,
-- test confusion matrix,
-- test attention-map table based on the stage-1 attention callback path.
+```
+Modality     : B-mode Ultrasound (grayscale)
+Task         : Binary classification — HCC vs Hemangioma
+Total images : 2,656
+  Train      : 1,858  (HCC 972 / Hemangioma 886)
+  Val        :   530  (HCC 277 / Hemangioma 253)
+  Test       :   268  (HCC 140 / Hemangioma 128)
 
-The final test artifact keys are intentionally separated by mode:
+Image spec   : 384 × 384 px, float32 [0, 255], normalize=False
+Label        : 0 = Hemangioma, 1 = HCC (positive class)
+Class ratio  : ~52% HCC / ~48% Hemangioma (balanced)
+```
 
-- `vit_파인튜닝_confusion_matrix`
-- `vit_파인튜닝_att_map`
-- `vit_from_scratch_confusion_matrix`
-- `vit_from_scratch_att_map`
+---
 
-## Code status
+## ⚙️ Experimental Pipeline
 
-The current codebase already supports the following pieces:
+### Stage 1 — VICReg SSL Pre-training
 
-- all-layer attention extraction from the encoder,
-- multi-layer CLS-row diversity primitives in `training/losses.py`,
-- stage-1 DINO and DINO+SimMIM trainers wired to the diversity path,
-- configurable stage-2 supervised trainer with CE-only vs mean(CE, SupCon) behavior,
-- notebook-level experiment selection for stage 1 and stage 2,
-- WandB logging for metrics, confusion matrix, and attention-map tables.
+```python
+# Pseudo-code (Keras 3 / TF backend)
+class HybridViTEncoder(keras.Model):
+    """
+    CNN Stem: Conv2D(96, 7, stride=4) → LayerNorm
+    Transformer Encoder: depth=12, heads=6, dim=384 (ViT-S config)
+    Output: [CLS] token, shape (B, 384)
+    """
 
-## Main files
+class VICRegProjector(keras.Model):
+    """
+    MLP: 384 → 2048 → 2048 → 2048 (BN + ReLU, last layer no activation)
+    Output: (B, 2048)
+    """
 
-- `models/encoder.py`: ViT/CNN encoder definitions and attention return path.
-- `training/losses.py`: DINO, SimMIM, diversity, and supervised contrastive losses.
-- `training/stage1_dino.py`: stage-1 DINO trainer.
-- `training/stage1_dino_simmim.py`: stage-1 DINO + SimMIM trainer.
-- `training/stage1_config.py`: structured experiment config.
-- `training/stage1_ssl.py`: trainer builder and config-to-model wiring.
-- `training/stage2_supcon.py`: stage-2 supervised trainer.
-- `visualization/wandb_viz.py`: attention-map and WandB visualization helpers.
-- `Stage1_SSK_run.ipynb`: practical stage-1 experiment notebook.
-- `Stage2_SSK_run.ipynb`: practical stage-2 supervised experiment notebook.
+# VICReg Loss
+def vicreg_loss(z1, z2, lam=25.0, mu=25.0, nu=1.0):
+    inv = mse_loss(z1, z2)                        # Invariance
+    var = variance_loss(z1) + variance_loss(z2)   # Variance
+    cov = covariance_loss(z1) + covariance_loss(z2)  # Covariance
+    return lam * inv + mu * var + nu * cov
+```
 
-## Recommended run order
+**Augmentation (SSL pre-training)**:
+- Random crop + resize to 384×384
+- Random horizontal/vertical flip
+- Gaussian blur, brightness/contrast jitter (grayscale-safe)
+- **Two views** per image → (z1, z2) → VICReg loss
 
-1. Run stage 1 baseline and select a checkpoint.
-2. Use `Stage2_SSK_run.ipynb` with `EXPERIMENT_MODE="finetune"` for transfer evaluation.
-3. Run `EXPERIMENT_MODE="scratch"` for supervised baseline.
-4. Use `EXPERIMENT_MODE="both"` only when a full paired comparison is needed in one notebook session.
+### Stage 2 — Supervised Fine-tuning (PureClassifier)
 
-## Notes
+```python
+class PureClassifier(keras.Model):
+    """
+    encoder : HybridViTEncoder (pretrained, partial fine-tune or frozen)
+    head    : Dense(2) → Softmax
+    output  : dict {"logits": (B,2), "probabilities": (B,2)}
+    """
+    def call(self, x, training=False):
+        feats = self.encoder(x, training=training)   # (B, 384)
+        logits = self.head(feats)
+        return {"logits": logits,
+                "probabilities": tf.nn.softmax(logits)}
+```
 
-- `selfpatch.py` is preserved for legacy comparison and future ablation.
-- Stage-2 attention logging intentionally reuses the proven stage-1 attention callback path for better stability.
-- The current README reflects the latest plan centered on lightweight encoder quality, dense usability, and controlled stage-2 benchmarking.
+**HCC Score 정의**:
+
+```
+HCC Score = probabilities[:, 1] = P(HCC)  ∈ [0, 1]
+```
+
+### Stage 3 — Radiologic Marker Cutoff
+
+| Strategy | Formula | Set |
+|---|---|---|
+| **Youden's J** (primary) | argmax(Sensitivity + Specificity − 1) | **Val only** |
+| Sensitivity-first | min threshold s.t. Sensitivity ≥ 0.90 | Val only |
+
+> **원칙**: Cutoff는 Val set에서만 결정. Test는 완전 blind evaluation.
+
+### Stage 4 — Statistical Analysis
+
+- AUROC: DeLong method 95% CI
+- At cutoff: Sens, Spec, PPV, NPV, F1, Confusion Matrix
+- **Decision Curve Analysis (DCA)**: Vickers & Elkin 2006
+- Bootstrap (n=1,000): 95% CI for all metrics
+- Score distribution: per-class Gaussian KDE (Train / Val / Test 3-row subplot)
+
+---
+
+## 🗂️ Repository Structure
+
+```
+hcc-vs-hemangioma/
+├── README.md                           ← 실험·방법론 위주 요약 (this file)
+├── paper_outline_medical_journal.md    ← 논문 뼈대 (Intro ~ Conclusion)
+├── Stage1_SSK_run.ipynb                ← SSL pre-training (VICReg)
+├── Stage2_Classification_Benchmark.ipynb ← Supervised fine-tuning benchmark
+├── VICReg_ConvHybrid_run.ipynb         ← Hybrid ViT + VICReg 실험
+├── VICReg_Conv_run.ipynb               ← ConvNet + VICReg 실험
+├── full_training_notebook.ipynb        ← 통합 학습 노트북
+├── dataloader.py                       ← Dataset pipeline
+├── models/                             ← Model 정의
+├── training/                           ← Training loop, loss
+├── validation/                         ← Val/Test evaluation
+├── inference/                          ← Score extraction, cutoff
+├── visualization/                      ← ROC, KDE, DCA 시각화
+├── callbacks/                          ← Keras callbacks
+├── utils/                              ← 공통 유틸
+└── experiment_registry/                ← 실험 결과 기록
+```
+
+---
+
+## 🚀 Future Work
+
+| Priority | Task | Description |
+|---|---|---|
+| **High** | AFP / PIVKA-II 연동 | Serology data와 B-mode US image를 paired하여 AFP-negative subgroup 성능 검증 |
+| **High** | 다기관 전향적 연구 | External validation (multi-center) → generalizability 확인 |
+| **Medium** | 영상의학과 vs HCC Score | Human radiologist performance와 직접 비교 (non-inferiority study) |
+| **Medium** | <2cm subgroup 분석 | Lesion size metadata 확보 후 early-stage HCC 집중 분석 |
+| **Low** | FNH / regenerative nodule 추가 | 대조군 확장 → 더 현실적인 임상 시나리오 |
+| **Low** | CEUS 비교 | B-mode 단독 vs CEUS보조 성능 비교 |
+
+---
+
+## 🛠️ Tech Stack
+
+| Component | Choice | Rationale |
+|---|---|---|
+| Framework | Keras 3 (TF backend) | Backend-agnostic, clean API |
+| SSL Algorithm | **VICReg** | No momentum network, small-batch friendly, explicit decorrelation |
+| Backbone | **Hybrid ViT** (CNN stem + Transformer) | CNN inductive bias + global attention |
+| Fine-tuning | PureClassifier (linear head) | SSL representation quality 평가 목적 |
+| Environment | Kaggle Notebooks (GPU T4 x2) | 16 GB VRAM constraint |
+| Analysis | scikit-learn, scipy, matplotlib | ROC, DCA, KDE |
+| Reporting | TRIPOD guideline | Prediction model reporting standard |
+
+---
+
+## 📝 Author
+
+**Kim Hyun-Soo, M.D.**  
+Department of Family Medicine, Primary Care Clinic, Jeonju, Republic of Korea  
+AI Researcher (amateur) · Medical AI · Multimodal Learning · CV · Self-Supervised Learning  
+GitHub: [kimhs950627](https://github.com/kimhs950627)
+
+---
+
+*Last updated: 2026-06-25*

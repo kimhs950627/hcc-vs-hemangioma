@@ -1,70 +1,312 @@
-# Lightweight Self-Supervised Ultrasound Encoder for Differentiating Hepatocellular Carcinoma and Hemangioma on B-Mode Liver Ultrasound
+# Paper Outline — Medical Journal Submission
 
-## Working title
+> **Status**: Draft outline (pre-results)  
+> **Target journal tier**: PubMed-indexed, SCIE Q1–Q2 (e.g., *Ultrasonics*, *Diagnostics*, *Frontiers in Oncology*, *JMIR Medical Informatics*)
 
-Lightweight Self-Supervised Ultrasound Encoder for Differentiating Hepatocellular Carcinoma and Hemangioma on B-Mode Liver Ultrasound: toward HCC Prototype Formation and Transferable Patch-Level Representation Learning
+---
 
-## Introduction
+## Proposed Title
 
-Hepatocellular carcinoma (HCC) remains a major cause of cancer-related mortality worldwide, and early detection is clinically important because curative treatment options become limited once disease progresses [1]. Ultrasonography is widely used as a first-line liver imaging modality because it is inexpensive, repeatable, radiation-free, and broadly accessible in screening and routine outpatient settings [5]. However, grayscale B-mode ultrasound interpretation is highly operator dependent, and focal liver lesion characterization can be difficult when malignant and benign lesions share overlapping echogenicity, shape, posterior acoustic behavior, and surrounding parenchymal background [3,5]. In everyday practice, one clinically recurrent problem is distinguishing HCC from hemangioma, particularly when lesions are small, atypical, or embedded in heterogeneous chronic liver disease [3,4].
+**"A Hybrid Vision Transformer Trained with VICReg Self-Supervised Learning for Operator-Independent HCC Scoring from B-mode Ultrasound: A Single-Center Retrospective Study"**
 
-Deep learning has increasingly been applied to liver ultrasonography for lesion characterization, and prior studies have shown that supervised models can improve diagnostic accuracy for liver lesion classification [3,4]. Yet, for clinicians, higher classification accuracy alone is not sufficient. A model may achieve good performance by relying on medically unreliable shortcuts, such as image artifacts, sector boundaries, superficial bright interfaces, or acquisition-dependent patterns, rather than true lesion characteristics [5,6]. In that situation, the prediction can be numerically correct while the medical basis of the decision remains difficult to explain and potentially unsafe for real clinical use.
+*Alternative (shorter):*  
+"Deep Learning-Based HCC Score from B-mode Ultrasound as an Operator-Independent Radiologic Marker: A Single-Center Retrospective Study"
 
-This issue is important because physicians do not interpret liver lesions by reading only one isolated descriptor. In actual practice, clinicians compare the current lesion with internally accumulated examples of representative lesions encountered through training and experience. In other words, the diagnostic process often involves judging how similar the present lesion is to a mental prototype of HCC, hemangioma, or other differential diagnoses. For this reason, a clinically useful artificial-intelligence system should not only classify an image correctly but should also learn lesion-centered image features that can support prototype-like comparison and medically understandable reasoning.
+---
 
-The present study was designed from this perspective. In stage 1, the model is trained to acquire general knowledge of B-mode liver ultrasound before task-specific supervision. In stage 2, the same model is further trained not only to perform HCC-versus-hemangioma classification but also to organize lesion feature patterns in a way that supports successful HCC prototype formation. Technically, the backbone of this study is a vision transformer (ViT), which can be understood as an image transformer that converts an input image into a structured set of numeric features and summarizes them into compressed vectors for later decision making [6,7]. Here, the term “feature vector” refers simply to a sequence of numbers that compactly represents the important visual characteristics of the lesion image.
+## Structured Abstract
 
-This study used SMC-LUD (Samsung Medical Center - Liver Ultrasound Dataset), a B-mode liver ultrasound dataset specifically curated for HCC-versus-hemangioma classification [8]. SMC-LUD provides 5,385 anonymized ultrasound images from 1,021 patients, including 2,716 HCC images and 2,669 hemangioma images, and therefore offers a clinically relevant data basis for both self-supervised pretraining and downstream supervised learning [8]. Using a single domain-consistent dataset for both stages allowed the present study to examine whether ultrasound-specific pretraining improves later lesion discrimination while preserving medically meaningful lesion features.
+| Section | Content |
+|---|---|
+| **Background** | B-mode ultrasound (US) is the recommended first-line surveillance tool for hepatocellular carcinoma (HCC), yet operator dependency and limited sensitivity for early-stage lesions (~45–63%) remain major obstacles. In primary care settings, tumor markers such as AFP and PIVKA-II are often inaccessible due to reimbursement and logistical barriers. An image-only, operator-independent radiologic score is therefore clinically desirable. |
+| **Methods** | Single-center retrospective study. B-mode US images of HCC and hepatic hemangioma were split into Train/Val/Test (1,858/530/268). A Hybrid Vision Transformer (CNN stem + Transformer encoder) was self-supervised with VICReg, then fine-tuned with a linear classifier. HCC Score = P(HCC) ∈ [0,1] derived from softmax output. Optimal cutoff determined on Val set (Youden's J); Test set was blind. Performance reported as AUROC (DeLong 95% CI), Sensitivity, Specificity, PPV, NPV, and Decision Curve Analysis (DCA). |
+| **Results** | *(To be filled after training)* Test AUROC [XX] (95% CI [XX–XX]). At Val-derived cutoff: Sensitivity XX%, Specificity XX%, PPV XX%, NPV XX%. DCA demonstrated net benefit over treat-all/treat-none in the [XX–XX]% threshold probability range. |
+| **Conclusions** | A VICReg-pretrained Hybrid ViT produces a continuous, operator-independent HCC Score from B-mode US alone, supporting its potential utility as a primary-care radiologic marker. Future studies should incorporate serology (AFP, PIVKA-II), multi-center prospective cohorts, and radiologist-level comparisons. |
 
-Another important aspect of this study is the use of a lightweight model. A lightweight encoder is not only easier to optimize and transfer, but is also more suitable for on-device deployment across diverse computing environments. Such a design can reduce dependence on large external computing infrastructure and may allow image analysis without transmitting patient imaging data outside the hospital through remote APIs or cloud-based services. This point is particularly relevant in real clinical settings where privacy, latency, cost, and hardware variability must all be considered.
+**Keywords**: hepatocellular carcinoma; ultrasound; deep learning; self-supervised learning; VICReg; vision transformer; radiologic marker; primary care
 
-Accordingly, the objective of this study is to develop a lightweight self-supervised ultrasound encoder for B-mode liver imaging, evaluate whether stage-1 ultrasound pretraining improves downstream HCC-versus-hemangioma classification, and establish a framework in which lesion classification and HCC prototype formation can be learned together in stage 2.
+---
 
-## Relative studies
+## 1. Introduction
 
-Several prior studies provide the clinical and technical background for the present work. In a supervised liver-ultrasound study, Hassan et al. trained a ResNet50-based model to differentiate benign from malignant solid liver lesions on ultrasonography and reported a test accuracy of 0.84 on the complete lesion set, with performance comparable to expert radiologists [3]. This study is an important clinical precedent because it showed that deep learning can be useful in grayscale liver ultrasound. However, its main goal was end-task benign-versus-malignant classification based on supervised transfer learning, not the development of an ultrasound-specific encoder that first learns general B-mode knowledge and later supports lesion-centered reasoning.
+### 1.1 Clinical Burden of HCC
 
-A more recent multicenter study by Zhao et al. developed an interpretable machine-learning model for the classification of ≤3 cm small HCC from grayscale ultrasound and reported an internal validation AUC of 0.934 and an external validation AUC of 0.899 [4]. The authors also showed that model assistance improved radiologist performance [4]. This work strongly supports the feasibility of grayscale ultrasound-based HCC diagnosis, but it remains a task-specific diagnostic model rather than a reusable backbone for downstream transfer or prototype-oriented feature organization.
+- Hepatocellular carcinoma (HCC) accounts for 85–90% of primary liver cancers and ranks third in global cancer mortality.
+- HBV and HCV infection are the dominant etiologies; incidence is disproportionately high in East Asia including South Korea.
+- Early detection is the single most impactful modifiable factor: 5-year survival rate exceeds 70% within Milan criteria (resection or transplant), versus <10% at advanced stage.
+- Current international guidelines (AASLD, EASL, APASL) recommend 6-month interval B-mode ultrasound surveillance with or without AFP for high-risk populations (cirrhosis, chronic hepatitis B/C).
 
-The common data basis of the present study is SMC-LUD (Samsung Medical Center - Liver Ultrasound Dataset), a recently released large-scale B-mode liver ultrasound dataset specifically curated for HCC-versus-hemangioma classification [8]. According to the dataset report, SMC-LUD contains 5,385 anonymized B-mode ultrasound images from 1,021 patients, comprising 2,716 HCC images and 2,669 hemangioma images collected at Samsung Medical Center between 2015 and 2024 [8]. HCC cases were histopathologically confirmed, hemangioma cases were radiologically diagnosed on characteristic imaging findings, and the dataset was organized with patient-level grouping [8]. In the present study, both stage 1 self-supervised pretraining and stage 2 downstream supervised learning were performed using SMC-LUD, which makes the study specifically focused on domain-consistent liver ultrasound learning rather than generic pretraining transfer.
+### 1.2 Screening Limitations and the Primary Care Gap
 
-Beyond liver-specific studies, recent transformer and self-supervised-learning literature has suggested that image transformers can learn transferable local and global image information in medical imaging [6,7]. Reviews of ultrasound applications of vision transformers emphasize their ability to model long-range dependencies and structured image context, which is particularly relevant for lesion characterization in heterogeneous grayscale images [6]. Self-supervised transformer pretraining has also been reported to improve downstream transfer in medical-image analysis by learning image knowledge before task-specific supervision [7]. However, these studies generally do not focus on grayscale liver ultrasound discrimination between HCC and hemangioma, and they do not center their design on a lightweight encoder intended for later prototype formation and on-device clinical usability.
+- Ultrasound sensitivity for early-stage HCC (≤2 cm): approximately 45% in isolation, rising to 63% when combined with AFP (Tzartzeva et al., *Gastroenterology* 2018).
+- Operator dependency: image quality and interpretation vary substantially between examiners, limiting reproducibility especially in primary care clinics and smaller hospitals without on-site hepatologists or radiologists.
+- **Primary care reality**: In South Korean primary care and comparable healthcare systems, PIVKA-II and AFP testing is often constrained by insurance reimbursement criteria, referral requirements, and patient access. Consequently, tumor-marker-independent screening tools are of high practical value.
+- AFP-negative HCC constitutes approximately two-thirds of all HCC cases, rendering AFP-based screening inherently incomplete (Tsuchiya et al., *WJG* 2015).
 
-The present study therefore differs from prior work in three main respects. First, the emphasis is placed on a lightweight stage-1 ultrasound encoder rather than solely on a stage-2 classifier. Second, stage 1 is designed to learn general B-mode ultrasound knowledge before diagnosis-specific supervision is introduced. Third, stage 2 is framed not only as a binary classification task but also as a stage in which successful HCC prototype formation and lesion-feature organization are learned together. This combination of lightweight domain-specific pretraining, downstream fine-tuning, and prototype-oriented clinical reasoning is, to our knowledge, not the central contribution of previous grayscale liver-ultrasound studies.
+### 1.3 Artificial Intelligence in Liver Ultrasound: Opportunity and Gap
 
-## Methods
+- Deep learning (DL) models have demonstrated AUC 0.83–0.94 for focal liver lesion (FLL) classification on B-mode US (Yang et al., *eBioMedicine* 2020; Zhang et al., *Front Oncol* 2022).
+- However, existing studies share critical methodological limitations:
+  - Binary (HCC/non-HCC) outputs that preclude use as a continuous radiologic marker.
+  - Threshold determination from test data — a form of data leakage that inflates reported performance.
+  - Absence of Decision Curve Analysis (DCA) or other clinical utility assessments.
+  - Use of plain Vision Transformers (ViT) with limited adaptation to the small-dataset reality of medical imaging.
+- Self-supervised learning (SSL) has emerged as a powerful pretraining strategy when labeled medical data is scarce. VICReg (Bardes et al., *NeurIPS 2022*) offers stable training without a momentum teacher, with an explicit covariance regularization term enforcing feature decorrelation — a desirable property for texturally similar lesion images.
 
-### Study design overview
+### 1.4 Study Objectives
 
-This study used a two-stage learning framework for grayscale B-mode liver ultrasound images. Stage 1 trained a lightweight self-supervised ViT encoder to learn transferable patch-level representations from ultrasound images. Stage 2 evaluated downstream transfer by comparing supervised learning from scratch with supervised fine-tuning initialized from the stage-1 encoder. The principal downstream task was binary discrimination between HCC and hemangioma using the same ultrasound dataset.
+1. Develop a **HCC Score** (continuous 0–1 probability) from B-mode US images using a VICReg-pretrained Hybrid Vision Transformer.
+2. Establish a rigorous cutoff determination protocol: **Val-set-only Youden's J**, with the Test set preserved as a blind evaluation.
+3. Evaluate the model as a radiologic marker via AUROC, per-cutoff diagnostics, and DCA.
+4. Situate findings in the primary care context and delineate methodological contributions and study limitations.
 
-### Dataset
+---
 
-Both stage 1 and stage 2 used SMC-LUD (Samsung Medical Center - Liver Ultrasound Dataset), a publicly described B-mode liver ultrasound dataset for HCC-versus-hemangioma classification [7]. SMC-LUD was reported in Scientific Data in 2026 as a curated dataset comprising 5,385 anonymized ultrasound images from 1,021 patients, including 2,716 HCC images and 2,669 hemangioma images [7]. The dataset was assembled at Samsung Medical Center, and labels were verified by radiologists and pathologists; HCC cases were histopathologically confirmed, whereas hemangioma cases were diagnosed radiologically on characteristic imaging features [7]. In the present project, SMC-LUD served as the sole image source for stage-1 self-supervised learning and stage-2 supervised transfer learning.
+## 2. Materials and Methods
 
-### Stage 1: lightweight self-supervised ultrasound encoder
+### 2.1 Study Design
 
-Stage 1 aimed to learn an ultrasound representation before terminal class supervision. A lightweight ViT-based encoder was used to retain patch-level information while limiting model size and optimization burden. Multi-view self-supervised learning was adopted so that the encoder could learn view-consistent representations from differently augmented crops of the same ultrasound image. The stage-1 framework was based primarily on a DINO-style self-distillation objective, with additional experiments exploring masked-image modeling and diversity-promoting components during encoder development. The design intention was to obtain encoded patches and global embeddings that remained useful for downstream fine-tuning rather than only solving the pretraining task itself.
+- **Design**: Single-center, retrospective, observational study.
+- **Reporting**: TRIPOD (Transparent Reporting of a multivariable prediction model for Individual Prognosis Or Diagnosis) guideline.
+- **Ethics**: IRB approval obtained (approval number: *to be inserted*).
+- **Setting**: *[Institution name, city, country]* — *[period of data collection]*.
 
-The lightweight design was deliberate. In liver ultrasound, training data are still limited compared with large-scale natural-image corpora, and distribution shift can arise from scanner type, acquisition protocol, acoustic window, or operator dependence [2,5,7]. A smaller transformer backbone is therefore attractive because it reduces computational load and may improve practical transferability while allowing closer inspection of token behavior and attention specialization.
+### 2.2 Participants and Image Acquisition
 
-### Stage 2: supervised transfer learning
+**Inclusion criteria**:
+- Histologically or imaging-confirmed HCC meeting AASLD/EASL non-invasive criteria, OR
+- Hemangioma confirmed by contrast-enhanced CT/MRI or follow-up stability.
+- Available B-mode ultrasound image in the institutional PACS archive.
 
-After stage-1 pretraining, the encoder was transferred to a downstream supervised classifier for HCC-versus-hemangioma discrimination. Two stage-2 regimes were compared using the same architecture: (1) training from random initialization and (2) fine-tuning from the pretrained stage-1 encoder. The transferred encoder was fully trainable during stage 2 so that the effect of initialization on downstream optimization could be assessed under a realistic fine-tuning setting.
+**Exclusion criteria**:
+- Poor image quality (excessive shadowing, patient motion artifact).
+- Indeterminate or equivocal diagnosis.
+- *(Institution-specific criteria to be inserted)*.
 
-The downstream network consisted of the encoder, a projection head, and a classification head. Cross-entropy loss was used for class prediction, and supervised contrastive loss was incorporated to encourage more structured class-wise embedding geometry during supervised learning. Stage 2 was intentionally kept simple rather than expanded into a heavily multi-task setting, because the purpose of the comparison was to isolate the fine-tuning advantage conferred by the stage-1 ultrasound representation as directly as possible.
+**Dataset composition**:
 
-### HCC prototype-oriented formulation
+| Split | Total | HCC | Hemangioma |
+|---|---|---|---|
+| Train | 1,858 | 972 (52.3%) | 886 (47.7%) |
+| Val | 530 | 277 (52.3%) | 253 (47.7%) |
+| Test | 268 | 140 (52.2%) | 128 (47.8%) |
+| **Total** | **2,656** | **1,389** | **1,267** |
 
-Although the practical downstream task was binary HCC-versus-hemangioma classification, the conceptual motivation of the framework extended beyond binary prediction. The learned latent space was intended to support later HCC prototype formation, enabling the model to represent similarity to HCC-centered patterns at the image or patch level. This perspective is clinically meaningful because suspicious liver lesions are often assessed on a continuum of HCC likelihood rather than through a simple isolated label. Under this formulation, classification becomes one downstream use case of a richer representation space, and HCC prototype induction becomes a potential bridge between compact self-supervised encoding and interpretable clinical reasoning.
+- Image specification: 384 × 384 px, grayscale, float32 [0, 255], normalize=False.
+- **Split level**: *(Confirm patient-level vs. image-level split — document to avoid data leakage disclosure)*.
 
-## References
+### 2.3 Model Architecture: VICReg + Hybrid ViT
 
-1. Sung H, Ferlay J, Siegel RL, Laversanne M, Soerjomataram I, Jemal A, Bray F. Global cancer statistics 2020: GLOBOCAN estimates of incidence and mortality worldwide for 36 cancers in 185 countries. CA Cancer J Clin. 2021;71(3):209-249. doi:10.3322/caac.21660.
-2. Liu X, Faes L, Kale AU, Wagner SK, Fu DJ, Bruynseels A, Mahendiran T, Moraes G, Shamdas M, Kern C, et al. A comparison of deep learning performance against health-care professionals in detecting diseases from medical imaging: a systematic review and meta-analysis. Lancet Digit Health. 2019;1(6):e271-e297. doi:10.1016/S2589-7500(19)30123-2.
-3. Hassan TM, Elmogy M, Sallam ES. Deep learning for differentiation of benign and malignant solid liver lesions on ultrasonography. Abdom Radiol (NY). 2021;46(2):534-543. doi:10.1007/s00261-020-02564-w.
-4. Zhao C, Zhang H, Liu Y, Wang S, Duan S, Wang Y, Li Y, Zhou Q, Chen M, Liu Y, et al. Development and validation of an ultrasound-based interpretable machine learning model for the classification of ≤3 cm hepatocellular carcinoma: a multicentre retrospective diagnostic study. EClinicalMedicine. 2025;81:103098. doi:10.1016/j.eclinm.2025.103098.
-5. Wang J, Eslick GD, Huang Y, Deng Y, Gong X, Chen Y. Artificial intelligence in medical imaging and its application in sonography for the management of liver tumor. Front Oncol. 2020;10:594580. doi:10.3389/fonc.2020.594580.
-6. Vafaeezadeh M, Behnam H, Gifani P. Ultrasound image analysis with vision transformers-review. Diagnostics (Basel). 2024;14(5):542. doi:10.3390/diagnostics14050542.
-7. Tang Y, Yang D, Li W, Roth HR, Landman B, Xu D, Nath V, Hatamizadeh A. Self-supervised pre-training of Swin transformers for 3D medical image analysis. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). 2022:20730-20740. doi:10.1109/CVPR52688.2022.02011.
-8. Tak J, Kim J, Hong J, Lee H, Kim S, Kim T, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. Sci Data. 2026;13:649. doi:10.1038/s41597-026-07023-7.
+#### 2.3.1 Hybrid Vision Transformer (Encoder)
+
+A Hybrid ViT replaces the standard linear patch embedding of plain ViT with a convolutional stem:
+
+- **CNN Stem**: Conv2D (kernel 7×7, stride 4, channels 96) → LayerNorm → produces feature maps that serve as patch tokens.
+- **Transformer Encoder**: ViT-Small configuration — depth=12, heads=6, embedding dimension=384.
+- **Output**: [CLS] token representation, shape (B, 384).
+
+The CNN stem provides local translation-equivariant feature extraction before global self-attention, which is critical for small labeled datasets where plain ViT's attention maps tend to under-specialize.
+
+#### 2.3.2 VICReg Self-Supervised Pre-training
+
+VICReg (Variance–Invariance–Covariance Regularization) learns representations by simultaneously optimizing three terms:
+
+- **Invariance loss**: Mean squared error between two views of the same image — encourages view-consistent representations.
+- **Variance loss**: Hinge on per-dimension standard deviation (target: std ≥ 1) — prevents feature collapse.
+- **Covariance loss**: Penalizes off-diagonal entries of the feature covariance matrix — enforces decorrelated dimensions.
+
+```
+L_VICReg = λ · L_invariance + μ · L_variance + ν · L_covariance
+Default: λ=25, μ=25, ν=1  (Bardes et al., NeurIPS 2022)
+```
+
+A symmetric twin network (two identical encoders sharing weights) processes two random augmented views (v1, v2) of each US image. No momentum teacher or stop-gradient is required, simplifying training.
+
+**Augmentation strategy (SSL pre-training)**:
+- Random crop and resize to 384 × 384
+- Random horizontal and vertical flip
+- Gaussian blur (σ ∈ [0.1, 2.0])
+- Brightness and contrast jitter (restricted to achromatic channels for grayscale US; no hue/saturation)
+
+**Projector MLP**: 384 → 2048 → 2048 → 2048 (BatchNorm + ReLU; final layer has no activation). Discarded at fine-tuning.
+
+#### 2.3.3 Supervised Fine-tuning (PureClassifier)
+
+After pre-training, the Hybrid ViT encoder is attached to a linear classification head:
+
+- **Head**: Dense(2) → Softmax
+- **Output**: `{"logits": (B, 2), "probabilities": (B, 2)}`
+- **Fine-tuning strategy**: Encoder partially frozen (last N transformer blocks unfrozen) — exact block count determined empirically.
+- **Loss**: Categorical cross-entropy.
+- **Optimizer, LR, schedule**: *(to be inserted after training)*.
+
+### 2.4 HCC Score Definition
+
+> **HCC Score = probabilities[:, 1] = P(HCC) ∈ [0, 1]**
+
+- This continuous output is treated as a **radiologic marker** analogous to a serum biomarker — not merely a binary classifier.
+- Score ↑ indicates increasing probability of HCC; Score ↓ favors hemangioma.
+- The score itself carries clinical information independent of any binary threshold.
+
+### 2.5 Cutoff Determination (No Data Leakage)
+
+Optimal cutoff is determined exclusively from the **Validation set**:
+
+| Strategy | Definition | Role |
+|---|---|---|
+| **Youden's J** (primary) | argmax (Sensitivity + Specificity − 1) on Val ROC curve | Primary reported cutoff |
+| Sensitivity-first (secondary) | Lowest cutoff satisfying Sensitivity ≥ 0.90 on Val ROC | Sensitivity analysis |
+
+**Rationale**: Determining thresholds from test data constitutes data leakage and violates the statistical independence required for unbiased generalization estimation. In a clinical deployment scenario, a cutoff must be fixed *before* seeing new patients; the Val-set-only approach replicates this prospective constraint.
+
+### 2.6 Statistical Analysis
+
+- **AUROC**: DeLong method with 95% confidence intervals (DeLong et al., *Biometrics* 1988).
+- **At cutoff**: Sensitivity, Specificity, PPV, NPV, F1-score, confusion matrix (TP/FP/TN/FN).
+- **Decision Curve Analysis (DCA)**: Net benefit across threshold probability range 0.05–0.95 against treat-all and treat-none strategies (Vickers & Elkin, *Med Decis Making* 2006).
+- **Bootstrap resampling** (n = 1,000): 95% CI for all metrics on Test set.
+- **Score distribution**: Per-class Gaussian KDE plot for Train, Val, and Test separately.
+- Software: Python 3.11, scikit-learn, scipy, matplotlib.
+
+---
+
+## 3. Results *(To be completed after training)*
+
+### 3.1 Study Population and Image Characteristics (Table 1)
+
+| Characteristic | Train | Val | Test |
+|---|---|---|---|
+| Total images, n | 1,858 | 530 | 268 |
+| HCC, n (%) | 972 (52.3%) | 277 (52.3%) | 140 (52.2%) |
+| Hemangioma, n (%) | 886 (47.7%) | 253 (47.7%) | 128 (47.8%) |
+| Age, mean ± SD, years | — | — | — |
+| Male sex, n (%) | — | — | — |
+| Underlying cirrhosis, n (%) | — | — | — |
+| Lesion size, cm (median [IQR]) | — | — | — |
+
+### 3.2 VICReg Pre-training Convergence
+
+- Invariance, Variance, Covariance loss curves across epochs.
+- Final pre-training loss values.
+- Linear probing AUROC on Val at end of pre-training (before supervised fine-tuning) — demonstrating representation quality.
+
+### 3.3 HCC Score Distribution (Figure 1)
+
+- Three-row subplot: Train / Val / Test.
+- Per row: Gaussian KDE for Hemangioma (blue) vs. HCC (red).
+- Vertical dashed line at Val-derived cutoff.
+- Degree of class separation assessed qualitatively and by AUROC.
+
+### 3.4 ROC Curves and AUROC (Figure 2)
+
+- Overlay of Train, Val, and Test ROC curves.
+- Val cutoff operating point marked (sensitivity, 1−specificity).
+- DeLong 95% CI for Test AUROC.
+
+### 3.5 Performance at Val-Derived Cutoff (Table 2)
+
+| Metric | Val (cutoff derivation) | Test (blind evaluation) |
+|---|---|---|
+| AUROC (95% CI) | — | — |
+| Cutoff (Youden's J) | — | Same as Val |
+| Sensitivity (%) | — | — |
+| Specificity (%) | — | — |
+| PPV (%) | — | — |
+| NPV (%) | — | — |
+| F1-score | — | — |
+| TP / FP / TN / FN | — | — |
+
+### 3.6 Decision Curve Analysis (Figure 3)
+
+- X-axis: Threshold probability (0.05–0.95).
+- Y-axis: Net benefit.
+- Three lines: HCC Score model / Treat-all / Treat-none.
+- Annotation of threshold probability range where model net benefit > treat-all.
+
+---
+
+## 4. Discussion
+
+### 4.1 Principal Findings
+
+This study presents the first application of VICReg self-supervised learning with a Hybrid Vision Transformer for continuous HCC scoring from B-mode ultrasound. The HCC Score achieved Test AUROC [XX] (95% CI [XX–XX]), demonstrating that an image-only deep learning model can meaningfully discriminate HCC from hemangioma without relying on tumor markers, contrast agents, or Doppler data.  
+At the Val-derived cutoff, Sensitivity and Specificity were [XX]% and [XX]%, respectively — a performance profile that is clinically interpretable in the same way as AFP or PIVKA-II thresholds in conventional practice.
+
+### 4.2 Clinical Relevance in the Primary Care Context
+
+The primary care physician who performs abdominal ultrasound routinely does not have on-site access to radiologist interpretation, and tumor marker testing is frequently constrained by reimbursement policies and referral pathways. The HCC Score requires only the B-mode US image — a resource universally available in primary care clinics — and produces a continuous output rather than a binary flag. This operator-independent, marker-independent output can serve as an adjunct screening layer that stratifies patients who warrant expedited hepatology referral, without replacing existing biomarker-based protocols where those are available.
+
+### 4.3 Methodological Contribution: Val-Only Cutoff Strategy
+
+A substantial proportion of published DL studies in liver US determine diagnostic thresholds on test data — either explicitly or implicitly via repeated threshold testing. This practice inflates reported sensitivity/specificity and renders the quoted cutoff clinically meaningless, because it would not generalize to an independent prospective cohort. By confining cutoff derivation to the validation set and preserving the test set as a single-use blind evaluation, this study replicates the statistical architecture of a prospective clinical trial. Future studies reporting DL-based radiologic markers should adopt this or an equivalent methodology.
+
+### 4.4 VICReg and Hybrid ViT: Architectural Rationale
+
+The choice of VICReg over contrastive methods (SimCLR) or momentum-based SSL (DINO, MoCo) reflects practical constraints of the medical imaging domain: small labeled sets, limited compute (single consumer GPU), and the need for training stability. VICReg's explicit variance and covariance loss terms act as regularizers that are particularly valuable when the feature space dimensionality (2048) exceeds the effective batch size — a common scenario in medical imaging. The Hybrid ViT resolves the data-hungry nature of plain ViT by introducing CNN-derived inductive biases (locality, translation equivariance) that reduce dependence on large-scale pretraining corpora, while the Transformer encoder retains global context modeling for lesion-level reasoning.
+
+### 4.5 Clinical Utility: Decision Curve Analysis
+
+DCA net benefit in the [XX]–[XX]% threshold probability range indicates that applying the HCC Score model in patients whose pre-test probability of HCC falls within that range would yield more true-positive referrals per false-positive referral compared to both the treat-all and treat-none strategies. This quantification of net clinical benefit is absent from the majority of prior DL-based liver US studies and constitutes a necessary bridge between model performance metrics (AUROC) and actual clinical decision-making utility.
+
+### 4.6 Comparison with Prior Work
+
+| Study | Modality | Classes | AUROC | Cutoff Method | DCA | SSL |
+|---|---|---|---|---|---|---|
+| Yang 2020 (*eBioMedicine*) | B-mode US | FLL (multi-class) | 0.83–0.94 | Test-derived | No | No |
+| Zhang 2022 (*Front Oncol*) | CEUS | AFP-neg HCC vs FNH | 0.937 | Unclear | No | No |
+| **This study** | B-mode US | HCC vs Hemangioma | [XX] | **Val-only (Youden)** | **Yes** | **VICReg** |
+
+Key differentiators: (1) continuous score as radiologic marker, (2) methodologically rigorous val-only cutoff, (3) DCA for clinical utility, (4) VICReg SSL suited to small labeled datasets, (5) explicit primary care applicability framing.
+
+### 4.7 Limitations
+
+1. **Single-center retrospective design**: External generalizability to different ultrasound equipment, operator practices, and patient populations is unvalidated.
+2. **Absence of radiologist comparison**: No human baseline performance data.
+3. **No tumor marker data**: AFP-negative HCC subgroup analysis (approximately two-thirds of HCC cases) is not possible within the current dataset.
+4. **Lesion size metadata**: Without size stratification, performance in early-stage HCC (≤2 cm) cannot be separately assessed.
+5. **Binary control group**: The comparator is hemangioma only. Real-world differential includes FNH, regenerative nodules, and metastases.
+6. **Image-level split risk**: If the dataset was not split at the patient level, images from the same patient may appear across splits, introducing optimistic bias.
+
+---
+
+## 5. Conclusion
+
+A Hybrid Vision Transformer pretrained with VICReg self-supervised learning produces a continuous HCC Score from B-mode ultrasound alone, achieving Test AUROC [XX] and clinically meaningful sensitivity/specificity at a methodologically rigorous, Val-set-derived cutoff. Decision Curve Analysis demonstrates net clinical benefit over treat-all and treat-none strategies within the [XX]–[XX]% threshold probability range. The model requires no tumor markers, no contrast agents, and no Doppler capability, making it directly applicable in primary care and resource-limited settings. Limitations of single-center retrospective design and absent tumor marker comparisons motivate three priority future directions: (1) paired AFP/PIVKA-II validation in an AFP-negative subgroup, (2) multi-center prospective cohort study, and (3) head-to-head comparison with radiologist-level performance.
+
+---
+
+## 6. Key References
+
+| # | Citation | Section |
+|---|---|---|
+| 1 | Tzartzeva K et al. *Gastroenterology* 2018 — US+AFP sensitivity meta-analysis | Intro 1.2, Discussion 4.5 |
+| 2 | EASL Clinical Practice Guidelines: HCC. *J Hepatol* 2018 | Methods 2.1, Intro 1.1 |
+| 3 | AASLD HCC Guidance 2018 | Intro 1.1, 1.2 |
+| 4 | Bardes A et al. *NeurIPS 2022* — VICReg | Methods 2.3.2, Discussion 4.4 |
+| 5 | Yang Q et al. *eBioMedicine* 2020 — multicenter FLL DL | Intro 1.3, Discussion 4.6 |
+| 6 | Zhang W-B et al. *Front Oncol* 2022 — AFP-neg HCC/FNH DL | Intro 1.3, Discussion 4.6 |
+| 7 | Vickers AJ & Elkin EB. *Med Decis Making* 2006 — DCA methodology | Methods 2.6, Discussion 4.5 |
+| 8 | DeLong ER et al. *Biometrics* 1988 — AUROC 95% CI | Methods 2.6 |
+| 9 | Collins GS et al. *BMJ* 2015 — TRIPOD guideline | Methods 2.1 |
+| 10 | Tsuchiya N et al. *WJG* 2015 — AFP-negative HCC prevalence | Intro 1.2, Limitation 4.7 |
+| 11 | Dosovitskiy A et al. *ICLR 2021* — ViT | Methods 2.3.1 |
+| 12 | Kolesnikov A et al. *ECCV 2020* — Hybrid ViT | Methods 2.3.1 |
+
+---
+
+## Appendix: Planned Figures and Tables
+
+| Item | Description | Status |
+|---|---|---|
+| **Figure 1** | HCC Score KDE distribution (Train/Val/Test, 3-row, with cutoff line) | Pending training |
+| **Figure 2** | ROC curves overlay (Train/Val/Test) + Val cutoff operating point | Pending training |
+| **Figure 3** | Decision Curve Analysis (Model vs Treat-all vs Treat-none) | Pending training |
+| **Table 1** | Study population characteristics (age, sex, cirrhosis, lesion size) | Pending metadata |
+| **Table 2** | Diagnostic performance at Val-derived cutoff (Val vs Test) | Pending training |
+| **Supp. Fig. 1** | VICReg pre-training loss curves (Invariance/Variance/Covariance) | Pending training |
+| **Supp. Table 1** | Sensitivity-first cutoff analysis (Sensitivity ≥ 0.90) | Pending training |
+
+---
+
+*Last updated: 2026-06-25*  
+*Author: Kim Hyun-Soo, M.D. — Department of Family Medicine, Jeonju, Republic of Korea*
