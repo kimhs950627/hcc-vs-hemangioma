@@ -10,12 +10,14 @@ Shape contract (512×512 input, stride-32 backbone)
   Patches     : [B, 256, d_model]   flatten
   + CLS       : [B, 257, d_model]   prepend CLS first
   + PE        : [B, 257, d_model]   PE applied to full sequence (CLS + patches)
-  Transformer : n_layers × TransformerEncoderBlock
+  Transformer : n_layers × TransformerEncoderBlock  (sa mode)
+             OR n_layers × CrossAttentionEncoderBlock (ca mode)
   Output dict:
     'embedding'          : [B, d_model]          <- CLS token (VICReg loss 용)
     'patch_tokens'       : [B, n_patches, d_model]
     'encoded_patches'    : [B, seq_len, d_model]  <- CLS + patches (legacy key)
-    'attention_weights'  : list[ [B, n_heads, seq_len, seq_len] ] × n_layers
+    'attention_weights'  : list[ [B, n_heads, seq_len, seq_len] ] × n_layers  (sa)
+                        OR list[ [B, n_heads, 1, N_patches]     ] × n_layers  (ca)
     'feature_map'        : [B, gh, gw, d_model]   <- projected fmap (vis 용)
     'patch_grid_size'    : [gh, gw]               <- e.g. [16, 16]
 
@@ -23,6 +25,11 @@ PE mode (cfg.pe_mode):
     'learnable'   : learnable absolute PE [1, 1+n_patches, d_model] — CLS 포함
     'sinusoidal'  : fixed 2-D sinusoidal PE (default) — not updated by optimizer
     False / None : PE 없음 — content-only attention
+
+token_attention_mode (cfg.token_attention_mode):
+    'sa'  : Self-Attention — CLS prepend → full sequence SA (default, existing behaviour)
+    'ca'  : Cross-Attention — Q = CLS (GAP-initialised per sample), K/V = encoded_patches
+            attention_weights shape: [B, n_heads, 1, N_patches]
 """
 from __future__ import annotations
 
@@ -93,11 +100,15 @@ def _build_2d_sinusoidal_pe(seq_len: int, d_model: int) -> np.ndarray:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 1. TransformerEncoderBlock  (always returns attention scores)
+# 1-A. TransformerEncoderBlock  (SA mode — unchanged)
 # ──────────────────────────────────────────────────────────────────────────────
 @keras.saving.register_keras_serializable(package="hcc")
 class TransformerEncoderBlock(layers.Layer):
-    """Pre-LN Transformer block.  Always collects attention weights."""
+    """Pre-LN Transformer block.  Always collects attention weights.
+
+    attention_weights shape: [B, n_heads, seq_len, seq_len]
+    Used in SA mode.
+    """
 
     def __init__(
         self,
@@ -159,6 +170,109 @@ class TransformerEncoderBlock(layers.Layer):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 1-B. CrossAttentionEncoderBlock  (CA mode — NEW)
+# ──────────────────────────────────────────────────────────────────────────────
+@keras.saving.register_keras_serializable(package="hcc")
+class CrossAttentionEncoderBlock(layers.Layer):
+    """Pre-LN Cross-Attention block.
+
+    Architecture
+    ------------
+    Given sequence x [B, 1+N, d_model] (CLS prepended):
+      CLS token  : query  [B, 1, d_model]   ← x[:, 0:1, :]
+      Patches    : key/value [B, N, d_model] ← x[:, 1:, :]
+
+    Cross-attention:
+      Q = LN(cls_token)
+      K = V = LN(patch_tokens)
+      → MHA(Q, K, V)  → attn_scores [B, n_heads, 1, N_patches]
+
+    CLS update (residual):
+      cls_out = cls_token + drop(attn_out)
+      cls_out = cls_out + FFN(LN(cls_out))
+
+    Patch tokens pass through unchanged (no SA on patches).
+    Output x_out = concat([cls_out, patches], axis=1)  [B, 1+N, d_model]
+
+    attention_weights shape: [B, n_heads, 1, N_patches]
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        mlp_dim: int,
+        dropout: float = 0.1,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.embed_dim = int(embed_dim)
+        self.num_heads = int(num_heads)
+        self.mlp_dim   = int(mlp_dim)
+        self.dropout   = float(dropout)
+
+        self.norm_q  = layers.LayerNormalization(epsilon=1e-6, name="norm_q")
+        self.norm_kv = layers.LayerNormalization(epsilon=1e-6, name="norm_kv")
+        self.cross_attn = layers.MultiHeadAttention(
+            num_heads=num_heads,
+            key_dim=max(1, embed_dim // num_heads),
+            dropout=dropout,
+            name="cross_mha",
+        )
+        self.drop1 = layers.Dropout(dropout, name="drop_attn")
+        self.norm2 = layers.LayerNormalization(epsilon=1e-6, name="norm_ffn")
+        self.mlp   = keras.Sequential(
+            [
+                layers.Dense(mlp_dim, activation="gelu"),
+                layers.Dropout(dropout),
+                layers.Dense(embed_dim),
+                layers.Dropout(dropout),
+            ],
+            name="ffn",
+        )
+
+    def call(
+        self,
+        x: tf.Tensor,            # [B, 1+N, d_model]
+        training: bool = False,
+        return_attention: bool = True,
+    ):
+        cls_token = x[:, 0:1, :]    # [B, 1, d_model]
+        patches   = x[:, 1:,  :]    # [B, N, d_model]
+
+        q  = self.norm_q(cls_token)   # [B, 1, d_model]
+        kv = self.norm_kv(patches)    # [B, N, d_model]
+
+        # MHA: Q=[B,1,d], K=V=[B,N,d] → out=[B,1,d], scores=[B,H,1,N]
+        attn_out, attn_scores = self.cross_attn(
+            query=q,
+            value=kv,
+            key=kv,
+            return_attention_scores=True,
+            training=training,
+        )
+        cls_updated = cls_token + self.drop1(attn_out, training=training)
+        cls_updated = cls_updated + self.mlp(self.norm2(cls_updated), training=training)
+
+        # patches unchanged; reassemble full sequence
+        x_out = tf.concat([cls_updated, patches], axis=1)  # [B, 1+N, d_model]
+
+        if return_attention:
+            return x_out, attn_scores  # attn_scores: [B, H, 1, N]
+        return x_out
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg.update(
+            embed_dim=self.embed_dim,
+            num_heads=self.num_heads,
+            mlp_dim=self.mlp_dim,
+            dropout=self.dropout,
+        )
+        return cfg
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 2. ConvPatchEmbedding  — CNN → proj → flatten → CLS prepend → PE → Transformer
 # ──────────────────────────────────────────────────────────────────────────────
 @keras.saving.register_keras_serializable(package="hcc")
@@ -170,12 +284,18 @@ class ConvPatchEmbedding(layers.Layer):
       2. flatten patches                    [B, N, d_model]
       3. prepend CLS token                  [B, 1+N, d_model]
       4. add PE (mode-dependent)            [B, 1+N, d_model]  ← PE after CLS concat
-      5. → TransformerEncoderBlock(s)
+      5. → TransformerEncoderBlock(s) [SA]  OR  CrossAttentionEncoderBlock(s) [CA]
 
     pe_mode:
       'learnable'  — learnable abs PE over full seq (CLS + patches); CLS slot init zeros
       'sinusoidal' — fixed 2-D sinusoidal PE; CLS slot = 0; non-trainable (default)
       False/None   — no PE; content-only attention
+
+    token_attention_mode:
+      'sa' — self-attention (default); CLS is learnable parameter prepended to patches
+      'ca' — cross-attention; CLS token is initialised from GAP of projected patches
+             (per-sample dynamic initialisation inside call())
+             Learnable CLS weight is NOT used in CA mode (it is initialised but bypassed).
     """
 
     BACKBONE_MAP = {
@@ -196,16 +316,18 @@ class ConvPatchEmbedding(layers.Layer):
         imagenet_pretrained: bool = True,
         backbone_trainable: bool = False,
         pe_mode: str | bool | None = "sinusoidal",
+        token_attention_mode: str = "sa",
         # legacy compat — ignored internally; use pe_mode
         use_sinusoidal_pe: bool = True,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.backbone_name       = backbone_name
-        self.d_model             = int(d_model)
-        self.n_patches           = int(n_patches)
-        self.imagenet_pretrained = bool(imagenet_pretrained)
-        self.backbone_trainable  = bool(backbone_trainable)
+        self.backbone_name          = backbone_name
+        self.d_model                = int(d_model)
+        self.n_patches              = int(n_patches)
+        self.imagenet_pretrained    = bool(imagenet_pretrained)
+        self.backbone_trainable     = bool(backbone_trainable)
+        self.token_attention_mode   = str(token_attention_mode).lower()   # 'sa' | 'ca'
         # normalise pe_mode
         if pe_mode is None or pe_mode is False or pe_mode == "none":
             self.pe_mode: str | bool = False
@@ -235,11 +357,11 @@ class ConvPatchEmbedding(layers.Layer):
     def build(self, input_shape):
         seq_len = 1 + self.n_patches  # CLS + patches
 
-        # CLS token  [1, 1, d_model]
+        # CLS token  [1, 1, d_model]  — always built; bypassed in CA mode at call time
         self.cls_token = self.add_weight(
             shape=(1, 1, self.d_model),
             initializer=keras.initializers.TruncatedNormal(stddev=0.02),
-            trainable=True,
+            trainable=(self.token_attention_mode == "sa"),  # frozen in CA mode
             name="cls_token",
         )
 
@@ -287,11 +409,18 @@ class ConvPatchEmbedding(layers.Layer):
         # 1. flatten patches  [B, N, d_model]
         patches = tf.reshape(fmap, [B, N, self.d_model])
 
-        # 2. prepend CLS  [B, 1+N, d_model]
-        cls    = tf.cast(tf.tile(self.cls_token, [B, 1, 1]), patches.dtype)
+        # 2. CLS token initialisation
+        if self.token_attention_mode == "ca":
+            # CA mode: per-sample GAP of projected patches → [B, 1, d_model]
+            cls = tf.reduce_mean(patches, axis=1, keepdims=True)   # [B, 1, d_model]
+        else:
+            # SA mode: learnable CLS token (tiled across batch)
+            cls = tf.cast(tf.tile(self.cls_token, [B, 1, 1]), patches.dtype)
+
+        # 3. prepend CLS  [B, 1+N, d_model]
         tokens = tf.concat([cls, patches], axis=1)
 
-        # 3. add PE over full sequence (CLS + patches)
+        # 4. add PE over full sequence (CLS + patches)
         if self.pos_embed is not None:
             tokens = tokens + tf.cast(self.pos_embed, tokens.dtype)
 
@@ -306,6 +435,7 @@ class ConvPatchEmbedding(layers.Layer):
             imagenet_pretrained=self.imagenet_pretrained,
             backbone_trainable=self.backbone_trainable,
             pe_mode=self.pe_mode if self.pe_mode else False,
+            token_attention_mode=self.token_attention_mode,
             use_sinusoidal_pe=self.use_sinusoidal_pe,
         )
         return cfg
@@ -323,15 +453,21 @@ class ConvHybridViTBackbone(keras.Model):
         'learnable'             — learnable abs PE over full seq
         False / None             — no PE
 
+    token_attention_mode (cfg.token_attention_mode):
+        'sa'  (default) — Self-Attention; full sequence [CLS+patches]; attn [B,H,seq,seq]
+        'ca'            — Cross-Attention; Q=CLS(GAP), K/V=patches; attn [B,H,1,N_patches]
+
     Output dict
     -----------
     'embedding'          : [B, d_model]
     'patch_tokens'       : [B, n_patches, d_model]
     'encoded_patches'    : [B, seq_len, d_model]
-    'attention_weights'  : list of [B, n_heads, seq_len, seq_len]
+    'attention_weights'  : list of [B, n_heads, seq_len, seq_len]  (sa mode)
+                        OR list of [B, n_heads, 1, N_patches]       (ca mode)
     'feature_map'        : [B, gh, gw, d_model]
     'patch_grid_size'    : [gh, gw]
     'gap_vector'         : alias for 'embedding'
+    'token_attention_mode': str — 'sa' or 'ca' (for downstream branching)
     """
 
     def __init__(
@@ -347,6 +483,7 @@ class ConvHybridViTBackbone(keras.Model):
         imagenet_pretrained: bool = True,
         backbone_trainable: bool = False,
         pe_mode: str | bool | None = "sinusoidal",
+        token_attention_mode: str = "sa",
         # legacy compat
         use_sinusoidal_pe: bool = True,
         patch_size: int = 24,
@@ -370,7 +507,8 @@ class ConvHybridViTBackbone(keras.Model):
         self.imagenet_pretrained = bool(imagenet_pretrained)
         self.backbone_trainable  = bool(backbone_trainable)
         self.pool_mode           = pool_mode
-        # normalise
+        self._token_attn_mode    = str(token_attention_mode).lower()  # 'sa' | 'ca'
+        # normalise pe_mode
         if pe_mode is None or pe_mode is False or pe_mode == "none":
             self.pe_mode: str | bool = False
         else:
@@ -384,20 +522,40 @@ class ConvHybridViTBackbone(keras.Model):
             imagenet_pretrained=imagenet_pretrained,
             backbone_trainable=backbone_trainable,
             pe_mode=pe_mode,
+            token_attention_mode=token_attention_mode,
             use_sinusoidal_pe=use_sinusoidal_pe,
             name="patch_embed",
         )
-        self.blocks = [
-            TransformerEncoderBlock(
-                embed_dim=d_model,
-                num_heads=num_heads,
-                mlp_dim=mlp_dim,
-                dropout=dropout,
-                name=f"block_{i}",
-            )
-            for i in range(depth)
-        ]
+
+        # ── Block selection: SA vs CA ────────────────────────────────────────
+        if self._token_attn_mode == "ca":
+            self.blocks = [
+                CrossAttentionEncoderBlock(
+                    embed_dim=d_model,
+                    num_heads=num_heads,
+                    mlp_dim=mlp_dim,
+                    dropout=dropout,
+                    name=f"ca_block_{i}",
+                )
+                for i in range(depth)
+            ]
+        else:
+            self.blocks = [
+                TransformerEncoderBlock(
+                    embed_dim=d_model,
+                    num_heads=num_heads,
+                    mlp_dim=mlp_dim,
+                    dropout=dropout,
+                    name=f"block_{i}",
+                )
+                for i in range(depth)
+            ]
         self.norm = layers.LayerNormalization(epsilon=1e-6, name="norm")
+
+    # ── Property to expose mode externally ────────────────────────────────────
+    @property
+    def token_attention_mode(self) -> str:
+        return self._token_attn_mode
 
     def call(
         self,
@@ -412,6 +570,9 @@ class ConvHybridViTBackbone(keras.Model):
         for block in self.blocks:
             y, attn = block(y, training=training, return_attention=True)
             attn_all.append(attn)
+            # attn shape:
+            #   SA mode: [B, n_heads, seq_len, seq_len]
+            #   CA mode: [B, n_heads, 1, N_patches]
 
         y = self.norm(y)
 
@@ -429,6 +590,7 @@ class ConvHybridViTBackbone(keras.Model):
             "last_encoder_layer_attentional_weights": attn_all[-1] if attn_all else None,
             "feature_map"       : fmap,
             "patch_grid_size"   : tf.stack([gh, gw]),
+            "token_attention_mode": self._token_attn_mode,
         }
 
     def get_config(self):
@@ -444,6 +606,7 @@ class ConvHybridViTBackbone(keras.Model):
             imagenet_pretrained=self.imagenet_pretrained,
             backbone_trainable=self.backbone_trainable,
             pe_mode=self.pe_mode if self.pe_mode else False,
+            token_attention_mode=self._token_attn_mode,
             use_sinusoidal_pe=self.use_sinusoidal_pe,
             pool_mode=self.pool_mode,
         )
@@ -465,6 +628,7 @@ def build_conv_hybrid_vit(
     imagenet_pretrained: bool = True,
     backbone_trainable: bool = False,
     pe_mode: str | bool | None = "sinusoidal",
+    token_attention_mode: str = "sa",
     # legacy compat
     use_sinusoidal_pe: bool = True,
     pool_mode: str = "cls",
@@ -476,6 +640,23 @@ def build_conv_hybrid_vit(
     'sinusoidal'  — fixed 2-D sinusoidal PE (default; recommended for ablation)
     'learnable'   — fully trainable absolute PE over CLS + patch tokens
     False          — no PE (content-only attention baseline)
+
+    token_attention_mode options
+    ----------------------------
+    'sa'  (default) — Self-Attention over full sequence [CLS + patches]
+                      attention_weights: [B, n_heads, seq_len, seq_len]
+    'ca'            — Cross-Attention; Q=CLS (GAP-initialised per sample),
+                      K/V=encoded_patches
+                      attention_weights: [B, n_heads, 1, N_patches]
+
+    Typical notebook usage
+    ----------------------
+    # In cfg cell:
+    #   cfg.token_attention_mode = 'sa'  # or 'ca'
+    encoder = build_conv_hybrid_vit(
+        ...
+        token_attention_mode=cfg.token_attention_mode,
+    )
     """
     model = ConvHybridViTBackbone(
         input_shape=input_shape,
@@ -489,6 +670,7 @@ def build_conv_hybrid_vit(
         imagenet_pretrained=imagenet_pretrained,
         backbone_trainable=backbone_trainable,
         pe_mode=pe_mode,
+        token_attention_mode=token_attention_mode,
         use_sinusoidal_pe=use_sinusoidal_pe,
         pool_mode=pool_mode,
     )
@@ -502,8 +684,19 @@ def build_conv_hybrid_vit(
         f"[ConvHybridViT] backbone={backbone_name}  "
         f"input={input_shape}  fmap={gh}×{gw}  n_patch={n_patch}  "
         f"seq_len=1+{n_patch}={1+n_patch}  d_model={d_model}  "
-        f"depth={depth}  n_heads={num_heads}  PE={pe_label}"
+        f"depth={depth}  n_heads={num_heads}  PE={pe_label}  "
+        f"attn_mode={token_attention_mode.upper()}"
     )
+    if token_attention_mode == "ca":
+        print(
+            f"[ConvHybridViT] CA mode: attn_weights shape per layer = "
+            f"[B, {num_heads}, 1, {n_patch}]"
+        )
+    else:
+        print(
+            f"[ConvHybridViT] SA mode: attn_weights shape per layer = "
+            f"[B, {num_heads}, {1+n_patch}, {1+n_patch}]"
+        )
     print(
         f"[ConvHybridViT] total_params={model.count_params():,}  "
         f"trainable={sum(tf.size(v).numpy() for v in model.trainable_variables):,}"
