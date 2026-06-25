@@ -43,6 +43,7 @@ from typing import Literal, Optional
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from PIL import Image as _PIL_Image
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -232,11 +233,17 @@ def _apply_dark_ax(ax: plt.Axes) -> None:
 
 
 def _fig_to_wandb_image(fig: plt.Figure, caption: str = "") -> "_wandb.Image":
+    """Convert matplotlib Figure -> wandb.Image via PIL (BytesIO path fix).
+
+    wandb >= 0.16 expects a file path, PIL.Image, or np.ndarray.
+    Passing a raw BytesIO causes AttributeError: '_io.BytesIO' has no 'ndim'.
+    """
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=150, bbox_inches="tight",
                 facecolor=fig.get_facecolor())
     buf.seek(0)
-    return _wandb.Image(buf, caption=caption)
+    pil_img = _PIL_Image.open(buf).copy()   # copy() detaches from closed buf
+    return _wandb.Image(pil_img, caption=caption)
 
 
 def plot_roc_curves(
