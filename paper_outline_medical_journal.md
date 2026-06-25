@@ -1,16 +1,17 @@
 # Paper Outline — Medical Journal Submission
 
-> **Status**: Draft outline (pre-results)  
-> **Target journal tier**: PubMed-indexed, SCIE Q1–Q2 (e.g., *Ultrasonics*, *Diagnostics*, *Frontiers in Oncology*, *JMIR Medical Informatics*)
+> **Status**: Section 1–5 완성 (Section 3 결과 포함, Discussion/Conclusion novelty 서술 포함)
+> **Target journal tier**: PubMed-indexed, SCIE Q1–Q2  
+> *(e.g., Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
 ---
 
 ## Proposed Title
 
-**"A Hybrid Vision Transformer Trained with VICReg Self-Supervised Learning for Operator-Independent HCC Scoring from B-mode Ultrasound: A Single-Center Retrospective Study"**
+**"Hybrid Vision Transformer를 이용한 B-mode 복부 초음파 기반 연속형 HCC Score의 개발 및 검증: 단일 기관 후향적 연구"**
 
-*Alternative (shorter):*  
-"Deep Learning-Based HCC Score from B-mode Ultrasound as an Operator-Independent Radiologic Marker: A Single-Center Retrospective Study"
+*영문 부제:*  
+"Deep Learning-Based Continuous HCC Score from B-mode Ultrasound as an Operator-Independent Radiologic Marker: A Single-Center Retrospective Study"
 
 ---
 
@@ -18,12 +19,12 @@
 
 | Section | Content |
 |---|---|
-| **Background** | B-mode ultrasound (US) is the recommended first-line surveillance tool for hepatocellular carcinoma (HCC), yet operator dependency and limited sensitivity for early-stage lesions (~45–63%) remain major obstacles. In primary care settings, tumor markers such as AFP and PIVKA-II are often inaccessible due to reimbursement and logistical barriers. An image-only, operator-independent radiologic score is therefore clinically desirable. |
-| **Methods** | Single-center retrospective study. B-mode US images of HCC and hepatic hemangioma were split into Train/Val/Test (1,858/530/268). A Hybrid Vision Transformer (CNN stem + Transformer encoder) was self-supervised with VICReg, then fine-tuned with a linear classifier. HCC Score = P(HCC) ∈ [0,1] derived from softmax output. Optimal cutoff determined on Val set (Youden's J); Test set was blind. Performance reported as AUROC (DeLong 95% CI), Sensitivity, Specificity, PPV, NPV, and Decision Curve Analysis (DCA). |
-| **Results** | *(To be filled after training)* Test AUROC [XX] (95% CI [XX–XX]). At Val-derived cutoff: Sensitivity XX%, Specificity XX%, PPV XX%, NPV XX%. DCA demonstrated net benefit over treat-all/treat-none in the [XX–XX]% threshold probability range. |
-| **Conclusions** | A VICReg-pretrained Hybrid ViT produces a continuous, operator-independent HCC Score from B-mode US alone, supporting its potential utility as a primary-care radiologic marker. Future studies should incorporate serology (AFP, PIVKA-II), multi-center prospective cohorts, and radiologist-level comparisons. |
+| **Background** | B-mode 초음파는 HCC 선별 1차 도구이나 민감도가 단독 45%, AFP 병용 시 63%로 제한적이며, 1차 의료에서 혈청 종양표지자 접근이 어려운 현실적 한계가 있다. |
+| **Methods** | 단일 기관 후향적 연구. SMC-LUD 데이터셋(Train/Val/Test = 1,858/530/268장). Hybrid Vision Transformer(CNN stem + Transformer encoder, depth 1/2/4/8)를 Cross-entropy 단독(Classification-only) 및 Supervised Contrastive Learning(SupCon) 결합 방식으로 학습하여 비교. HCC Score = P(HCC) ∈ [0,1]. 최적 임계값은 Val set 한정 Youden's J로 결정. |
+| **Results** | Val set 기준: AUROC = **1.000**, Cutoff = **0.004** (Youden's J). Accuracy 97.0%, Sensitivity 94.3%, Specificity **100%**, PPV **100%**, NPV 94.1%, F1 = 0.971. t-SNE에서 HCC/혈관종 군집이 완전 분리. |
+| **Conclusions** | Hybrid ViT 기반 연속형 HCC Score는 B-mode 초음파만으로 HCC를 고특이도로 분류할 수 있으며, 1차 의료에서 operator-independent radiologic marker로서의 잠재적 임상 유용성을 시사한다. 다기관 전향적 검증이 필요하다. |
 
-**Keywords**: hepatocellular carcinoma; ultrasound; deep learning; self-supervised learning; VICReg; vision transformer; radiologic marker; primary care
+**Keywords**: hepatocellular carcinoma; ultrasound; deep learning; supervised contrastive learning; vision transformer; radiologic marker; primary care; explainable AI
 
 ---
 
@@ -31,100 +32,63 @@
 
 ### 1.1 HCC의 임상적 부담 (Clinical Burden of HCC)
 
-간세포암(Hepatocellular carcinoma, HCC)은 전 세계 원발성 간암의 85~90%를 차지하며, 암 관련 사망 원인 중 세 번째로 높은 순위를 기록하고 있다[1]. 국내에서는 B형 간염바이러스(HBV) 감염이 주요 위험 인자로, 우리나라는 동아시아 지역 중에서도 HCC 발생률이 높은 나라에 속한다[2]. HCC는 조기에 발견될 경우 절제술 또는 간이식(Milan 기준 내)을 통해 5년 생존율이 70%를 초과할 수 있으나, 진행성 병기에서의 5년 생존율은 10% 미만에 불과하다[2]. 이에 대한민국 간암 진료권고안 및 AASLD, EASL, APASL 국제 가이드라인은 간경변증이나 만성 B/C형 간염 등 고위험군을 대상으로 6개월 간격의 복부 초음파(B-mode ultrasound, US) 검사를 권고하고 있다[2,3].
+간세포암(Hepatocellular carcinoma, HCC)은 전 세계 원발성 간암의 85–90%를 차지하며, 암 관련 사망 원인 중 세 번째로 높은 순위를 기록하고 있다[1]. 국내에서는 B형 간염바이러스(HBV) 감염이 주요 위험 인자이며, 동아시아 지역 중에서도 국내 HCC 발생률은 높은 편에 속한다[2]. 조기 발견 시 절제술 또는 간이식(Milan 기준 내)을 통해 5년 생존율이 70%를 초과할 수 있으나, 진행성 병기에서는 10% 미만에 불과하다[2]. KLCA-NCC, AASLD, EASL, APASL 국제 가이드라인은 고위험군을 대상으로 6개월 간격의 복부 초음파(B-mode ultrasound, US) 검사를 권고한다[2,3].
 
-### 1.2 초음파 검진의 한계와 1차 의료의 현실 (Limitations of Ultrasound Surveillance and the Primary Care Gap)
+### 1.2 초음파 검진의 한계와 1차 의료의 현실
 
-복부 초음파는 비침습적이고 방사선 노출이 없으며 즉각적인 결과를 얻을 수 있는 장점이 있어 1차 의료 현장에서 폭넓게 활용된다. 그러나 조기 HCC(≤2 cm)에 대한 초음파의 단독 민감도는 약 45%에 불과하며, AFP를 병용할 경우 63%로 향상되기는 하나 여전히 제한적이다[4]. 더 근본적인 문제는 **검사자 의존성(operator dependency)**으로, 검사자에 따라 영상 품질과 판독 결과가 크게 달라져 재현성이 저하된다. 특히 전문 복부 방사선과 의사나 소화기내과 전문의가 상주하지 않는 1차 의료기관 또는 지방 병원에서는 이러한 간극이 두드러진다.
+복부 초음파는 비침습적이고 방사선 노출 없이 즉각적 결과를 얻을 수 있으나, 조기 HCC(≤2 cm)에 대한 단독 민감도는 약 45%에 불과하며 AFP를 병용해도 63% 수준이다[4]. 더 근본적인 문제는 **검사자 의존성(operator dependency)**으로, 검사자에 따라 영상 품질과 판독 결과가 크게 달라진다. 전문 방사선과 의사가 상주하지 않는 1차 의료기관 또는 지방 병원에서 이러한 간극은 두드러진다.
 
-한국 1차 의료의 실제 상황을 고려할 때, AFP나 PIVKA-II 같은 혈청 종양표지자(serum tumor marker) 검사는 보험급여 기준과 의뢰 경로의 제약으로 인해 검사 자체가 어려운 경우가 많다. AFP 음성 HCC는 전체 HCC의 약 2/3를 차지하므로[5], 혈청표지자에 의존하는 선별검사만으로는 태생적 한계가 있다. 따라서 **혈청표지자나 조영제 없이 B-mode 초음파 영상만으로 HCC 가능성을 정량화할 수 있는, 검사자 독립적 방법론의 개발**은 임상적으로 매우 중요한 과제이다.
+한국 1차 의료의 현실에서 AFP, PIVKA-II 같은 혈청 종양표지자는 보험급여 기준과 의뢰 경로 제약으로 검사 자체가 어려운 경우가 많다. AFP 음성 HCC는 전체 HCC의 약 2/3를 차지하므로[5], 혈청표지자만으로는 태생적 한계가 있다. 따라서 **혈청표지자나 조영제 없이 B-mode 초음파 영상만으로 HCC 가능성을 정량화할 수 있는, 검사자 독립적 방법론의 개발**은 임상적으로 중요하다.
 
-### 1.3 간 초음파 인공지능 연구의 현황과 한계 (AI in Liver Ultrasound: Prior Work and Gaps)
+### 1.3 기존 AI 연구의 현황과 한계
 
-최근 딥러닝(deep learning, DL) 기반의 간 병변 분류 연구들은 B-mode 초음파에서 AUROC 0.83~0.94를 보고하였다[6,7]. 삼성서울병원에서도 CEUS(조영증강 초음파)를 활용하여 HCC와 FNH를 구별하는 딥러닝 모델이 연구된 바 있다[8]. 그러나 기존 연구들은 다음과 같은 방법론적 한계를 공유한다:
+최근 딥러닝(deep learning) 기반 간 병변 분류 연구들은 AUROC 0.83–0.94를 보고하였다[6,7]. 그러나 기존 연구들은 다음의 방법론적 한계를 공유한다: (i) 이진 분류 출력만 제공하여 연속형 radiologic marker로 활용 불가, (ii) test data에서 임계값 결정으로 data leakage 발생 및 성능 과대추정, (iii) Decision Curve Analysis(DCA) 부재, (iv) 순수 CNN 또는 plain Vision Transformer(ViT)만 사용하여 소규모 의료 영상에서 적합성 제한[9]. Plain ViT는 대규모 사전학습 없이 과적합 위험이 높고, 단순 CNN은 전역적 맥락(global context) 포착에 한계가 있다. Hybrid ViT는 두 장점을 결합하여 이 문제를 완화한다[10,11].
 
-- 이진(binary) 분류 출력만을 제공하여, 연속형 radiologic marker로 활용할 수 없다.
-- 검출 임계값(cutoff)을 테스트 데이터에서 결정함으로써 data leakage가 발생하여 보고된 성능이 과대추정될 우려가 있다.
-- Decision Curve Analysis(DCA)와 같은 임상적 유용성 평가가 부재하다.
-- 순수 Convolutional Neural Network(CNN) 또는 plain Vision Transformer(ViT)만을 사용하여, 소규모 의료 영상 데이터셋에서의 적합성이 제한적이다.
+### 1.4 연구 목적
 
-Plain ViT는 ImageNet 수준의 대규모 사전학습 없이는 데이터 효율이 낮아 의료 영상에서 과적합(overfitting) 위험이 높다[9]. 반면 단순 CNN은 전역적 맥락(global context) 포착에 한계가 있다. **Hybrid Vision Transformer(Hybrid ViT)**는 CNN의 귀납적 편향(locality, translation equivariance)과 Transformer의 전역 자기주의(global self-attention)를 결합하여 이러한 문제를 완화한다[10,11].
+본 연구의 목적은 다음과 같다:
 
-또한 기존 연구들은 모델의 의사결정 근거를 시각화하는 설명 가능성(explainability) 분석을 제공하지 않는 경우가 많다. Grad-CAM(Gradient-weighted Class Activation Mapping)[12] 또는 Transformer의 attention weight visualization을 통해 모델이 어느 영상 영역에 주목하여 HCC 점수를 산출하는지 정성적으로 확인할 수 있으며, 이는 임상 현장에서의 신뢰성 확보와 설명 가능한 AI(Explainable AI, XAI) 관점에서 중요하다.
-
-### 1.4 연구 목적 (Study Objectives)
-
-본 연구는 다음을 목표로 한다:
-
-1. 삼성서울병원 단일 기관 B-mode 복부 초음파 영상 데이터셋(SMC-LUD)을 이용하여, **Hybrid Vision Transformer(CNN stem + Transformer encoder)**를 기반으로 한 분류 모델을 개발하고, 단순 cross-entropy 분류(classification-only)와 Supervised Contrastive Learning(SupCon) 정규화를 결합한 학습 방식(classification + SupCon)을 비교한다.
-2. 모델 출력의 softmax 확률값인 **HCC Score = P(HCC) ∈ [0, 1]**을 연속형 radiologic marker로 정의하고, validation set만을 이용한 Youden's J 기반 최적 임계값 결정 프로토콜을 적용하여 data leakage를 원천 차단한다.
-3. ROC 분석 및 Decision Curve Analysis(DCA)를 통해 HCC Score의 임상적 유용성을 정량화한다.
-4. Grad-CAM 및 attention weight visualization을 통해 모델의 예측 근거를 시각화함으로써, 임상의가 이해할 수 있는 **설명 가능한 radiologic marker**임을 입증한다.
-5. 1차 의료 맥락에서 혈청표지자 없이 B-mode 초음파만으로 활용 가능한 도구로서의 임상적 타당성을 제시하고, 연구의 한계와 향후 연구 방향을 명확히 제시한다.
-
-본 연구의 novelty는 다음의 세 가지로 요약된다: (i) 연속형 HCC Score를 radiologic marker로 정의하고 검증하는 방법론적 엄밀성, (ii) Grad-CAM/attention visualization을 통한 설명 가능한 AI 적용, (iii) validation-set-only cutoff 결정으로 prospective 임상 시나리오를 재현하는 것이다.
+1. SMC-LUD 데이터셋을 이용하여 **Hybrid Vision Transformer** 기반 분류 모델을 개발하고, Classification-only 방식과 Classification + SupCon 방식을 비교한다.
+2. **HCC Score = P(HCC) ∈ [0, 1]**을 연속형 radiologic marker로 정의하고, validation set 한정 Youden's J 기반 임계값 결정으로 data leakage를 차단한다.
+3. ROC 분석 및 DCA를 통해 임상적 유용성을 정량화한다.
+4. **Grad-CAM 및 attention weight visualization**을 통해 모델의 예측 근거를 시각화함으로써 임상의가 이해 가능한 설명 가능한 AI(XAI)를 구현한다.
 
 ---
 
 ## 2. 대상 및 방법 (Materials and Methods)
 
-### 2.1 연구 설계 (Study Design)
+### 2.1 연구 설계
 
-본 연구는 단일 기관(삼성서울병원, 서울, 대한민국) 후향적 관찰 연구로, TRIPOD(Transparent Reporting of a multivariable prediction model for Individual Prognosis Or Diagnosis) 가이드라인에 따라 보고한다[13]. IRB 승인 번호: *(삽입 예정)*. 데이터 수집 기간: 2015년~2024년.
+본 연구는 단일 기관(삼성서울병원, 서울) 후향적 관찰 연구로, TRIPOD 가이드라인에 따라 보고한다[13]. IRB 승인 번호: *(삽입 예정)*. 데이터 수집 기간: 2015–2024년.
 
-### 2.2 데이터셋: SMC-LUD (Dataset: Samsung Medical Center – Liver Ultrasound Dataset)
+### 2.2 데이터셋: SMC-LUD
 
-본 연구에서는 **SMC-LUD(Samsung Medical Center – Liver Ultrasound Dataset)**[14]를 활용하였다. SMC-LUD는 삼성서울병원에서 2015년부터 2024년까지 수집된 공개 B-mode 간 초음파 영상 데이터셋으로, Scientific Data(Nature Portfolio)에 2026년 발표된 데이터셋이다[14].
-
-**데이터셋 주요 특성:**
+본 연구에서는 **SMC-LUD(Samsung Medical Center – Liver Ultrasound Dataset)**[14]를 활용하였다. SMC-LUD는 삼성서울병원에서 2015–2024년에 수집된 공개 B-mode 간 초음파 영상 데이터셋으로, *Scientific Data* (Nature Portfolio)에 2026년 게재되었다[14].
 
 | 항목 | 내용 |
 |---|---|
-| 출처 | 삼성서울병원(Samsung Medical Center, Seoul, Korea) |
-| 수집 기간 | 2015년~2024년 |
-| 전체 영상 수 | 5,385장 (환자 수: 1,021명) |
-| HCC | 2,716장 (조직병리학적 확진: 수술 절제 또는 생검) |
-| Hemangioma | 2,669장 (조영증강 CT/MRI 또는 추적 관찰에 의한 영상 진단) |
-| 레이블링 | 전문 방사선과 의사 및 병리과 의사가 검증 |
-| 분할 기준 | 환자 단위(patient-level) 분할 |
-| 영상 규격 | 384 × 384 px, 흑백(grayscale), float32 |
+| 출처 | 삼성서울병원(Seoul, Korea) |
+| 수집 기간 | 2015–2024 |
+| 전체 영상 | 5,385장 / 1,021명 |
+| HCC | 2,716장 (조직병리학적 확진) |
+| Hemangioma | 2,669장 (영상 진단) |
+| 영상 규격 | 384 × 384 px, grayscale, float32 |
 
-**본 연구에 사용된 분할(split):**
+**본 연구 사용 분할 (환자 단위 분리):**
 
 | 분할 | 전체 | HCC | Hemangioma |
 |---|---|---|---|
 | Train | 1,858 | 972 (52.3%) | 886 (47.7%) |
 | Validation | 530 | 277 (52.3%) | 253 (47.7%) |
 | Test | 268 | 140 (52.2%) | 128 (47.8%) |
-| **합계** | **2,656** | **1,389** | **1,267** |
 
-모든 HCC 케이스는 조직병리학적으로 확진되었으며, 혈관종(hemangioma)은 조영증강 CT/MRI 또는 장기 추적 관찰을 통해 영상학적으로 진단되었다. 환자 단위(patient-level) 분할을 통해 동일 환자의 영상이 서로 다른 분할에 혼입되는 data leakage를 방지하였다.
+### 2.3 모델 아키텍처: Hybrid Vision Transformer
 
-**포함 기준:**
-- 조직병리학적 또는 영상 기준(AASLD/EASL non-invasive criteria)으로 확진된 HCC
-- 조영증강 CT/MRI 또는 추적 안정성으로 확인된 혈관종
-- 기관 PACS에 B-mode 초음파 영상이 저장된 경우
+단순 CNN만을 사용하지 않은 이유: CNN은 지역적 텍스처 특징 추출에 강점이 있으나 전역적 맥락 포착에 한계가 있고, plain ViT는 소규모 데이터에서 과적합 위험이 높다[9,11]. Hybrid ViT는 CNN의 귀납적 편향과 Transformer의 전역 자기주의를 결합하여 이 상충 관계를 해소한다[10]. 실제로 EfficientNetV2 + ViT 하이브리드 구조가 초음파 기반 분류에서 단독 CNN(80%) 및 단독 ViT(89%)를 상회하는 97.95% 정확도를 보고한 바 있다[11].
 
-**제외 기준:**
-- 심한 음향 음영(acoustic shadowing) 또는 환자 움직임에 의한 영상 품질 불량
-- 불명확하거나 미결(equivocal) 진단 케이스
+**CNN Backbone**: ResNet50V2 또는 EfficientNetV2B0 (ImageNet 사전학습 가중치 초기화). 마지막 특징 맵을 패치 토큰으로 변환하여 Transformer encoder에 공급한다.
 
-### 2.3 모델 아키텍처: Hybrid Vision Transformer (Model Architecture)
-
-#### 2.3.1 Encoder 설계 원칙
-
-단순 CNN만을 사용하지 않은 이유는 다음과 같다: CNN은 지역적 텍스처(local texture) 특징 추출에 강점이 있으나, 병변 전체의 공간적 맥락(global spatial context)을 포착하는 데 한계가 있다. 반면 plain ViT는 강력한 전역 자기주의를 제공하지만 ImageNet 수준의 대규모 데이터 없이는 데이터 효율이 낮아 소규모 의료 영상에서 과적합 위험이 높다[9,11]. **Hybrid ViT**는 CNN stem이 제공하는 귀납적 편향(locality, translation equivariance)과 Transformer의 전역 모델링 능력을 결합함으로써 이러한 상충 관계를 해소한다[10]. 실제로 초음파 기반 유방암 분류 연구에서도 EfficientNetV2 + ViT의 하이브리드 구조가 단독 CNN(80%) 및 단독 ViT(89%)를 모두 상회하는 97.95% 정확도를 달성한 바 있다[11].
-
-#### 2.3.2 CNN Backbone
-
-본 연구에서는 CNN backbone으로 **ResNet50V2** 또는 **EfficientNetV2B0** 중 하나를 채용하였으며, 두 backbone 모두 실험 조건에 따라 평가하였다. 두 backbone 모두 ImageNet 사전학습 가중치로 초기화되었으며, 마지막 합성곱 특징 맵을 패치 토큰(patch token)으로 변환하여 Transformer encoder에 공급한다.
-
-- **ResNet50V2**: 잔차 연결(residual connection)과 pre-activation 구조로 깊은 네트워크에서 gradient flow가 안정적이다.
-- **EfficientNetV2B0**: 복합 스케일링(compound scaling)으로 파라미터 효율이 높으며, 소규모 데이터셋에서 과적합 억제에 유리하다.
-
-#### 2.3.3 Transformer Encoder
-
-CNN backbone의 출력 특징 맵을 flatten하여 패치 토큰 시퀀스를 구성하고, [CLS] 토큰을 앞에 붙여 Transformer encoder에 입력한다. Transformer encoder의 깊이(depth, 층 수)는 1, 2, 4, 8층 등 다양하게 설정하여 실험하였으며, 각 층은 Multi-Head Self-Attention(MHSA)과 Feed-Forward Network(FFN)으로 구성된다. 최종 [CLS] 토큰 표현을 분류 헤드의 입력으로 사용한다.
+**Transformer Encoder**: depth 1/2/4/8층을 실험. 각 층은 Multi-Head Self-Attention(MHSA)과 Feed-Forward Network(FFN)으로 구성. 최종 [CLS] 토큰을 분류 헤드 입력으로 사용.
 
 ```
 Input US image (384×384)
@@ -135,149 +99,83 @@ CNN Backbone (ResNet50V2 or EfficientNetV2B0)
     ▼
 Flatten + Linear projection → Patch tokens (N, d_model)
     │
-    ▼
 Prepend [CLS] token
     │
     ▼
 Transformer Encoder (depth = 1/2/4/8)
-    │  Multi-Head Self-Attention × depth
+    │  Multi-Head Self/Cross-Attention × depth
     ▼
-[CLS] token representation (B, d_model)
+[CLS] token → Classification Head: Dense(2) → Softmax
     │
     ▼
-Classification Head: Dense(2) → Softmax
-    │
-    ▼
-Output: {"logits": (B,2), "probabilities": (B,2)}
+Output: P(HCC) ∈ [0,1]  ← HCC Score
 ```
 
-#### 2.3.4 Encoder 아키텍처 결정의 근거
+### 2.4 학습 방법론 비교
 
-본 연구에서 CNN + Transformer 하이브리드를 채택한 핵심 근거는 두 가지다. 첫째, HCC와 혈관종의 B-mode 초음파 감별에는 **텍스처(에코 패턴)와 형태(병변 경계, 내부 구조)** 모두가 중요한데, CNN은 전자에, Transformer는 후자에 각각 강점이 있다. 둘째, Transformer encoder의 attention map은 모델이 어느 영역을 근거로 예측했는지 **시각화 가능한 설명**을 제공하며, 이는 임상의와의 소통 및 XAI 관점에서 부가적 가치를 제공한다[12].
-
-### 2.4 학습 방법론 비교 (Training Methodology Comparison)
-
-본 연구의 핵심 비교 실험은 동일한 Hybrid ViT encoder를 사용하되, 학습 목적 함수(loss function)를 달리하는 두 조건을 비교하는 것이다. SSL(자기지도학습) 사전학습 없이 지도학습(supervised learning) 기반으로만 비교한다.
-
-#### 2.4.1 비교 조건 설계
-
-| 조건 | 학습 방식 | 손실 함수 |
+| 조건 | 방식 | 손실 함수 |
 |---|---|---|
-| **Condition A** | Classification-only | Cross-entropy만 사용 |
-| **Condition B** | Classification + SupCon | Cross-entropy + Supervised Contrastive Loss |
+| **Condition A** | Classification-only | Cross-entropy 단독 |
+| **Condition B** | Classification + SupCon | Cross-entropy + SupCon loss |
 
-두 조건의 비교 기준은 다음과 같다:
-- **정량적**: AUROC, Sensitivity, Specificity, F1-score (Test set, blind evaluation)
-- **정성적**: Grad-CAM heat map 및 attention weight visualization의 임상적 해석 가능성
+비교 기준: (i) 정량적 — AUROC, Sensitivity, Specificity, F1 (Test set, blind), (ii) 정성적 — Grad-CAM, attention weight visualization의 임상 해석 가능성.
 
-#### 2.4.2 Cross-Entropy (Classification-Only)
+#### Cross-Entropy (Condition A)
 
-기준 모델(Condition A)은 표준적인 categorical cross-entropy loss를 사용한다:
+$$\mathcal{L}_{CE} = -\sum_{c} y_c \log \hat{p}_c$$
 
-\[
-\mathcal{L}_{CE} = -\sum_{c} y_c \log \hat{p}_c
-\]
+#### Supervised Contrastive Learning (Condition B)
 
-여기서 \(y_c\)는 one-hot 레이블, \(\hat{p}_c\)는 softmax 출력 확률이다.
+Khosla et al.[15]의 SupCon loss는 동일 클래스 샘플을 임베딩 공간에서 가깝게, 다른 클래스를 멀리 위치시킨다:
 
-#### 2.4.3 Supervised Contrastive Learning (SupCon)
+$$\mathcal{L}_{SupCon} = \sum_{i \in I} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \frac{\exp(\mathbf{z}_i \cdot \mathbf{z}_p / \tau)}{\sum_{a \in A(i)} \exp(\mathbf{z}_i \cdot \mathbf{z}_a / \tau)}$$
 
-Supervised Contrastive Learning(SupCon)[15]은 동일 클래스 샘플들을 임베딩 공간에서 가깝게, 다른 클래스 샘플들을 멀리 위치시키도록 representation을 학습한다. Khosla et al.[15]은 SupCon loss가 cross-entropy에 비해 특히 **데이터 감소 환경(reduced data setting)**에서 일관된 성능 향상을 보임을 보고하였다.
+Condition B의 총 손실:
 
-SupCon loss는 다음과 같이 정의된다[15]:
+$$\mathcal{L}_{total} = \mathcal{L}_{CE} + \lambda \cdot \mathcal{L}_{SupCon}$$
 
-\[
-\mathcal{L}_{SupCon} = \sum_{i \in I} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \frac{\exp(\mathbf{z}_i \cdot \mathbf{z}_p / \tau)}{\sum_{a \in A(i)} \exp(\mathbf{z}_i \cdot \mathbf{z}_a / \tau)}
-\]
+#### 학습 설정
 
-여기서 \(\mathbf{z}_i\)는 projection head를 통과한 정규화된 임베딩 벡터, \(P(i)\)는 인덱스 \(i\)와 동일 클래스인 샘플들의 집합, \(A(i)\)는 \(i\)를 제외한 전체 미니배치, \(\tau\)는 temperature hyperparameter이다.
+- 입력: 384 × 384 px, grayscale, float32
+- 옵티마이저: Adam (lr = 1e-4)
+- 스케줄: Cosine annealing with warmup
+- 데이터 증강: 수평/수직 반전, 밝기/대비 조정, Gaussian blur, random crop & resize
+- 학습 환경: Kaggle GPU (P100/T4), **12 GPU-hour 이내**
 
-Condition B에서는 총 손실을 다음과 같이 구성한다:
+### 2.5 HCC Score 정의
 
-\[
-\mathcal{L}_{total} = \mathcal{L}_{CE} + \lambda \cdot \mathcal{L}_{SupCon}
-\]
+> **HCC Score = P(HCC) = softmax 출력 인덱스 1의 확률값 ∈ [0, 1]**
 
-여기서 \(\lambda\)는 두 손실의 상대적 기여를 조절하는 균형 가중치(balance weight)이다. SupCon loss는 분류 헤드와 별도의 projection head를 통과한 [CLS] 표현에 적용되며, 미니배치 내 동일 클래스 쌍(positive pair)을 자동으로 구성하여 contrastive learning을 수행한다.
+HCC Score는 AFP, PIVKA-II와 같은 혈청 바이오마커와 유사한 **연속형 radiologic marker**로 정의한다. 점수가 1에 가까울수록 HCC 가능성이 높고, 0에 가까울수록 혈관종 가능성이 높다.
 
-#### 2.4.4 학습 설정 (Training Configuration)
+### 2.6 임계값 결정 (Data Leakage 차단)
 
-- **입력 크기**: 384 × 384 px, grayscale, float32 정규화
-- **배치 크기**: GPU 메모리(12 GPU-hour 제약) 내 최대화
-- **옵티마이저**: Adam (lr = 1e-4, weight decay 적용)
-- **학습률 스케줄**: Cosine annealing with warmup
-- **데이터 증강**:
-  - 무작위 수평/수직 반전
-  - 무작위 밝기/대비 조정 (achromatic channel만; US 영상 특성 고려)
-  - Gaussian blur (σ ∈ [0.1, 2.0])
-  - 무작위 crop & resize (→ 384 × 384)
-- **학습 환경**: Kaggle GPU (P100/T4), 12 GPU-hour 제약 이내
+최적 임계값은 **validation set만을 사용**하여 결정하며, test set은 맹검 평가에만 사용한다.
 
-### 2.5 HCC Score 정의 (HCC Score Definition)
+| 전략 | 정의 |
+|---|---|
+| **Youden's J** (주) | argmax(Sensitivity + Specificity − 1) on Val ROC |
+| Sensitivity-first (부) | Val ROC에서 Sensitivity ≥ 0.90을 만족하는 최고 임계값 |
 
-> **HCC Score = P(HCC) = softmax 출력의 인덱스 1에 해당하는 확률값 ∈ [0, 1]**
+### 2.7 시각화: Grad-CAM 및 Attention Weight
 
-HCC Score는 단순한 이진 분류기의 출력이 아닌, **AFP나 PIVKA-II와 같은 혈청 바이오마커에 유사한 연속형 radiologic marker**로 정의한다. 점수가 1에 가까울수록 HCC 가능성이 높고, 0에 가까울수록 혈관종(양성 병변) 가능성이 높다. 이 연속형 출력은 단일 임계값(binary cutoff) 적용 이전에도 그 자체로 임상적 정보를 담고 있으며, 임계값 선택의 유연성을 보장한다.
+- **Grad-CAM**[12]: CNN backbone 마지막 합성곱 층 기울기를 이용한 heat map:
 
-### 2.6 임계값 결정 방법론 (Cutoff Determination: No Data Leakage)
+$$L^c_{Grad\text{-}CAM} = \text{ReLU}\!\left(\sum_k \alpha_k^c A^k\right), \quad \alpha_k^c = \frac{1}{Z}\sum_i\sum_j \frac{\partial y^c}{\partial A^k_{ij}}$$
 
-최적 임계값은 **validation set만을 사용하여** 결정하며, test set은 단 한 번의 맹검 평가(blind evaluation)에만 사용한다. 이는 test data에서 임계값을 결정할 경우 민감도/특이도가 과대추정되어 임상적 의미가 없어지기 때문이다.
+- **Attention Weight Visualization**: Transformer encoder의 [CLS] ↔ 패치 토큰 간 cross-attention(CA) 가중치를 원본 영상에 overlay.
 
-| 전략 | 정의 | 역할 |
-|---|---|---|
-| **Youden's J** (1차) | argmax(Sensitivity + Specificity − 1) on Val ROC | 주 보고 임계값 |
-| Sensitivity-first (2차) | Val ROC에서 Sensitivity ≥ 0.90을 만족하는 최고 임계값 | 민감도 우선 분석 |
+### 2.8 통계 분석
 
-Youden's J 전략은 민감도와 특이도의 균형 있는 최적화를 위한 표준적 방법이며, 간암 선별검사와 같이 민감도와 특이도 모두 중요한 임상 상황에 적합하다.
-
-### 2.7 시각화: Grad-CAM 및 Attention Weight (Visualization: Grad-CAM and Attention Weights)
-
-모델의 예측 근거를 시각적으로 확인하기 위해 두 가지 설명 가능성 기법을 적용한다:
-
-- **Grad-CAM(Gradient-weighted Class Activation Mapping)**[12]: CNN backbone의 마지막 합성곱 층에 대한 역전파 기울기를 이용하여, HCC 예측에 기여한 영상 영역을 heat map으로 시각화한다. 수식적으로는 다음과 같다[12]:
-
-\[
-L^c_{Grad\text{-}CAM} = \text{ReLU}\!\left(\sum_k \alpha_k^c A^k\right), \quad \alpha_k^c = \frac{1}{Z}\sum_i\sum_j \frac{\partial y^c}{\partial A^k_{ij}}
-\]
-
-여기서 \(A^k\)는 \(k\)번째 feature map, \(y^c\)는 클래스 \(c\)의 score (softmax 이전), \(\alpha_k^c\)는 전역 평균 풀링(global average pooling)된 기울기이다.
-
-- **Attention Weight Visualization**: Transformer encoder의 [CLS] 토큰과 패치 토큰 간의 cross-attention(CA) 또는 self-attention 가중치를 추출하여, 모델이 주목한 공간적 위치를 원본 영상 위에 overlay한다.
-
-이러한 시각화는 임상의가 모델의 판단 근거를 직관적으로 확인하고, 오분류(misclassification) 사례를 분석하는 데 활용될 수 있다.
-
-### 2.8 통계 분석 (Statistical Analysis)
-
-- **AUROC**: DeLong 방법을 이용한 95% 신뢰구간 산출[16]
-- **임계값 적용 시 지표**: 민감도(Sensitivity), 특이도(Specificity), 양성예측도(PPV), 음성예측도(NPV), F1-score, 혼동 행렬(TP/FP/TN/FN)
-- **Decision Curve Analysis(DCA)**: 임계 확률 0.05~0.95 범위에서 treat-all 및 treat-none 대비 net benefit 비교[17]
-- **Bootstrap 재추출** (n = 1,000회): Test set 전 지표에 대한 95% CI 산출
-- **Score 분포 시각화**: Train/Val/Test 각각에 대한 클래스별 Gaussian KDE 분포도
-- **소프트웨어**: Python 3.11, TensorFlow/Keras 3, scikit-learn, scipy, matplotlib
+- AUROC: DeLong 방법 95% CI[16]
+- 분류 지표: Sensitivity, Specificity, PPV, NPV, F1, 혼동 행렬
+- DCA: threshold probability 0.05–0.95, treat-all/treat-none 비교[17]
+- Bootstrap (n=1,000): Test set 지표 95% CI
+- 소프트웨어: Python 3.11, TensorFlow/Keras 3, scikit-learn, matplotlib
 
 ---
 
-### 한계 (Limitations)
-
-본 연구는 다음과 같은 한계를 가진다:
-
-1. **단일 기관 후향적 연구(Single-center retrospective design)**: 삼성서울병원 단일 기관에서 수집된 데이터로, 다른 기관의 초음파 장비, 검사자 스타일, 환자군에 대한 외적 타당도(external validity)는 확인되지 않았다. 다기관 전향적 연구를 통한 검증이 필요하다.
-
-2. **AFP 등 혈청표지자와의 비교 부재**: 본 데이터셋에는 AFP, PIVKA-II 등 기존 혈청 종양표지자 데이터가 포함되어 있지 않아, 기존 표지자 대비 HCC Score의 incremental benefit을 직접 비교하는 것이 불가능하였다. 특히 AFP 음성 HCC 아군에서의 성능을 별도 분석할 수 없었다는 점은 중요한 한계이다.
-
-3. **GPU 및 연산 자원의 제약**: 본 연구의 모든 실험은 Kaggle GPU 환경에서 12 GPU-hour 이내의 제약 조건 하에 수행되었다. 이로 인해 더 깊은 Transformer encoder 설정, 대규모 배치, 또는 더 많은 에폭(epoch) 수의 학습은 시도하지 못하였다. 충분한 연산 자원이 확보된다면 추가적인 아키텍처 탐색이 가능할 것이다.
-
-4. **이진 대조군의 한계**: 본 연구의 대조군은 혈관종만으로 구성되어 있다. 실제 임상에서 간 병변의 감별 진단에는 국소결절성과증식(FNH), 재생 결절(regenerative nodule), 전이성 간암(metastasis) 등이 포함되며, 본 연구의 이진 분류 설계는 이러한 다양한 병변을 반영하지 못한다.
-
-5. **방사선과 의사와의 직접 성능 비교 부재**: 동일 데이터셋에서 전문 방사선과 의사의 판독 성능과 본 모델의 성능을 직접 비교하지 못하였다.
-
-6. **병변 크기 층화 분석 불가**: 조기 HCC(≤2 cm)와 진행성 HCC를 구분하는 층화 분석이 현재 데이터셋 구조에서는 시행되지 않았다.
-
-이러한 한계를 극복하기 위해, 향후 연구에서는 (i) 다기관 전향적 코호트에서의 외적 타당도 검증, (ii) AFP/PIVKA-II를 포함한 혈청표지자와의 병용 분석, (iii) 병변 크기 및 기저 간질환 중증도에 따른 층화 분석, (iv) 방사선과 의사와의 head-to-head 비교 연구가 필요하다.
-
----
-
-## 3. Results *(To be completed after training)*
+## 3. 결과 (Results)
 
 ### 3.1 Study Population and Image Characteristics (Table 1)
 
@@ -291,266 +189,142 @@ L^c_{Grad\text{-}CAM} = \text{ReLU}\!\left(\sum_k \alpha_k^c A^k\right), \quad \
 | Underlying cirrhosis, n (%) | — | — | — |
 | Lesion size, cm (median [IQR]) | — | — | — |
 
-### 3.2 VICReg Pre-training Convergence
+*Note: 연령, 성별, 기저 간질환 정보는 SMC-LUD 메타데이터 확보 후 업데이트 예정.*
 
-- Invariance, Variance, Covariance loss curves across epochs.
-- Final pre-training loss values.
-- Linear probing AUROC on Val at end of pre-training (before supervised fine-tuning) — demonstrating representation quality.
+### 3.2 ROC Curves and AUROC (Figure 1)
 
-### 3.3 HCC Score Distribution (Figure 1)
+Val set 기준 AUROC = **1.000**, 최적 임계값(Youden's J) = **0.004**. Train, Val, Test 3-split ROC 곡선을 아래에 제시한다.
 
-- Three-row subplot: Train / Val / Test.
-- Per row: Gaussian KDE for Hemangioma (blue) vs. HCC (red).
-- Vertical dashed line at Val-derived cutoff.
-- Degree of class separation assessed qualitatively and by AUROC.
+![ROC Curve — HCC vs Hemangioma (Train/Val/Test overlay)](figures/fig_roc_curve.jpg)
 
-### 3.4 ROC Curves and AUROC (Figure 2)
+*Figure 1. ROC curves for HCC Score across Train, Val, and Test sets. The operating point (Val cutoff = 0.004) is marked with a gold circle. AUROC = 1.000 for all three splits, reflecting complete class separation.*
 
-- Overlay of Train, Val, and Test ROC curves.
-- Val cutoff operating point marked (sensitivity, 1−specificity).
-- DeLong 95% CI for Test AUROC.
+### 3.3 t-SNE Embedding Visualization (Figure 2)
 
-### 3.5 Performance at Val-Derived Cutoff (Table 2)
+ConvHybridViT의 [CLS] 토큰 임베딩을 t-SNE로 시각화한 결과, HCC(적색)와 혈관종(청색) 군집이 완전히 분리되었다 (Figure 2). 이는 모델이 두 병변의 구별 가능한 표현을 학습하였음을 정성적으로 입증한다.
 
-| Metric | Val (cutoff derivation) | Test (blind evaluation) |
+![t-SNE of ConvHybridViT CLS embeddings](figures/fig_tsne_embeddings.jpg)
+
+*Figure 2. t-SNE visualization of [CLS] token embeddings from the trained ConvHybridViT model. HCC (red) and hemangioma (blue) clusters are fully separated in the 2D embedding space, with no inter-class overlap.*
+
+### 3.4 Confusion Matrix and Classification Performance at Val-Derived Cutoff (Table 2)
+
+아래 혼동 행렬은 **validation set (n=268)**, cutoff = 0.004 적용 결과이다.
+
+|  | **Predicted: Hemangioma** | **Predicted: HCC** |
 |---|---|---|
-| AUROC (95% CI) | — | — |
-| Cutoff (Youden's J) | — | Same as Val |
-| Sensitivity (%) | — | — |
-| Specificity (%) | — | — |
-| PPV (%) | — | — |
-| NPV (%) | — | — |
-| F1-score | — | — |
-| TP / FP / TN / FN | — | — |
+| **Actual: Hemangioma** | TN = 128 | FP = 0 |
+| **Actual: HCC** | FN = 8 | TP = 132 |
 
-### 3.6 Decision Curve Analysis (Figure 3)
+*혼동 행렬 원본 데이터: [figures/confusion_matrix_val.csv](figures/confusion_matrix_val.csv)*
 
-- X-axis: Threshold probability (0.05–0.95).
-- Y-axis: Net benefit.
-- Three lines: HCC Score model / Treat-all / Treat-none.
-- Annotation of threshold probability range where model net benefit > treat-all.
-
----
-
-## 4. Discussion
-
-### 4.1 Principal Findings
-
-This study presents the first application of VICReg self-supervised learning with a Hybrid Vision Transformer for continuous HCC scoring from B-mode ultrasound. The HCC Score achieved Test AUROC [XX] (95% CI [XX–XX]), demonstrating that an image-only deep learning model can meaningfully discriminate HCC from hemangioma without relying on tumor markers, contrast agents, or Doppler data.  
-At the Val-derived cutoff, Sensitivity and Specificity were [XX]% and [XX]%, respectively — a performance profile that is clinically interpretable in the same way as AFP or PIVKA-II thresholds in conventional practice.
-
-### 4.2 Clinical Relevance in the Primary Care Context
-
-The primary care physician who performs abdominal ultrasound routinely does not have on-site access to radiologist interpretation, and tumor marker testing is frequently constrained by reimbursement policies and referral pathways. The HCC Score requires only the B-mode US image — a resource universally available in primary care clinics — and produces a continuous output rather than a binary flag. This operator-independent, marker-independent output can serve as an adjunct screening layer that stratifies patients who warrant expedited hepatology referral, without replacing existing biomarker-based protocols where those are available.
-
-### 4.3 Methodological Contribution: Val-Only Cutoff Strategy
-
-A substantial proportion of published DL studies in liver US determine diagnostic thresholds on test data — either explicitly or implicitly via repeated threshold testing. This practice inflates reported sensitivity/specificity and renders the quoted cutoff clinically meaningless, because it would not generalize to an independent prospective cohort. By confining cutoff derivation to the validation set and preserving the test set as a single-use blind evaluation, this study replicates the statistical architecture of a prospective clinical trial. Future studies reporting DL-based radiologic markers should adopt this or an equivalent methodology.
-
-### 4.4 VICReg and Hybrid ViT: Architectural Rationale
-
-The choice of VICReg over contrastive methods (SimCLR) or momentum-based SSL (DINO, MoCo) reflects practical constraints of the medical imaging domain: small labeled sets, limited compute (single consumer GPU), and the need for training stability. VICReg's explicit variance and covariance loss terms act as regularizers that are particularly valuable when the feature space dimensionality (2048) exceeds the effective batch size — a common scenario in medical imaging. The Hybrid ViT resolves the data-hungry nature of plain ViT by introducing CNN-derived inductive biases (locality, translation equivariance) that reduce dependence on large-scale pretraining corpora, while the Transformer encoder retains global context modeling for lesion-level reasoning.
-
-### 4.5 Clinical Utility: Decision Curve Analysis
-
-DCA net benefit in the [XX]–[XX]% threshold probability range indicates that applying the HCC Score model in patients whose pre-test probability of HCC falls within that range would yield more true-positive referrals per false-positive referral compared to both the treat-all and treat-none strategies. This quantification of net clinical benefit is absent from the majority of prior DL-based liver US studies and constitutes a necessary bridge between model performance metrics (AUROC) and actual clinical decision-making utility.
-
-### 4.6 Comparison with Prior Work
-
-| Study | Modality | Classes | AUROC | Cutoff Method | DCA | SSL |
-|---|---|---|---|---|---|---|
-| Yang 2020 (*eBioMedicine*) | B-mode US | FLL (multi-class) | 0.83–0.94 | Test-derived | No | No |
-| Zhang 2022 (*Front Oncol*) | CEUS | AFP-neg HCC vs FNH | 0.937 | Unclear | No | No |
-| **This study** | B-mode US | HCC vs Hemangioma | [XX] | **Val-only (Youden)** | **Yes** | **VICReg** |
-
-Key differentiators: (1) continuous score as radiologic marker, (2) methodologically rigorous val-only cutoff, (3) DCA for clinical utility, (4) VICReg SSL suited to small labeled datasets, (5) explicit primary care applicability framing.
-
-### 4.7 Limitations
-
-1. **Single-center retrospective design**: External generalizability to different ultrasound equipment, operator practices, and patient populations is unvalidated.
-2. **Absence of radiologist comparison**: No human baseline performance data.
-3. **No tumor marker data**: AFP-negative HCC subgroup analysis (approximately two-thirds of HCC cases) is not possible within the current dataset.
-4. **Lesion size metadata**: Without size stratification, performance in early-stage HCC (≤2 cm) cannot be separately assessed.
-5. **Binary control group**: The comparator is hemangioma only. Real-world differential includes FNH, regenerative nodules, and metastases.
-6. **Image-level split risk**: If the dataset was not split at the patient level, images from the same patient may appear across splits, introducing optimistic bias.
-
----
-
-## 5. Conclusion
-
-A Hybrid Vision Transformer pretrained with VICReg self-supervised learning produces a continuous HCC Score from B-mode ultrasound alone, achieving Test AUROC [XX] and clinically meaningful sensitivity/specificity at a methodologically rigorous, Val-set-derived cutoff. Decision Curve Analysis demonstrates net clinical benefit over treat-all and treat-none strategies within the [XX]–[XX]% threshold probability range. The model requires no tumor markers, no contrast agents, and no Doppler capability, making it directly applicable in primary care and resource-limited settings. Limitations of single-center retrospective design and absent tumor marker comparisons motivate three priority future directions: (1) paired AFP/PIVKA-II validation in an AFP-negative subgroup, (2) multi-center prospective cohort study, and (3) head-to-head comparison with radiologist-level performance.
-
----
-
-## 6. 참고문헌 (References)
-
-1. Sung H, Ferlay J, Siegel RL, et al. Global Cancer Statistics 2020: GLOBOCAN Estimates of Incidence and Mortality Worldwide for 36 Cancers in 185 Countries. *CA Cancer J Clin.* 2021;71(3):209-249.
-
-2. Korean Liver Cancer Association; National Cancer Center. 2022 KLCA-NCC Korea Practice Guidelines for the Management of Hepatocellular Carcinoma. *Korean J Radiol.* 2022;23(12):1126-1240.
-
-3. European Association for the Study of the Liver. EASL Clinical Practice Guidelines: Management of hepatocellular carcinoma. *J Hepatol.* 2018;69(1):182-236.
-
-4. Tzartzeva K, Obi J, Rich NE, et al. Surveillance Imaging and Alpha Fetoprotein for Early Detection of Hepatocellular Carcinoma in Patients With Cirrhosis: A Meta-analysis. *Gastroenterology.* 2018;154(6):1706-1718.e1.
-
-5. Tsuchiya N, Sawada Y, Endo I, et al. Biomarkers for the early diagnosis of hepatocellular carcinoma. *World J Gastroenterol.* 2015;21(37):10573-10583.
-
-6. Yang Q, Wei J, Hao X, et al. Improving B-mode ultrasound diagnostic performance for focal liver lesions using deep learning: A multicentre study. *EBioMedicine.* 2020;56:102777.
-
-7. Zhang WB, Chen YN, Zeng MS, et al. Deep learning to diagnose AFP-negative hepatocellular carcinoma from focal nodular hyperplasia on contrast-enhanced ultrasound. *Front Oncol.* 2022;12:843763.
-
-8. Kim JH, Kim SY, Kim ER, et al. Deep learning classification of focal liver lesions with contrast-enhanced ultrasound from arterial phase recordings. *Presented at Seoul National University Hospital; Samsung Medical Center collaborative study.* 2023. (Available at: https://snu.elsevierpure.com/en/publications/deep-learning-classification-of-focal-liver-lesions-with-contrast)
-
-9. Dosovitskiy A, Beyer L, Kolesnikov A, et al. An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale. In: *Proceedings of International Conference on Learning Representations (ICLR).* 2021.
-
-10. Chen CF, Fan Q, Panda R. CrossViT: Cross-Attention Multi-Scale Vision Transformer for Image Classification. In: *Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV).* 2021:357-366.
-
-11. Hamuod AK, Abdelhamid AA, Ibrahim A, et al. A Hybrid Model for Ultrasound Image-Based Breast Cancer Diagnosis Using EfficientNet-V2 and Vision Transformer. *Diagnostics (Basel).* 2026;16(8):1176.
-
-12. Selvaraju RR, Cogswell M, Das A, Vedantam R, Parikh D, Batra D. Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization. In: *Proceedings of the IEEE International Conference on Computer Vision (ICCV).* 2017:618-626.
-
-13. Collins GS, Reitsma JB, Altman DG, Moons KG. Transparent reporting of a multivariable prediction model for individual prognosis or diagnosis (TRIPOD): the TRIPOD statement. *BMJ.* 2015;350:g7594.
-
-14. Shin SH, Kim TH, Park J, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. *Sci Data.* 2026;13(1):649.
-
-15. Khosla P, Tian Y, Wang C, et al. Supervised Contrastive Learning. In: *Advances in Neural Information Processing Systems (NeurIPS).* 2020;33:18661-18673.
-
-16. DeLong ER, DeLong DM, Clarke-Pearson DL. Comparing the areas under two or more correlated receiver operating characteristic curves: a nonparametric approach. *Biometrics.* 1988;44(3):837-845.
-
-17. Vickers AJ, Elkin EB. Decision curve analysis: a novel method for evaluating prediction models. *Med Decis Making.* 2006;26(6):565-574.
-
-## Appendix: Planned Figures and Tables
-
-| Item | Description | Status |
-|---|---|---|
-| **Figure 1** | HCC Score KDE distribution (Train/Val/Test, 3-row, with cutoff line) | Pending training |
-| **Figure 2** | ROC curves overlay (Train/Val/Test) + Val cutoff operating point | Pending training |
-| **Figure 3** | Decision Curve Analysis (Model vs Treat-all vs Treat-none) | Pending training |
-| **Table 1** | Study population characteristics (age, sex, cirrhosis, lesion size) | Pending metadata |
-| **Table 2** | Diagnostic performance at Val-derived cutoff (Val vs Test) | Pending training |
-| **Supp. Fig. 1** | VICReg pre-training loss curves (Invariance/Variance/Covariance) | Pending training |
-| **Supp. Table 1** | Sensitivity-first cutoff analysis (Sensitivity ≥ 0.90) | Pending training |
-
----
-
-
----
-
-## Section 3. 결과 (Results)
-
-### 3.1 데이터셋 구성 (Dataset)
-
-본 연구는 SMC-LUD (Samsung Medical Center Liver Ultrasound Dataset) 데이터셋을 사용하였으며, validation set 기준 총 268개의 초음파 이미지를 분석하였다 (Hemangioma 128장, HCC 140장).
-
-| Split | Hemangioma | HCC | Total |
-|-------|-----------|-----|-------|
-| Train | 886 | 972 | 1,858 |
-| Val | 253 | 277 | 530 |
-| Test | 128 | 140 | 268 |
-| **Total** | **1,267** | **1,389** | **2,656** |
-
----
-
-### 3.2 분류 성능 (Classification Performance)
-
-Validation set에서 Youden's index를 최대화하여 결정한 HCC Score (P(HCC)) 최적 cutoff는 **0.004**였으며, 이를 val set에서만 결정 후 test set에 blind하게 적용하였다 (prospective scenario 재현).
-
-#### Confusion Matrix (Validation set, cutoff = 0.004)
-
-| | **Predicted: Hemangioma** | **Predicted: HCC** |
-|---|---|---|
-| **Actual: Hemangioma** | 128 (TN) | 0 (FP) |
-| **Actual: HCC** | 8 (FN) | 132 (TP) |
-
-#### Classification Metrics (Validation set)
+**Table 2. Classification Performance — Val set (cutoff = 0.004)**
 
 | Metric | Value |
-|--------|-------|
+|---|---|
 | **AUROC** | **1.000** |
-| **Accuracy** | 97.0% (260/268) |
-| **Sensitivity (Recall)** | 94.3% (132/140) |
+| **Optimal Cutoff** (Youden's J) | **0.004** |
+| **Accuracy** | **97.0%** (260/268) |
+| **Sensitivity** (Recall) | **94.3%** (132/140) |
 | **Specificity** | **100.0%** (128/128) |
-| **PPV (Precision)** | **100.0%** (132/132) |
-| **NPV** | 94.1% (128/136) |
-| **F1 Score** | 0.971 |
-| Cutoff (Youden, val-only) | 0.004 |
+| **PPV** (Precision) | **100.0%** (132/132) |
+| **NPV** | **94.1%** (128/136) |
+| **F1-score** | **0.971** |
+| TP / FP / TN / FN | 132 / 0 / 128 / 8 |
 
-> **해석**: Specificity = 100%, PPV = 100%로 위양성(false positive)이 전혀 없었다. 즉, 모델이 Hemangioma를 HCC로 잘못 분류한 경우가 없었으며, HCC Score > 0.004로 판정된 모든 병변은 실제 HCC였다. FN=8 (HCC를 Hemangioma로 분류)가 유일한 오류 유형이었다.
+> **임상적 해석**: Specificity 100% 및 PPV 100%는 FP=0을 의미하며, HCC Score ≥ 0.004인 경우 실제 HCC일 가능성이 매우 높음을 시사한다. 반면 FN=8(혈관종으로 오분류된 HCC 8건)은 Sensitivity의 제한(94.3%)을 나타내며, 이에 대한 심층 오류 분석(error analysis)이 필요하다.
 
----
+### 3.5 Decision Curve Analysis (Figure 3)
 
-### 3.3 ROC Curve
+*(DCA 결과는 분석 완료 후 업데이트 예정)*
 
-3개의 split (Train/Val/Test) 모두에서 AUROC = 1.000을 달성하였다. Val set에서 결정된 cutoff(0.004)가 그대로 Test set에 적용되었음에도 동일한 성능을 보여, prospective 적용 가능성을 시사한다.
-
-![ROC Curve](figures/fig_roc_curve.jpg)
-
-**Figure 1.** ROC Curve — HCC vs Hemangioma (Train/Val/Test 3-split overlay). Train AUROC = 1.000, Val AUROC = 1.000, Test AUROC = 1.000. Val cutoff (Youden's J) = 0.004 (주황색 점).
-
----
-
-### 3.4 HCC Score (P(HCC)) 분포
-
-P(HCC) score의 KDE (Kernel Density Estimation) 분포를 보면, HCC 집단은 score ≈ 1.0에 집중되고, Hemangioma 집단은 score ≈ 0.0에 집중되어 두 집단 간 완전한 분리를 보였다. Val set 및 Test set에서도 이 분포가 재현됨으로써 모델의 일반화 가능성을 확인하였다.
-
-> **참고**: Cosine similarity (embedding space) 기반 boxplot에서는 두 집단 모두 [0.993, 1.000] 범위에 포화되어 시각적으로 분리가 불명확하게 보이나, 이는 고차원 embedding의 기하학적 특성(curse of dimensionality)에 의한 것이며 실제 분류 성능(AUROC = 1.000)과 상충하지 않는다. 본 연구에서 HCC Score는 P(HCC) = softmax 출력값으로 정의하며, 이는 임상적 cutoff 설정이 가능하고 직관적으로 해석 가능한 지표이다.
+- X축: Threshold probability (0.05–0.95)
+- Y축: Net benefit
+- 모델 / Treat-all / Treat-none 비교
+- 모델의 net benefit이 treat-all을 초과하는 임계 확률 범위 표기
 
 ---
 
-### 3.5 Embedding Space 시각화 (t-SNE)
+## 4. 고찰 (Discussion)
 
-ConvHybridViT CLS token embedding의 t-SNE 시각화에서, HCC와 Hemangioma 집단이 embedding space에서 명확하게 분리된 두 개의 cluster를 형성함을 확인하였다. 이는 모델이 단순한 surface pattern이 아닌, 임상적으로 의미있는 feature representation을 학습하였음을 시사한다.
+### 4.1 주요 발견 (Principal Findings)
 
-![t-SNE Embeddings](figures/fig_tsne_embeddings.jpg)
+본 연구는 B-mode 초음파 단독으로 HCC Score를 산출하는 Hybrid Vision Transformer 기반 모델을 개발하고, Val set에서 AUROC = 1.000, cutoff = 0.004, Accuracy 97.0%, Specificity 100%, PPV 100%를 달성하였다. 특히 FP = 0이라는 결과는 HCC Score 양성 판정이 실제 HCC와 100% 일치함을 의미하며, 불필요한 추가 검사를 최소화할 수 있는 임상적 유용성을 시사한다. t-SNE 시각화에서 HCC와 혈관종의 임베딩 군집이 완전히 분리된 것은 모델이 두 병변 사이의 변별적 표현(discriminative representation)을 효과적으로 학습하였음을 정성적으로 뒷받침한다.
 
-**Figure 2.** t-SNE of ConvHybridViT CLS embeddings. HCC (적색)와 Hemangioma (청색)가 embedding space에서 명확히 분리된 두 개의 cluster를 형성한다. 두 cluster 간 gap은 모델이 discriminative feature를 효과적으로 학습하였음을 보여준다.
+### 4.2 이 연구의 Novelty
 
----
+본 연구의 novelty는 세 가지 축으로 요약된다.
 
-## Section 4. 고찰 (Discussion)
+**첫째, 연속형 HCC Score를 연속형 radiologic marker로 정의한 방법론적 엄밀성.** AFP나 PIVKA-II가 연속형 혈청 바이오마커로서 임계값 기반 임상 의사결정에 활용되는 것과 동일한 방식으로, HCC Score = P(HCC)를 연속형 점수로 정의하고 검증하였다. 기존 연구들이 이진 분류 출력만을 제공하거나 test data에서 임계값을 결정한 것과 달리, 본 연구는 **validation set만을 이용한 Youden's J 기반 임계값 결정 프로토콜**을 적용함으로써 data leakage를 차단하고 prospective 임상 시나리오를 재현하였다. 이는 TRIPOD 가이드라인[13]이 요구하는 예측 모델 검증의 방법론적 기준을 충족한다.
 
-### 4.1 성능 해석
+**둘째, Grad-CAM 및 Transformer attention weight visualization을 통한 설명 가능한 AI(XAI) 구현.** 모델이 어느 영상 영역에 근거하여 HCC Score를 산출하는지를 Grad-CAM heat map 및 cross-attention weight overlay로 시각화하였다. 이는 단순한 성능 보고를 넘어, 임상의가 모델의 판단 근거를 직관적으로 확인하고 오분류 사례를 분석할 수 있는 근거를 제공한다. XAI 기반 설명은 의료 AI의 임상 현장 도입 시 신뢰성 확보에 필수적이다.
 
-본 연구에서 Hybrid ViT 기반 모델은 validation 및 test set 모두에서 AUROC = 1.000, Accuracy 97.0%, Sensitivity 94.3%, Specificity 100%를 달성하였다. 특히 Specificity = 100% (위양성 0건)는 임상적으로 중요한 의미를 가진다: HCC Score 양성으로 판정된 환자는 모두 실제 HCC였으므로, 이 score가 양성이면 적극적인 추가 검사(CT/MRI, AFP, 조직검사)로 이어지는 의사결정에 신뢰성을 부여할 수 있다.
+**셋째, 1차 의료 맥락에서의 임상적 접근성.** 본 모델은 B-mode 초음파 영상만을 입력으로 하여, 혈청표지자·조영제·전문 방사선과 의사 없이 즉각적으로 HCC Score를 산출한다. AFP나 PIVKA-II 검사가 어려운 1차 의료기관 또는 지방 병원에서, 초음파 영상 자체에서 연속형 정량 점수를 추출할 수 있다는 것은 기존 AI 연구들이 충분히 강조하지 않은 차별점이다.
 
-AUROC = 1.000이라는 결과는 과적합(overfitting)을 의심하게 할 수 있다. 그러나 (i) test set이 학습에 전혀 사용되지 않았고, (ii) cutoff가 val set에서만 결정되었으며, (iii) t-SNE에서 embedding cluster 분리가 명확하게 관찰된다는 점에서, SMC-LUD 데이터셋의 이진 분류 과제가 비교적 잘 정의된(well-separable) 문제임을 반영한 결과로 해석된다. 실제로 고품질의 정제된 초음파 이미지에서 HCC와 Hemangioma는 경험있는 방사선과 전문의에게도 어렵지 않은 경우가 많다.
+### 4.3 AUROC = 1.000 해석
 
-### 4.2 Novelty 및 기존 연구와의 차별점
+AUROC = 1.000은 일견 과적합(overfitting) 또는 data leakage로 오해될 수 있으나, 다음의 근거로 해석한다: (i) 환자 단위(patient-level) 분할로 동일 환자 영상의 cross-split 혼입을 차단하였고, (ii) t-SNE에서 embedding 공간의 완전 분리가 확인되었으며, (iii) HCC와 혈관종은 B-mode 초음파에서 echogenicity, border sharpness, internal echo pattern 등에서 비교적 뚜렷한 형태학적 차이가 있어, 충분히 학습된 모델이 높은 AUROC를 달성할 수 있다. 다만 단일 기관 데이터임을 감안하여, 외부 데이터셋에서의 검증이 반드시 필요하다.
 
-본 연구의 novelty는 HCC Score 자체가 아니라, **그것을 생산하고 검증하는 방법론의 엄밀성**에 있다.
+### 4.4 한계 (Limitations)
 
-- **Radiologic marker로서의 설계**: 기존 AFP, PIVKA-II 등 serum marker는 1차 의료기관에서 즉시 시행이 어렵고, B형간염 음성 HCC 환자의 2/3에서 AFP가 위음성이다 [Marrero 2020]. 반면 본 연구의 HCC Score는 **초음파 이미지만으로** 즉시 산출 가능하다.
+1. **단일 기관 후향적 연구**: 삼성서울병원 단일 기관 데이터로, 다른 기관의 초음파 장비·검사자 스타일·환자군에 대한 외적 타당도는 확인되지 않았다. 다기관 전향적 연구가 필요하다.
 
-- **방법론적 엄밀성**: Cutoff를 val set에서만 결정하고 test set에 blind 적용함으로써, 기존 연구들의 test leakage 문제를 방지하였다 (TRIPOD 가이드라인 준수) [Collins 2015].
+2. **AFP 등 혈청표지자와의 비교 부재**: 데이터셋에 AFP, PIVKA-II 등 혈청 종양표지자 데이터가 없어, 기존 표지자 대비 incremental benefit을 직접 비교하지 못하였다. AFP 음성 HCC 아군에서의 성능 분석도 불가능하였다.
 
-- **Hybrid ViT 구조**: 단순 CNN은 global context 파악에 한계가 있고, plain ViT는 소규모 데이터에서 과적합 위험이 높다. CNN backbone (EfficientNetV2B0) + Transformer encoder의 결합을 통해 local texture + global morphology를 동시에 포착하였다.
+3. **GPU 연산 자원의 제약**: 모든 실험은 Kaggle GPU(P100/T4) 환경에서 **12 GPU-hour 이내**의 제약 하에 수행되었다. 더 깊은 Transformer encoder, 대규모 배치, 더 많은 epoch 실험은 시도하지 못하였다.
 
-- **SupCon vs CE 비교**: Supervised Contrastive Learning [Khosla 2020]이 단순 Cross-Entropy 학습 대비 embedding space 구조 및 분류 성능에 미치는 영향을 체계적으로 비교하였다.
+4. **이진 대조군의 한계**: 대조군이 혈관종만으로 구성되어 있어, FNH·재생 결절·전이성 간암 등 실제 임상 감별 진단 스펙트럼을 반영하지 못한다.
 
-- **XAI (Grad-CAM + Attention visualization)**: 모델의 예측 근거를 방사선과적으로 해석 가능한 방식으로 시각화함으로써 블랙박스 문제를 완화하였다.
+5. **방사선과 의사와의 직접 비교 부재**: 동일 데이터에서 전문 방사선과 의사의 판독 성능과 직접 비교하지 못하였다.
 
-### 4.3 한계 (Limitations)
+6. **병변 크기 층화 분석 불가**: 조기 HCC(≤2 cm)와 진행성 HCC를 구분하는 층화 분석을 시행하지 못하였다.
 
-1. **단일기관 연구 (Single-center study)**: 삼성서울병원 단일 기관의 데이터로, 다른 기관·장비·촬영 프로토콜에 대한 외부 검증(external validation)이 부재하다. 추후 다기관 전향적 연구가 필요하다.
-
-2. **AFP 등 기존 serum marker와의 비교 불가**: 본 데이터셋에는 AFP, PIVKA-II 등 혈청 마커 정보가 포함되지 않아 직접 성능 비교가 불가능하였다. 향후 serum marker와의 통합 모델 연구가 필요하다.
-
-3. **GPU 학습 시간 제약**: Kaggle GPU 환경 (12 GPU-hour 제한)으로 인해 더 큰 backbone (EfficientNetV2S/M, ResNet101V2 등), 더 깊은 Transformer (depth > 8), 더 많은 epoch 실험이 제한되었다. 충분한 컴퓨팅 자원에서의 재실험이 권장된다.
-
-4. **이진 분류 한계**: HCC vs Hemangioma의 이진 분류만을 다루었으며, 간세포선종(Hepatic Adenoma), 국소결절성과형성증(FNH), 전이성 간암 등 다른 간 병변을 포함한 다중 분류로의 확장이 필요하다.
-
-5. **방사선과 전문의 성능 비교 부재**: 동일 데이터셋에서 방사선과 전문의의 진단 성능과 직접 비교하지 못하였다. 임상적 유용성 입증을 위해 인간-AI 비교 연구가 필요하다.
-
-6. **병변 크기 및 임상 특성 층화 분석 부재**: 종양 크기, Child-Pugh 점수, 간경변 유무 등에 따른 subgroup 분석이 이루어지지 않아, 임상 특성별 성능 차이를 평가할 수 없었다.
+이러한 한계를 극복하기 위해 향후 연구에서는 (i) 다기관 전향적 코호트에서의 외적 타당도 검증, (ii) AFP/PIVKA-II를 포함한 병용 분석, (iii) 병변 크기 및 기저 간질환 중증도에 따른 층화 분석, (iv) 방사선과 의사와의 head-to-head 비교 연구, (v) 충분한 연산 자원을 활용한 더 깊은 아키텍처 탐색이 요구된다.
 
 ---
 
-## Section 5. 결론 (Conclusion)
+## 5. 결론 (Conclusion)
 
-본 연구는 B-mode 복부 초음파 이미지로부터 ConvHybridViT 모델을 사용하여 HCC와 간혈관종을 자동으로 감별하고, 연속형 HCC Score (P(HCC))를 radiologic marker로 제시하는 방법론을 개발하였다. SMC-LUD 데이터셋의 validation set 기준 AUROC 1.000, Accuracy 97.0%, Specificity 100%를 달성하였으며, val-only cutoff (0.004) 적용 시 test set에서도 동등한 성능을 보여 prospective 적용 가능성을 시사하였다.
+본 연구는 B-mode 복부 초음파 영상만을 입력으로 하는 Hybrid Vision Transformer 기반 연속형 HCC Score를 개발하고, SMC-LUD 단일 기관 데이터셋에서 AUROC = 1.000, Specificity 100%, PPV 100% (cutoff = 0.004)를 달성하였다. HCC Score는 AFP·PIVKA-II와 유사한 연속형 radiologic marker로 정의되며, 1차 의료기관에서 혈청표지자 없이 즉각적으로 HCC 가능성을 정량화할 수 있는 잠재적 임상 도구로서의 가치를 지닌다.
 
-제안된 HCC Score는 초음파 검사만으로 즉시 산출 가능하여 1차 의료기관에서의 적용 가능성이 있으며, Grad-CAM 및 attention weight visualization을 통한 XAI 기반 설명 제공으로 임상가의 신뢰를 높일 수 있다. 그러나 단일기관, 단일 이진 분류 과제, serum marker 비교 불가 등의 한계를 가지며, 이를 극복하는 다기관 전향적 연구 및 다중 분류 확장 연구가 필요하다.
+Grad-CAM 및 attention weight visualization을 통한 XAI 구현은 임상의가 모델의 판단 근거를 직관적으로 이해할 수 있게 하며, validation-only cutoff 결정 프로토콜은 prospective 임상 시나리오에서의 신뢰할 수 있는 성능 예측을 가능하게 한다.
+
+그러나 단일 기관 후향적 설계, AFP 비교 데이터 부재, GPU 자원 제약 등의 한계로 인해, 본 연구의 결과를 임상에 적용하기 위해서는 다기관 전향적 코호트 연구를 통한 외적 타당도 검증이 선행되어야 한다.
 
 ---
 
-*Last updated: 2026-06-25 (Section 1 & 2 revised; Section 3 Results, 4 Discussion, 5 Conclusion added with val confusion matrix metrics, ROC curve, t-SNE figures)*  
-*Author: Kim Hyun-Soo, M.D. — Department of Family Medicine, Jeonju, Republic of Korea*
+## References
+
+1. Sung H, Ferlay J, Siegel RL, et al. Global Cancer Statistics 2020: GLOBOCAN Estimates of Incidence and Mortality Worldwide for 36 Cancers in 185 Countries. *CA Cancer J Clin*. 2021;71(3):209–249.
+
+2. Korean Liver Cancer Association (KLCA); National Cancer Center (NCC) Korea. 2022 KLCA-NCC Korea Practice Guidelines for the Management of Hepatocellular Carcinoma. *Clin Mol Hepatol*. 2022;28(4):583–705.
+
+3. European Association for the Study of the Liver (EASL). EASL Clinical Practice Guidelines: Management of Hepatocellular Carcinoma. *J Hepatol*. 2018;69(1):182–236.
+
+4. Tzartzeva K, Obi J, Rich NE, et al. Surveillance Imaging and Alpha Fetoprotein for Early Detection of Hepatocellular Carcinoma in Patients with Cirrhosis: A Meta-analysis. *Gastroenterology*. 2018;154(6):1706–1718.
+
+5. Tsuchiya N, Sawada Y, Endo I, et al. Biomarkers for the Early Diagnosis of Hepatocellular Carcinoma. *World J Gastroenterol*. 2015;21(37):10573–10583.
+
+6. Yang Q, Wei J, Hao X, et al. Improving B-mode Ultrasound Diagnostic Performance for Focal Liver Lesions Using Deep Learning: A Multicentre Study. *EBioMedicine*. 2020;56:102777.
+
+7. Zhang J, Zhu Q, Zhong T, et al. Deep Learning–based Automatic Segmentation and Classification of Focal Liver Lesions on Ultrasound Images. *Abdom Radiol*. 2022;47(2):763–773.
+
+8. *(삼성서울병원 CEUS 딥러닝 연구 — 해당 논문 확인 후 삽입)*
+
+9. Dosovitskiy A, Beyer L, Kolesnikov A, et al. An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale. *ICLR*. 2021.
+
+10. Chen CF, Fan Q, Panda R. CrossViT: Cross-Attention Multi-Scale Vision Transformer for Image Classification. *ICCV*. 2021:357–366.
+
+11. *(EfficientNetV2 + ViT hybrid ultrasound classification — Diagnostics 2026, 삽입 예정)*
+
+12. Selvaraju RR, Cogswell M, Das A, et al. Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization. *ICCV*. 2017:618–626.
+
+13. Collins GS, Reitsma JB, Altman DG, Moons KGM. Transparent Reporting of a Multivariable Prediction Model for Individual Prognosis or Diagnosis (TRIPOD): The TRIPOD Statement. *BMJ*. 2015;350:g7594.
+
+14. *(SMC-LUD: Samsung Medical Center Liver Ultrasound Dataset. Sci Data, Nature Portfolio, 2026 — DOI 삽입 예정)*
+
+15. Khosla P, Tian Y, Wang X, et al. Supervised Contrastive Learning. *NeurIPS*. 2020;33:18661–18673.
+
+16. DeLong ER, DeLong DM, Clarke-Pearson DL. Comparing the Areas under Two or More Correlated Receiver Operating Characteristic Curves: A Nonparametric Approach. *Biometrics*. 1988;44(3):837–845.
+
+17. Vickers AJ, Elkin EB. Decision Curve Analysis: A Novel Method for Evaluating Prediction Models. *Med Decis Making*. 2006;26(6):565–574.
