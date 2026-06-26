@@ -4,10 +4,10 @@
 Pipeline
 --------
 1. test_clean/HCC/ 와 test_clean/Hemangioma/ 에서 파일명 순서대로 n_per_class 개씩 선택
-2. 각 이미지에 대해 **1회 forward pass** (persistent GradientTape) 로:
-   - pred_label  : argmax(logits)
-   - GradCAM overlay for class=0 (Hemangioma)  ← tape.gradient(logits[:,0], fmap)
-   - GradCAM overlay for class=1 (HCC)          ← tape.gradient(logits[:,1], fmap)
+2. 각 이미지에 대해 **3회 독립 forward pass** 수행:
+   Pass 1: tape 없음  → pred_label (argmax logits)
+   Pass 2: GradientTape(persistent=False) → GradCAM for class=0 (Hemangioma)
+   Pass 3: GradientTape(persistent=False) → GradCAM for class=1 (HCC)
 3. wandb.Table 5-column 생성:
    Col 0: Original Image
    Col 1: True Label  (str)
@@ -15,6 +15,14 @@ Pipeline
    Col 3: GradCAM overlay for class=0 (Hemangioma)
    Col 4: GradCAM overlay for class=1 (HCC)
 4. WandB에 logging
+
+Why 3 separate passes (not persistent tape)
+--------------------------------------------
+persistent=True tape + tape.watch(fmap) 방식은 Keras layer 내부에서
+fmap이 eager tensor로 즉시 materialized되어 tape 그래프와 연결이 끊기는
+문제(gradient=None)가 발생했다. 이를 근본적으로 방지하기 위해 각 pass마다
+독립적인 GradientTape를 사용하고 tape.watch(x_var)로 입력을 watch하는
+표준 패턴으로 변경한다.
 
 Colormap
 --------
@@ -24,27 +32,6 @@ matplotlib 'jet' colormap 사용:
   - cam=1.0 (high activation) → 빨강(red)
   - 두 클래스 모두 동일한 jet colormap 적용 (class별 구분은 caption으로 표시)
   - RGBA → RGB slicing으로 alpha 채널 제거
-
-이미지당 Forward Pass 최적화
------------------------------
-이전 버전:
-  _predict_label()          → 1회 (tape 없음)
-  _gradcam_overlay_np(cls=0) → 1회 (tape)
-  _gradcam_overlay_np(cls=1) → 1회 (tape)
-  합계: **3회/image**
-
-현재 버전:
-  _gradcam_both_overlays_and_pred() → persistent tape **1회**
-    ├─ logits 전체 계산 → pred_label = argmax
-    ├─ tape.gradient(logits[:,0], fmap) → cam0
-    └─ tape.gradient(logits[:,1], fmap) → cam1
-  합계: **1회/image**  (3× 절감)
-
-persistent tape 주의사항
-------------------------
-  - tf.GradientTape(persistent=True) 사용 시 tape는 backward pass 후에도
-    그래프를 메모리에 유지한다.
-  - .gradient() 호출 후 반드시 `del tape` 로 해제해야 GPU 메모리 누수 방지.
 
 GradCAM target tensor
 ---------------------
@@ -66,18 +53,6 @@ ClassifierTrainer.model  → SupervisedClassifier (또는 SupConClassifier)
     .blocks              → list of TransformerEncoderBlock / CrossAttentionEncoderBlock
     .norm                → LayerNormalization
   .classifier_head       → Dense head
-
-score_probe.py에서의 import 방법
----------------------------------
-from validation.gradcam_table import GradCAMTableConfig, run_gradcam_table
-
-gradcam_cfg = GradCAMTableConfig(
-    test_clean_dir = cfg.work_dir + "/data/test_clean",
-    n_per_class    = 8,
-    image_size     = (384, 384),
-    wandb_prefix   = f"Benchmark/{model_id}",
-)
-run_gradcam_table(stage2_model=wrapper, cfg=gradcam_cfg)
 """
 
 from __future__ import annotations
@@ -192,9 +167,6 @@ def _cam_to_rgb(cam_up: np.ndarray, colormap_name: str = "jet") -> np.ndarray:
     ----------
     cam_up       : (H, W) float32, range [0, 1]
     colormap_name: matplotlib colormap name. Default "jet".
-                   jet:     blue(low) → green(mid) → red(high)
-                   inferno: black → purple → orange → yellow(high)
-                   hot:     black → red → yellow → white(high)
 
     Returns
     -------
@@ -204,7 +176,6 @@ def _cam_to_rgb(cam_up: np.ndarray, colormap_name: str = "jet") -> np.ndarray:
         import matplotlib.cm as cm
         cmap = cm.get_cmap(colormap_name)
     except Exception:
-        # fallback: grayscale if matplotlib unavailable
         return np.stack([cam_up, cam_up, cam_up], axis=-1).astype(np.float32)
 
     rgba = cmap(cam_up)                          # (H, W, 4) float64, range [0, 1]
@@ -249,24 +220,7 @@ def _collect_images(
 # ─────────────────────────────────────────────────────────────
 
 def _unwrap_encoder_and_head(stage2_model):
-    """Unwrap stage2_model to get (encoder, classifier_head, pool_mode).
-
-    Supported wrapper hierarchies
-    ------------------------------
-    ClassifierTrainer (or PureClassifier)
-      └─ .model  →  SupervisedClassifier / SupConClassifier
-            ├─ .encoder         → ConvHybridViTBackbone
-            │     ├─ .patch_embed  → ConvPatchEmbedding
-            │     ├─ .blocks       → list of Transformer blocks
-            │     └─ .norm         → LayerNormalization
-            └─ .classifier_head → Dense head
-
-    Returns
-    -------
-    encoder         : ConvHybridViTBackbone
-    classifier_head : Dense Keras layer / Sequential
-    pool_mode       : "cls" or "gap"
-    """
+    """Unwrap stage2_model to get (encoder, classifier_head, pool_mode)."""
     model = getattr(stage2_model, "model", stage2_model)
 
     encoder = getattr(model, "encoder", None)
@@ -288,148 +242,181 @@ def _unwrap_encoder_and_head(stage2_model):
 
 
 # ─────────────────────────────────────────────────────────────
-# Core: 1 forward pass → pred_label + GradCAM overlay ×2
+# Core: encoder forward pass (공통 헬퍼)
 # ─────────────────────────────────────────────────────────────
 
-def _gradcam_both_overlays_and_pred(
+def _encoder_forward(
     encoder,
     classifier_head,
     pool_mode: str,
-    img_np: np.ndarray,
-    class_names: tuple,
-    alpha: float = 0.45,
-    input_scale: str = "0_255",
-    colormap: str = "jet",
-) -> Tuple[str, np.ndarray, np.ndarray]:
-    """Single persistent-tape forward pass → pred_label + two GradCAM overlays.
-
-    Colormap
-    --------
-    matplotlib 'jet' (default) 사용:
-      cam=0.0 → blue  (low activation)
-      cam=0.5 → green (mid activation)
-      cam=1.0 → red   (high activation)
-
-    두 클래스(HCC, Hemangioma) 모두 동일한 jet colormap 적용.
-    class별 구분은 WandB table의 column caption으로 표시.
-
-    Strategy
-    --------
-    persistent=True tape를 사용해 forward pass를 1회만 수행하고,
-    두 클래스(0, 1)에 대한 gradient를 순차적으로 추출한다.
-
-    Tape lifecycle
-    --------------
-    1. GradientTape(persistent=True) context 진입
-    2. patch_embed(x) → fmap 생성 (INSIDE tape)
-    3. tape.watch(fmap)
-    4. fmap → Transformer → norm → pool → classifier_head → logits  (1회)
-    5. pred_label = argmax(logits)
-    6. grads_0 = tape.gradient(logits[:,0], fmap)   ← class=0 gradient
-    7. grads_1 = tape.gradient(logits[:,1], fmap)   ← class=1 gradient
-    8. del tape  ← 반드시 명시적 해제 (persistent tape 메모리 누수 방지)
+    x: "tf.Tensor",
+    fmap_override: "tf.Tensor | None" = None,
+) -> Tuple["tf.Tensor", "tf.Tensor", "tf.Tensor"]:
+    """Run encoder+head forward pass. Returns (logits, fmap, seq).
 
     Parameters
     ----------
-    encoder         : ConvHybridViTBackbone
-    classifier_head : Dense head layer
-    pool_mode       : "cls" or "gap"
-    img_np          : (H, W, 3) float32 in model input range
-    class_names     : (negative_name, positive_name)
-    alpha           : Heatmap blend weight
-    input_scale     : "0_255" or "0_1"
-    colormap        : matplotlib colormap name (default "jet")
+    x             : [1, H, W, 3] float32 input tensor
+    fmap_override : 외부에서 이미 계산된 fmap을 주입할 경우 사용 (GradientTape pass에서 활용).
+                    None이면 patch_embed(x)로 새로 계산.
 
     Returns
     -------
-    pred_name   : str           — class_names[argmax(logits)]
-    overlay_neg : (H,W,3) f32  — GradCAM for class=0  (jet colormap)
-    overlay_pos : (H,W,3) f32  — GradCAM for class=1  (jet colormap)
+    logits : [1, num_cls]
+    fmap   : [1, gh, gw, d_model]
+    seq    : [1, 1+N, d_model]  (Transformer 출력, norm 후)
     """
     patch_embed = encoder.patch_embed
     blocks      = encoder.blocks
     norm_layer  = encoder.norm
 
-    x = tf.constant(img_np[None], dtype=tf.float32)  # [1, H, W, 3]
-
-    # ── persistent tape: 1 forward pass ──────────────────────────────────────
-    with tf.GradientTape(persistent=True) as tape:
-        # Step 1: CNN + Conv1x1 proj → fmap (INSIDE tape)
+    if fmap_override is None:
         tokens, fmap, gh, gw = patch_embed(x, training=False)
+    else:
+        fmap = fmap_override
+        gh   = tf.shape(fmap)[1]
+        gw   = tf.shape(fmap)[2]
 
-        # Step 2: watch fmap
-        tape.watch(fmap)
+    B = tf.shape(x)[0]
+    d = patch_embed.d_model
+    N = gh * gw
+    patches = tf.reshape(fmap, [B, N, d])  # [B, N, d]
 
-        # Step 3: rebuild sequence from watched fmap
-        B = tf.shape(x)[0]
-        d = patch_embed.d_model
-        N = gh * gw
-        patches = tf.reshape(fmap, [B, N, d])  # [B, N, d]
+    attn_mode = getattr(patch_embed, "token_attention_mode", "sa")
+    if attn_mode == "ca":
+        cls = tf.reduce_mean(patches, axis=1, keepdims=True)  # [B,1,d]
+    else:
+        cls = tf.cast(
+            tf.tile(patch_embed.cls_token, [B, 1, 1]), patches.dtype
+        )  # [B,1,d]
 
-        attn_mode = getattr(patch_embed, "token_attention_mode", "sa")
-        if attn_mode == "ca":
-            cls = tf.reduce_mean(patches, axis=1, keepdims=True)   # [B,1,d]
-        else:
-            cls = tf.cast(
-                tf.tile(patch_embed.cls_token, [B, 1, 1]), patches.dtype
-            )  # [B,1,d]
+    seq = tf.concat([cls, patches], axis=1)  # [B, 1+N, d]
 
-        seq = tf.concat([cls, patches], axis=1)  # [B, 1+N, d]
+    if patch_embed.pos_embed is not None:
+        seq = seq + tf.cast(patch_embed.pos_embed, seq.dtype)
 
-        if patch_embed.pos_embed is not None:
-            seq = seq + tf.cast(patch_embed.pos_embed, seq.dtype)
+    for block in blocks:
+        result = block(seq, training=False, return_attention=False)
+        seq = result if not isinstance(result, tuple) else result[0]
 
-        # Step 4: Transformer blocks
-        for block in blocks:
-            result = block(seq, training=False, return_attention=False)
-            seq = result if not isinstance(result, tuple) else result[0]
+    seq       = norm_layer(seq, training=False)
+    embedding = (seq[:, 0, :] if pool_mode == "cls"
+                 else tf.reduce_mean(seq[:, 1:, :], axis=1))
+    logits    = classifier_head(embedding, training=False)  # [1, num_cls]
 
-        # Step 5: norm → pool → head → logits  (1회, persistent tape 내부)
-        seq        = norm_layer(seq, training=False)
-        embedding  = seq[:, 0, :] if pool_mode == "cls" \
-                     else tf.reduce_mean(seq[:, 1:, :], axis=1)
-        logits     = classifier_head(embedding, training=False)  # [B, num_cls]
+    return logits, fmap, seq
 
-    # ── pred label (argmax, outside tape) ────────────────────────────────────
-    pred_idx  = int(tf.argmax(logits, axis=-1).numpy()[0])
-    pred_name = class_names[pred_idx]
 
-    # ── gradients for both classes (persistent tape 재사용) ──────────────────
-    grads_0 = tape.gradient(logits[:, 0], fmap)  # [1, gh, gw, d]
-    grads_1 = tape.gradient(logits[:, 1], fmap)  # [1, gh, gw, d]
-    del tape  # 반드시 해제
+# ─────────────────────────────────────────────────────────────
+# Pass 1: prediction (no tape)
+# ─────────────────────────────────────────────────────────────
 
-    # ── CAM builder helper ────────────────────────────────────────────────────
+def _predict_label(
+    encoder,
+    classifier_head,
+    pool_mode: str,
+    img_np: np.ndarray,
+    class_names: tuple,
+) -> str:
+    """Forward pass without tape. Returns predicted class name."""
+    x = tf.constant(img_np[None], dtype=tf.float32)  # [1, H, W, 3]
+    logits, _, _ = _encoder_forward(encoder, classifier_head, pool_mode, x)
+    pred_idx = int(tf.argmax(logits, axis=-1).numpy()[0])
+    return class_names[pred_idx]
+
+
+# ─────────────────────────────────────────────────────────────
+# Pass 2 / 3: GradCAM overlay (독립 GradientTape, persistent=False)
+# ─────────────────────────────────────────────────────────────
+
+def _gradcam_overlay_np(
+    encoder,
+    classifier_head,
+    pool_mode: str,
+    img_np: np.ndarray,
+    class_index: int,
+    alpha: float = 0.45,
+    input_scale: str = "0_255",
+    colormap: str = "jet",
+) -> np.ndarray:
+    """Single GradientTape forward pass → GradCAM overlay for one class.
+
+    Strategy
+    --------
+    - tf.Variable을 입력으로 사용해 tape.watch() 없이도 gradient 추적 보장.
+    - persistent=False (단일 .gradient() 호출이므로 persistent 불필요).
+    - fmap을 watch 대상으로 삼지 않고, x_var → patch_embed → fmap의 전체
+      계산 경로가 tape 내부에서 이루어지도록 구성한다.
+
+    Parameters
+    ----------
+    class_index : 0 → Hemangioma gradient, 1 → HCC gradient
+
+    Returns
+    -------
+    overlay : (H, W, 3) float32 [0, 1]
+    """
+    patch_embed = encoder.patch_embed
     H, W        = img_np.shape[:2]
     img_display = _to_display_np(img_np, input_scale)
 
-    def _build_overlay(grads, class_index: int) -> np.ndarray:
-        if grads is None:
-            warnings.warn(
-                f"[gradcam_table] GradCAM gradients are None for "
-                f"class_index={class_index}. Falling back to original image.",
-                RuntimeWarning, stacklevel=3,
+    # tf.Variable로 감싸면 자동으로 tape에 등록되어 watch() 불필요
+    x_var = tf.Variable(img_np[None], dtype=tf.float32, trainable=True)  # [1,H,W,3]
+
+    with tf.GradientTape() as tape:  # persistent=False (기본값)
+        # x_var → patch_embed → fmap → Transformer → logits
+        tokens, fmap, gh, gw = patch_embed(x_var, training=False)
+
+        B = tf.shape(x_var)[0]
+        d = patch_embed.d_model
+        N = gh * gw
+        patches = tf.reshape(fmap, [B, N, d])
+
+        attn_mode = getattr(patch_embed, "token_attention_mode", "sa")
+        if attn_mode == "ca":
+            cls = tf.reduce_mean(patches, axis=1, keepdims=True)
+        else:
+            cls = tf.cast(
+                tf.tile(patch_embed.cls_token, [B, 1, 1]), patches.dtype
             )
-            return img_display.copy()
-        weights = tf.reduce_mean(grads, axis=(1, 2), keepdims=True)  # [1,1,1,d]
-        cam     = tf.reduce_sum(weights * fmap, axis=-1)               # [1,gh,gw]
-        cam     = tf.nn.relu(cam)
-        cam     = cam / (tf.reduce_max(cam) + 1e-8)
-        cam_up  = tf.image.resize(cam[..., None], [H, W]).numpy()[0, :, :, 0]
 
-        # ── matplotlib colormap (default: jet) ───────────────────────────────
-        # jet:  blue(0.0) → green(0.5) → red(1.0)
-        # 두 클래스 모두 동일한 colormap 적용; class 구분은 caption으로 표시
-        heat = _cam_to_rgb(cam_up, colormap_name=colormap)   # (H, W, 3) [0,1]
+        seq = tf.concat([cls, patches], axis=1)
+        if patch_embed.pos_embed is not None:
+            seq = seq + tf.cast(patch_embed.pos_embed, seq.dtype)
 
-        return np.clip(
-            (1.0 - alpha) * img_display + alpha * heat, 0.0, 1.0
-        ).astype(np.float32)
+        for block in encoder.blocks:
+            result = block(seq, training=False, return_attention=False)
+            seq = result if not isinstance(result, tuple) else result[0]
 
-    overlay_neg = _build_overlay(grads_0, class_index=0)
-    overlay_pos = _build_overlay(grads_1, class_index=1)
+        seq       = encoder.norm(seq, training=False)
+        embedding = (seq[:, 0, :] if pool_mode == "cls"
+                     else tf.reduce_mean(seq[:, 1:, :], axis=1))
+        logits    = classifier_head(embedding, training=False)  # [1, num_cls]
+        score     = logits[:, class_index]  # scalar-ish [1]
 
-    return pred_name, overlay_neg, overlay_pos
+    # fmap에 대한 gradient (x_var → fmap 경로는 tape가 추적)
+    grads = tape.gradient(score, fmap)  # [1, gh, gw, d]
+
+    if grads is None:
+        warnings.warn(
+            f"[gradcam_table] GradCAM gradients are None for "
+            f"class_index={class_index}. Falling back to original image.",
+            RuntimeWarning, stacklevel=2,
+        )
+        return img_display.copy()
+
+    # Global Average Pool over channel dim → CAM
+    weights = tf.reduce_mean(grads, axis=(1, 2), keepdims=True)  # [1,1,1,d]
+    cam     = tf.reduce_sum(weights * fmap, axis=-1)               # [1,gh,gw]
+    cam     = tf.nn.relu(cam)
+    cam     = cam / (tf.reduce_max(cam) + 1e-8)
+    cam_up  = tf.image.resize(cam[..., None], [H, W]).numpy()[0, :, :, 0]  # (H,W)
+
+    heat    = _cam_to_rgb(cam_up, colormap_name=colormap)  # (H,W,3) [0,1]
+    overlay = np.clip(
+        (1.0 - alpha) * img_display + alpha * heat, 0.0, 1.0
+    ).astype(np.float32)
+    return overlay
 
 
 # ─────────────────────────────────────────────────────────────
@@ -442,17 +429,17 @@ def run_gradcam_table(
 ) -> "_wandb.Table | None":
     """Build and log a GradCAM WandB table to the active WandB run.
 
+    Forward pass schedule per image (3 passes, all independent):
+        Pass 1: no tape     → pred_label
+        Pass 2: GradientTape → GradCAM overlay for class_index=0 (Hemangioma)
+        Pass 3: GradientTape → GradCAM overlay for class_index=1 (HCC)
+
     Table columns:
         [0] "Original"                       -- wandb.Image of original US frame
-        [1] "True Label"                     -- string label ("HCC" or "Hemangioma")
+        [1] "True Label"                     -- string label
         [2] "Pred Label"                     -- argmax prediction + ✓/✗ mark
         [3] f"GradCAM ({class_names[0]})"    -- jet heatmap targeting negative class
         [4] f"GradCAM ({class_names[1]})"    -- jet heatmap targeting positive class
-
-    Colormap: matplotlib 'jet' (configurable via GradCAMTableConfig.colormap)
-        blue (low activation) → green (mid) → red (high activation)
-
-    Forward pass cost: **1회/image** (persistent GradientTape)
 
     Parameters
     ----------
@@ -491,7 +478,7 @@ def run_gradcam_table(
     print(
         f"[gradcam_table] {len(records)} images | "
         f"pool={pool_mode!r}  attn={attn_mode!r}  scale={cfg.input_scale!r}  "
-        f"colormap={cfg.colormap!r}  forward_pass=1/image (persistent tape)"
+        f"colormap={cfg.colormap!r}  forward_pass=3/image (3x independent GradientTape)"
     )
     print("[gradcam_table] Generating GradCAM overlays ...")
 
@@ -509,16 +496,27 @@ def run_gradcam_table(
         try:
             img_np = _load_image_np(img_path, cfg.image_size, cfg.input_scale)
 
-            # ── 1 forward pass → pred + overlay×2 ────────────────────────────
-            pred_name, overlay_neg, overlay_pos = _gradcam_both_overlays_and_pred(
-                encoder         = encoder,
-                classifier_head = classifier_head,
-                pool_mode       = pool_mode,
-                img_np          = img_np,
-                class_names     = cfg.class_names,
-                alpha           = cfg.overlay_alpha,
-                input_scale     = cfg.input_scale,
-                colormap        = cfg.colormap,
+            # ── Pass 1: prediction (no tape) ──────────────────────────────
+            pred_name = _predict_label(
+                encoder, classifier_head, pool_mode, img_np, cfg.class_names
+            )
+
+            # ── Pass 2: GradCAM for class=0 (Hemangioma) ─────────────────
+            overlay_neg = _gradcam_overlay_np(
+                encoder, classifier_head, pool_mode, img_np,
+                class_index=0,
+                alpha=cfg.overlay_alpha,
+                input_scale=cfg.input_scale,
+                colormap=cfg.colormap,
+            )
+
+            # ── Pass 3: GradCAM for class=1 (HCC) ───────────────────────
+            overlay_pos = _gradcam_overlay_np(
+                encoder, classifier_head, pool_mode, img_np,
+                class_index=1,
+                alpha=cfg.overlay_alpha,
+                input_scale=cfg.input_scale,
+                colormap=cfg.colormap,
             )
 
             correct_mark  = "✓" if pred_name == cls_name else "✗"
