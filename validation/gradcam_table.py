@@ -4,28 +4,50 @@
 Pipeline
 --------
 1. test_clean/HCC/ 와 test_clean/Hemangioma/ 에서 파일명 순서대로 n_per_class 개씩 선택
-2. 각 이미지에 대해 class_index=0 (Hemangioma) 과 class_index=1 (HCC) 두 가지 GradCAM overlay 생성
+2. 각 이미지에 대해 **1회 forward pass** (persistent GradientTape) 로:
+   - pred_label  : argmax(logits)
+   - GradCAM overlay for class=0 (Hemangioma)  ← tape.gradient(logits[:,0], fmap)
+   - GradCAM overlay for class=1 (HCC)          ← tape.gradient(logits[:,1], fmap)
 3. wandb.Table 5-column 생성:
    Col 0: Original Image
-   Col 1: True Label (str)
-   Col 2: Pred Label (str)          ← NEW: argmax of softmax output
+   Col 1: True Label  (str)
+   Col 2: Pred Label  (str, ✓/✗ mark)
    Col 3: GradCAM overlay for class=0 (Hemangioma)
    Col 4: GradCAM overlay for class=1 (HCC)
 4. WandB에 logging
 
-GradCAM 구현 핵심 (FIXED — 기존 버그 수정)
------------------------------------------
-기존 코드의 버그:
-  with tape:
-      out  = model(x)        # forward pass 완료 후
-      fmap = out["feature_map"]
-      tape.watch(fmap)       # ← 이미 계산된 tensor → gradient = None
+이미지당 Forward Pass 최적화
+-----------------------------
+이전 버전:
+  _predict_label()          → 1회 (tape 없음)
+  _gradcam_overlay_np(cls=0) → 1회 (tape)
+  _gradcam_overlay_np(cls=1) → 1회 (tape)
+  합계: **3회/image**
 
-올바른 구현:
-  Step 1: encoder.patch_embed 만 실행 → fmap 생성 (tape 내부)
-  Step 2: tape.watch(fmap)
-  Step 3: fmap → Transformer blocks → norm → CLS → classifier_head → logit
-  → gradient graph가 fmap으로 완전히 연결됨
+현재 버전:
+  _gradcam_both_overlays_and_pred() → persistent tape **1회**
+    ├─ logits 전체 계산 → pred_label = argmax
+    ├─ tape.gradient(logits[:,0], fmap) → cam0
+    └─ tape.gradient(logits[:,1], fmap) → cam1
+  합계: **1회/image**  (3× 절감)
+
+persistent tape 주의사항
+------------------------
+  - tf.GradientTape(persistent=True) 사용 시 tape는 backward pass 후에도
+    그래프를 메모리에 유지한다.
+  - .gradient() 호출 후 반드시 `del tape` 로 해제해야 GPU 메모리 누수 방지.
+
+GradCAM target tensor
+---------------------
+encoder.patch_embed(x) returns:
+    tokens : [B, 1+N, d_model]
+    fmap   : [B, gh, gw, d_model]  ← Conv1x1 proj + LN 후 spatial feature map
+    gh, gw : scalar tensors
+
+`fmap`을 GradCAM target으로 사용하는 이유:
+  - Spatial 구조 유지 [B, gh, gw, C]
+  - CNN projection 후, Transformer 입력 직전 → 최종 분류에 직접 기여
+  - encoded_patches [B, seq, d]는 flatten되어 spatial 정보 소실
 
 지원 wrapper 구조
 -----------------
@@ -54,6 +76,7 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Tuple
 
 import numpy as np
 from PIL import Image as _PIL_Image
@@ -217,18 +240,35 @@ def _unwrap_encoder_and_head(stage2_model):
 
 
 # ─────────────────────────────────────────────────────────────
-# Predicted label helper  ← NEW
+# Core: 1 forward pass → pred_label + GradCAM overlay ×2
 # ─────────────────────────────────────────────────────────────
 
-def _predict_label(
+def _gradcam_both_overlays_and_pred(
     encoder,
     classifier_head,
     pool_mode: str,
     img_np: np.ndarray,
     class_names: tuple,
+    alpha: float = 0.45,
     input_scale: str = "0_255",
-) -> str:
-    """Run a single forward pass and return the predicted class name.
+) -> Tuple[str, np.ndarray, np.ndarray]:
+    """Single persistent-tape forward pass → pred_label + two GradCAM overlays.
+
+    Strategy
+    --------
+    persistent=True tape를 사용해 forward pass를 1회만 수행하고,
+    두 클래스(0, 1)에 대한 gradient를 순차적으로 추출한다.
+
+    Tape lifecycle
+    --------------
+    1. GradientTape(persistent=True) context 진입
+    2. patch_embed(x) → fmap 생성 (INSIDE tape)
+    3. tape.watch(fmap)
+    4. fmap → Transformer → norm → pool → classifier_head → logits  (1회)
+    5. pred_label = argmax(logits)
+    6. grads_0 = tape.gradient(logits[:,0], fmap)   ← class=0 gradient
+    7. grads_1 = tape.gradient(logits[:,1], fmap)   ← class=1 gradient
+    8. del tape  ← 반드시 명시적 해제 (persistent tape 메모리 누수 방지)
 
     Parameters
     ----------
@@ -237,84 +277,14 @@ def _predict_label(
     pool_mode       : "cls" or "gap"
     img_np          : (H, W, 3) float32 in model input range
     class_names     : (negative_name, positive_name)
-    input_scale     : "0_255" or "0_1"
-
-    Returns
-    -------
-    pred_name : str  — class_names[argmax(softmax(logits))]
-    """
-    x = tf.constant(img_np[None], dtype=tf.float32)  # [1, H, W, 3]
-
-    # patch_embed → tokens (CLS already prepended inside patch_embed.call)
-    tokens, fmap, gh, gw = encoder.patch_embed(x, training=False)
-
-    # Transformer blocks
-    seq = tokens
-    for block in encoder.blocks:
-        result = block(seq, training=False, return_attention=False)
-        seq = result if not isinstance(result, tuple) else result[0]
-
-    seq = encoder.norm(seq, training=False)
-
-    if pool_mode == "cls":
-        embedding = seq[:, 0, :]
-    else:
-        embedding = tf.reduce_mean(seq[:, 1:, :], axis=1)
-
-    logits = classifier_head(embedding, training=False)  # [1, num_cls]
-    pred_idx = int(tf.argmax(logits, axis=-1).numpy()[0])
-    return class_names[pred_idx]
-
-
-# ─────────────────────────────────────────────────────────────
-# GradCAM core — FIXED
-# ─────────────────────────────────────────────────────────────
-
-def _gradcam_overlay_np(
-    encoder,
-    classifier_head,
-    pool_mode: str,
-    img_np: np.ndarray,
-    class_index: int,
-    alpha: float = 0.45,
-    input_scale: str = "0_255",
-) -> np.ndarray:
-    """Compute GradCAM overlay for a single image.
-
-    GradCAM target tensor
-    ---------------------
-    encoder.patch_embed(x) returns:
-        tokens : [B, 1+N, d_model]
-        fmap   : [B, gh, gw, d_model]   <- Conv1x1 proj + LN 후 spatial feature map
-        gh, gw : scalar tensors
-
-    `fmap`을 GradCAM target으로 사용하는 이유:
-      - Spatial 구조 유지 [B, gh, gw, C]
-      - CNN projection 후, Transformer 입력 직전 → 최종 분류에 직접 기여
-      - encoded_patches [B, seq, d]는 flatten되어 spatial 정보 소실
-
-    Gradient tape chain (올바른 순서)
-    ---------------------------------
-    1. GradientTape open
-    2. patch_embed(x) → fmap이 tape INSIDE에서 생성  ← 핵심 수정
-    3. tape.watch(fmap)
-    4. fmap → reshape → concat CLS → PE → Transformer blocks
-       → encoder.norm → pool → classifier_head → logits
-    5. tape.gradient(logits[:, class_index], fmap) → 유효한 gradient
-
-    Parameters
-    ----------
-    encoder         : ConvHybridViTBackbone
-    classifier_head : Dense head layer
-    pool_mode       : "cls" or "gap"
-    img_np          : (H, W, 3) float32 in model input range
-    class_index     : 0 = Hemangioma (cool colormap), 1 = HCC (warm colormap)
     alpha           : Heatmap blend weight
     input_scale     : "0_255" or "0_1"
 
     Returns
     -------
-    overlay : (H, W, 3) float32 in [0, 1]
+    pred_name   : str           — class_names[argmax(logits)]
+    overlay_neg : (H,W,3) f32  — GradCAM for class=0 (cool colormap)
+    overlay_pos : (H,W,3) f32  — GradCAM for class=1 (warm colormap)
     """
     patch_embed = encoder.patch_embed
     blocks      = encoder.blocks
@@ -322,93 +292,83 @@ def _gradcam_overlay_np(
 
     x = tf.constant(img_np[None], dtype=tf.float32)  # [1, H, W, 3]
 
-    with tf.GradientTape() as tape:
-        # ── Step 1: CNN + Conv1x1 proj → fmap (INSIDE tape) ──────────────────
-        # patch_embed.call() internally runs:
-        #   CNN backbone → Conv1x1 proj → LN → returns (tokens, fmap, gh, gw)
-        # fmap [1, gh, gw, d_model] is created here, INSIDE the tape context.
+    # ── persistent tape: 1 forward pass ──────────────────────────────────────
+    with tf.GradientTape(persistent=True) as tape:
+        # Step 1: CNN + Conv1x1 proj → fmap (INSIDE tape)
         tokens, fmap, gh, gw = patch_embed(x, training=False)
 
-        # ── Step 2: watch fmap after creation ────────────────────────────────
+        # Step 2: watch fmap
         tape.watch(fmap)
 
-        # ── Step 3: rebuild sequence from watched fmap ────────────────────────
+        # Step 3: rebuild sequence from watched fmap
         B = tf.shape(x)[0]
         d = patch_embed.d_model
         N = gh * gw
-
         patches = tf.reshape(fmap, [B, N, d])  # [B, N, d]
 
-        # CLS initialisation (mirrors ConvPatchEmbedding.call)
         attn_mode = getattr(patch_embed, "token_attention_mode", "sa")
         if attn_mode == "ca":
-            # CA mode: per-sample GAP initialisation
-            cls = tf.reduce_mean(patches, axis=1, keepdims=True)  # [B,1,d]
+            cls = tf.reduce_mean(patches, axis=1, keepdims=True)   # [B,1,d]
         else:
-            # SA mode: learnable CLS token
             cls = tf.cast(
                 tf.tile(patch_embed.cls_token, [B, 1, 1]), patches.dtype
             )  # [B,1,d]
 
         seq = tf.concat([cls, patches], axis=1)  # [B, 1+N, d]
 
-        # PE (sinusoidal / learnable / none)
         if patch_embed.pos_embed is not None:
             seq = seq + tf.cast(patch_embed.pos_embed, seq.dtype)
 
-        # ── Step 4: Transformer blocks ────────────────────────────────────────
+        # Step 4: Transformer blocks
         for block in blocks:
             result = block(seq, training=False, return_attention=False)
-            # block may return tensor or (tensor, attn_weights) tuple
             seq = result if not isinstance(result, tuple) else result[0]
 
-        # ── Step 5: norm → pool → classifier head → logits ───────────────────
-        seq = norm_layer(seq, training=False)
+        # Step 5: norm → pool → head → logits  (1회, persistent tape 내부)
+        seq        = norm_layer(seq, training=False)
+        embedding  = seq[:, 0, :] if pool_mode == "cls" \
+                     else tf.reduce_mean(seq[:, 1:, :], axis=1)
+        logits     = classifier_head(embedding, training=False)  # [B, num_cls]
 
-        if pool_mode == "cls":
-            embedding = seq[:, 0, :]                     # CLS token [B, d]
-        else:
-            embedding = tf.reduce_mean(seq[:, 1:, :], axis=1)  # GAP [B, d]
+    # ── pred label (argmax, outside tape) ────────────────────────────────────
+    pred_idx  = int(tf.argmax(logits, axis=-1).numpy()[0])
+    pred_name = class_names[pred_idx]
 
-        logits       = classifier_head(embedding, training=False)  # [B, num_cls]
-        target_score = logits[:, class_index]                      # [B]
+    # ── gradients for both classes (persistent tape 재사용) ──────────────────
+    grads_0 = tape.gradient(logits[:, 0], fmap)  # [1, gh, gw, d]
+    grads_1 = tape.gradient(logits[:, 1], fmap)  # [1, gh, gw, d]
+    del tape  # 반드시 해제
 
-    # ── Step 6: compute gradient ──────────────────────────────────────────────
-    grads = tape.gradient(target_score, fmap)  # [1, gh, gw, d]
-
-    if grads is None:
-        warnings.warn(
-            f"[gradcam_table] GradCAM gradients are None for class_index={class_index}. "
-            "fmap may not be connected to logits in the gradient graph. "
-            "Falling back to original image.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return _to_display_np(img_np, input_scale)
-
-    # ── Step 7: global average pool over channels → CAM ──────────────────────
-    weights = tf.reduce_mean(grads, axis=(1, 2), keepdims=True)  # [1,1,1,d]
-    cam     = tf.reduce_sum(weights * fmap, axis=-1)              # [1, gh, gw]
-    cam     = tf.nn.relu(cam)
-    cam     = cam / (tf.reduce_max(cam) + 1e-8)
-
-    # Upsample CAM to original input spatial resolution
-    H, W   = img_np.shape[:2]
-    cam_up = tf.image.resize(cam[..., None], [H, W]).numpy()[0, :, :, 0]  # (H, W)
-
-    # ── Step 8: colormap ──────────────────────────────────────────────────────
-    # Warm (red channel high) for HCC (class=1)
-    # Cool (blue channel high) for Hemangioma (class=0)
-    zero = np.zeros_like(cam_up)
-    if class_index == 1:
-        heat = np.stack([cam_up, zero, 1.0 - cam_up], axis=-1)  # warm (R→B)
-    else:
-        heat = np.stack([1.0 - cam_up, zero, cam_up], axis=-1)  # cool (B→R)
-
-    # Blend with original image
+    # ── CAM builder helper ────────────────────────────────────────────────────
+    H, W        = img_np.shape[:2]
     img_display = _to_display_np(img_np, input_scale)
-    overlay = np.clip((1.0 - alpha) * img_display + alpha * heat, 0.0, 1.0)
-    return overlay.astype(np.float32)
+
+    def _build_overlay(grads, class_index: int) -> np.ndarray:
+        if grads is None:
+            warnings.warn(
+                f"[gradcam_table] GradCAM gradients are None for "
+                f"class_index={class_index}. Falling back to original image.",
+                RuntimeWarning, stacklevel=3,
+            )
+            return img_display.copy()
+        weights = tf.reduce_mean(grads, axis=(1, 2), keepdims=True)  # [1,1,1,d]
+        cam     = tf.reduce_sum(weights * fmap, axis=-1)               # [1,gh,gw]
+        cam     = tf.nn.relu(cam)
+        cam     = cam / (tf.reduce_max(cam) + 1e-8)
+        cam_up  = tf.image.resize(cam[..., None], [H, W]).numpy()[0, :, :, 0]
+        zero    = np.zeros_like(cam_up)
+        if class_index == 1:                                  # HCC: warm (R→B)
+            heat = np.stack([cam_up, zero, 1.0 - cam_up], axis=-1)
+        else:                                                 # Hem: cool (B→R)
+            heat = np.stack([1.0 - cam_up, zero, cam_up], axis=-1)
+        return np.clip(
+            (1.0 - alpha) * img_display + alpha * heat, 0.0, 1.0
+        ).astype(np.float32)
+
+    overlay_neg = _build_overlay(grads_0, class_index=0)
+    overlay_pos = _build_overlay(grads_1, class_index=1)
+
+    return pred_name, overlay_neg, overlay_pos
 
 
 # ─────────────────────────────────────────────────────────────
@@ -424,9 +384,11 @@ def run_gradcam_table(
     Table columns:
         [0] "Original"                       -- wandb.Image of original US frame
         [1] "True Label"                     -- string label ("HCC" or "Hemangioma")
-        [2] "Pred Label"                     -- argmax prediction string  ← NEW
+        [2] "Pred Label"                     -- argmax prediction + ✓/✗ mark
         [3] f"GradCAM ({class_names[0]})"    -- overlay targeting negative class (cool)
         [4] f"GradCAM ({class_names[1]})"    -- overlay targeting positive class (warm)
+
+    Forward pass cost: **1회/image** (persistent GradientTape)
 
     Parameters
     ----------
@@ -436,19 +398,6 @@ def run_gradcam_table(
     Returns
     -------
     wandb.Table or None if WandB run is not active.
-
-    Usage (Cell 13 in notebook, or score_probe integration)
-    --------------------------------------------------------
-    from validation.gradcam_table import GradCAMTableConfig, run_gradcam_table
-
-    gradcam_cfg = GradCAMTableConfig(
-        test_clean_dir = "/kaggle/input/.../test_clean",
-        n_per_class    = 8,
-        image_size     = (384, 384),
-        input_scale    = "0_255",
-        wandb_prefix   = f"Benchmark/{model_id}",
-    )
-    run_gradcam_table(stage2_model=wrapper, cfg=gradcam_cfg)
     """
     if _wandb is None or _wandb.run is None:
         print("[gradcam_table] WandB run not active -- skipping GradCAM table.")
@@ -458,7 +407,6 @@ def run_gradcam_table(
         print("[gradcam_table] TensorFlow not available -- skipping GradCAM table.")
         return None
 
-    # ── Unwrap model components ───────────────────────────────────────────────
     try:
         encoder, classifier_head, pool_mode = _unwrap_encoder_and_head(stage2_model)
     except AttributeError as e:
@@ -477,17 +425,16 @@ def run_gradcam_table(
 
     attn_mode = getattr(encoder.patch_embed, "token_attention_mode", "sa")
     print(
-        f"[gradcam_table] {len(records)} images found. "
-        f"pool_mode={pool_mode!r}  attn_mode={attn_mode!r}  "
-        f"input_scale={cfg.input_scale!r}"
+        f"[gradcam_table] {len(records)} images | "
+        f"pool={pool_mode!r}  attn={attn_mode!r}  scale={cfg.input_scale!r}  "
+        f"forward_pass=1/image (persistent tape)"
     )
     print("[gradcam_table] Generating GradCAM overlays ...")
 
-    # ── 5-column table  (Original | True | Pred | GradCAM×2) ─────────────────
     columns = [
         "Original",
         "True Label",
-        "Pred Label",                        # ← NEW
+        "Pred Label",
         f"GradCAM ({cfg.class_names[0]})",
         f"GradCAM ({cfg.class_names[1]})",
     ]
@@ -498,43 +445,27 @@ def run_gradcam_table(
         try:
             img_np = _load_image_np(img_path, cfg.image_size, cfg.input_scale)
 
-            # ── Predicted label (1 forward pass, no tape) ─────────────────────
-            pred_name = _predict_label(
-                encoder, classifier_head, pool_mode,
-                img_np, cfg.class_names, cfg.input_scale,
+            # ── 1 forward pass → pred + overlay×2 ────────────────────────────
+            pred_name, overlay_neg, overlay_pos = _gradcam_both_overlays_and_pred(
+                encoder       = encoder,
+                classifier_head = classifier_head,
+                pool_mode     = pool_mode,
+                img_np        = img_np,
+                class_names   = cfg.class_names,
+                alpha         = cfg.overlay_alpha,
+                input_scale   = cfg.input_scale,
             )
 
-            # ── GradCAM overlays ──────────────────────────────────────────────
-            overlay_neg = _gradcam_overlay_np(
-                encoder, classifier_head, pool_mode,
-                img_np, class_index=0, alpha=cfg.overlay_alpha,
-                input_scale=cfg.input_scale,
-            )
-            overlay_pos = _gradcam_overlay_np(
-                encoder, classifier_head, pool_mode,
-                img_np, class_index=1, alpha=cfg.overlay_alpha,
-                input_scale=cfg.input_scale,
-            )
+            correct_mark  = "✓" if pred_name == cls_name else "✗"
+            img_display   = _to_display_np(img_np, cfg.input_scale)
 
-            # ── WandB Image objects ───────────────────────────────────────────
-            img_display = _to_display_np(img_np, cfg.input_scale)
-            # mark correct / wrong prediction in caption
-            correct_mark = "✓" if pred_name == cls_name else "✗"
-            w_orig    = _np_to_wandb_image(
-                img_display,
-                caption=f"{cls_name} | {img_path.name}",
-            )
-            w_neg_cam = _np_to_wandb_image(
-                overlay_neg,
-                caption=f"GradCAM→{cfg.class_names[0]}",
-            )
-            w_pos_cam = _np_to_wandb_image(
-                overlay_pos,
-                caption=f"GradCAM→{cfg.class_names[1]}",
-            )
+            w_orig    = _np_to_wandb_image(img_display,  caption=f"{cls_name} | {img_path.name}")
+            w_neg_cam = _np_to_wandb_image(overlay_neg,  caption=f"GradCAM→{cfg.class_names[0]}")
+            w_pos_cam = _np_to_wandb_image(overlay_pos,  caption=f"GradCAM→{cfg.class_names[1]}")
 
             table.add_data(w_orig, cls_name, f"{pred_name} {correct_mark}", w_neg_cam, w_pos_cam)
             print(f"OK  (pred={pred_name} {correct_mark})")
+
         except Exception as e:
             print(f"FAILED: {e}")
             table.add_data(None, cls_name, "ERROR", None, None)
