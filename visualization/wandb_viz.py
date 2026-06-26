@@ -33,10 +33,16 @@ TokenAttentionMode = Literal["sa", "ca"]
 # _infer_patch_grid, _extract_cls_attention_map, compute_attention_rollout
 # already handle both shapes via Q==1 branching.
 #
-# This update adds:
-#   * WandbVisualizationConfig.token_attention_mode  field
-#   * Column label suffix  _SA / _CA  in wandb tables
-#   * wandb.run.config["token_attention_mode"] logging on first use
+# Heatmap normalization — DINO-style per-image mass threshold:
+#   1. Flatten 2-D patch map to 1-D for a SINGLE image.
+#   2. Sort descending, compute cumulative sum.
+#   3. Find cutoff index where cumsum >= mass_threshold (default 0.75).
+#   4. Zero out patches below cutoff, then rescale surviving values to [0,1].
+#   Rationale: highlights the minimal set of patches that collectively carry
+#   mass_threshold fraction of the total attention mass, suppressing diffuse
+#   background noise — identical to the DINO paper's per-head visualization.
+#   Processing is per-image (not per-batch) so each image's own distribution
+#   sets the threshold independently.
 # ---------------------------------------------------------------------------
 
 
@@ -97,6 +103,22 @@ class WandbVisualizationConfig:
     이 값에 따라 wandb table column 이름에 접미사가 붙어
     SA/CA 실험 결과를 구분하여 로깅함.
     SA 모드에서는 기존 코드와 column 이름이 완전히 동일하여 하위 호환됨.
+    """
+    mass_threshold: float = 0.75
+    """DINO-style per-image attention mass threshold.
+
+    각 이미지별로 독립적으로 적용되는 cumulative-mass cutoff.
+    0.0~1.0 범위. 기본값 0.75.
+
+    동작 방식:
+        1. 2-D patch map을 1-D로 flatten.
+        2. 내림차순 정렬 후 cumulative sum 계산.
+        3. cumsum >= mass_threshold 를 처음 만족하는 index 찾기.
+        4. 해당 index 미만의 patch 값은 유지, 이후는 0으로 masking.
+        5. 생존 값을 [0, 1]로 재정규화. 모두 0이면 min-max fallback.
+
+    주의: batch 단위가 아닌 image 단위로 처리되므로
+    각 이미지의 attention 분포가 독립적으로 threshold를 결정함.
     """
 
     # ── derived helper ────────────────────────────────────────────────────
@@ -176,37 +198,99 @@ def _prepare_display_image(image: np.ndarray, normalize_from_minus1: bool = Fals
     return (x * 255.0).astype("uint8")
 
 
-def _normalize_heatmap(hm: np.ndarray) -> np.ndarray:
+# ── DINO-style per-image mass threshold normalization ─────────────────────
+
+def _normalize_heatmap_dino(hm: np.ndarray, mass_threshold: float = 0.75) -> np.ndarray:
+    """DINO-style per-image cumulative mass threshold normalization.
+
+    각 이미지의 attention 분포를 기준으로 독립적으로 threshold를 결정함.
+    batch 단위 처리 없음 — 반드시 단일 이미지 2-D (또는 임의 shape) 입력.
+
+    알고리즘:
+        1. 1-D flatten.
+        2. 내림차순 정렬 → cumulative sum.
+        3. cumsum / total_sum >= mass_threshold 를 처음 만족하는 index cutoff 결정.
+        4. cutoff 이하 순위(즉, 상위 mass_threshold 비율) 패치 값 유지, 나머지 0.
+        5. 생존 값 [0,1] 재정규화. 전체 0이면 min-max fallback.
+
+    Args:
+        hm             : 임의 shape의 float array (단일 이미지).
+        mass_threshold : cumulative mass cutoff. 기본값 0.75.
+
+    Returns:
+        normalized heatmap, same shape as input, values in [0, 1].
+    """
     hm = np.asarray(hm, dtype="float32")
-    hm_min = float(np.min(hm))
-    hm_max = float(np.max(hm))
-    if hm_max > hm_min:
-        hm = (hm - hm_min) / (hm_max - hm_min)
+    original_shape = hm.shape
+    flat = hm.flatten()                          # 1-D
+
+    total = float(flat.sum())
+    if total <= 0.0:
+        # all-zero fallback
+        return np.zeros(original_shape, dtype="float32")
+
+    # 내림차순 정렬 → cumsum
+    sorted_indices = np.argsort(flat)[::-1]      # descending
+    sorted_vals = flat[sorted_indices]
+    cumsum = np.cumsum(sorted_vals) / total
+
+    # cumsum >= mass_threshold 를 처음 만족하는 rank (inclusive)
+    cutoff_rank = int(np.searchsorted(cumsum, mass_threshold))
+    cutoff_rank = min(cutoff_rank, len(flat) - 1)
+
+    # cutoff_rank + 1 개의 top-rank 패치만 유지
+    threshold_val = sorted_vals[cutoff_rank]
+
+    masked = np.where(flat >= threshold_val, flat, 0.0)
+
+    # [0, 1] 재정규화
+    m_max = float(masked.max())
+    if m_max > 0.0:
+        masked = masked / m_max
     else:
-        hm = np.zeros_like(hm, dtype="float32")
-    hm = np.clip(hm, 0.0, 1.0)
-    return hm
+        # fallback: min-max
+        hm_min = float(flat.min())
+        hm_max = float(flat.max())
+        if hm_max > hm_min:
+            masked = (flat - hm_min) / (hm_max - hm_min)
+        else:
+            masked = np.zeros_like(flat, dtype="float32")
+
+    return np.clip(masked.reshape(original_shape), 0.0, 1.0)
 
 
-def _resize_heatmap(hm: np.ndarray, target_hw: tuple[int, int]) -> np.ndarray:
-    hm = _normalize_heatmap(hm)
+def _resize_heatmap(
+    hm: np.ndarray,
+    target_hw: tuple[int, int],
+    mass_threshold: float = 0.75,
+) -> np.ndarray:
+    """DINO-style normalize → bilinear upsample → DINO-style normalize again."""
+    hm = _normalize_heatmap_dino(hm, mass_threshold)
     hm_tf = tf.convert_to_tensor(hm[..., None], dtype=tf.float32)
     hm_tf = tf.image.resize(hm_tf, target_hw, method="bilinear")
     hm_np = tf.squeeze(hm_tf, axis=-1).numpy()
-    return _normalize_heatmap(hm_np)
+    return _normalize_heatmap_dino(hm_np, mass_threshold)
 
 
-def _colormap_heatmap(hm: np.ndarray) -> np.ndarray:
-    hm = _normalize_heatmap(hm)
+def _colormap_heatmap(
+    hm: np.ndarray,
+    mass_threshold: float = 0.75,
+) -> np.ndarray:
+    hm = _normalize_heatmap_dino(hm, mass_threshold)
     hm_uint8 = np.uint8(hm * 255.0)
     import matplotlib.cm as cm
     colored = cm.get_cmap("jet")(hm_uint8.astype(np.float32) / 255.0)[..., :3]
     return np.uint8(np.clip(colored * 255.0, 0.0, 255.0))
 
 
-def _overlay_image(image_uint8: np.ndarray, hm: np.ndarray, alpha: float = 0.45) -> np.ndarray:
-    hm = _normalize_heatmap(hm)
-    heat_rgb = _colormap_heatmap(hm)
+def _overlay_image(
+    image_uint8: np.ndarray,
+    hm: np.ndarray,
+    alpha: float = 0.45,
+    mass_threshold: float = 0.75,
+) -> np.ndarray:
+    hm = _normalize_heatmap_dino(hm, mass_threshold)
+    heat_rgb = _colormap_heatmap(hm, mass_threshold=1.0)   # already normalized above
     out = image_uint8.astype("float32") * (1.0 - alpha) + heat_rgb.astype("float32") * alpha
     return np.clip(out, 0, 255).astype("uint8")
 
@@ -367,6 +451,7 @@ def _append_eigen_to_row(
     img_uint8: np.ndarray,
     head_reduction: str,
     alpha: float,
+    mass_threshold: float = 0.75,
 ) -> dict:
     attn_list = _get_attention_list_from_outputs(outputs)
     if attn_list is None:
@@ -378,10 +463,10 @@ def _append_eigen_to_row(
         target_hw = img_uint8.shape[:2]
         for ki in range(_EIGEN_K):
             ev = eigenmaps[0, ki].reshape(gh, gw)
-            ev_up = _resize_heatmap(ev, target_hw)
-            row[f"eigenattn_k{ki + 1}"] = wandb.Image(_colormap_heatmap(ev_up))
+            ev_up = _resize_heatmap(ev, target_hw, mass_threshold=mass_threshold)
+            row[f"eigenattn_k{ki + 1}"] = wandb.Image(_colormap_heatmap(ev_up, mass_threshold=mass_threshold))
             row[f"eigen_overlay_k{ki + 1}"] = wandb.Image(
-                _overlay_image(img_uint8, ev_up, alpha)
+                _overlay_image(img_uint8, ev_up, alpha, mass_threshold=mass_threshold)
             )
     except Exception as e:
         print(f"[EigenAttention] 계산 실패 (skip): {e}")
@@ -564,12 +649,15 @@ def build_attention_wandb_table(
         column names에 '_CA' suffix 가 붙어 SA 실험과 구분됨.
     token_attention_mode='sa' 일 때 (기본값):
         column names 변화 없음 (하위 호환).
+
+    heatmap 정규화는 DINO-style per-image mass threshold (vis_cfg.mass_threshold).
     """
     _require_wandb()
     _log_token_attention_mode_once(vis_cfg.token_attention_mode)
 
-    mode_sfx = vis_cfg.mode_suffix  # '_SA' or '_CA'
+    mode_sfx = vis_cfg.mode_suffix           # '_SA' or '_CA'
     attn_vis_label = vis_cfg.attention_mode  # e.g. 'last_layer'
+    mt = vis_cfg.mass_threshold              # per-image DINO threshold
 
     def _get_encoder_outputs(m, img_batch):
         enc = getattr(m, encoder_accessor, None)
@@ -594,23 +682,23 @@ def build_attention_wandb_table(
 
         img_uint8 = _prepare_display_image(original, vis_cfg.normalize_from_minus1)
         target_hw = img_uint8.shape[:2]
-        merged_up = _resize_heatmap(merged[0], target_hw)
+        merged_up = _resize_heatmap(merged[0], target_hw, mass_threshold=mt)
 
         row: dict[str, Any] = {
             "path": path,
             "label": true_label,
             "raw_image": wandb.Image(img_uint8),
-            # SA: f"attention_map_last_layer"  (mode_sfx='_SA' → keeps old name by design)
-            # CA: f"attention_map_last_layer_CA"
-            f"attention_map_{attn_vis_label}{mode_sfx}": wandb.Image(_colormap_heatmap(merged_up)),
+            f"attention_map_{attn_vis_label}{mode_sfx}": wandb.Image(
+                _colormap_heatmap(merged_up, mass_threshold=mt)
+            ),
             f"overlay_{attn_vis_label}{mode_sfx}": wandb.Image(
-                _overlay_image(img_uint8, merged_up, vis_cfg.overlay_alpha)
+                _overlay_image(img_uint8, merged_up, vis_cfg.overlay_alpha, mass_threshold=mt)
             ),
         }
         for h in range(headwise.shape[1]):
-            hm_up = _resize_heatmap(headwise[0, h], target_hw)
+            hm_up = _resize_heatmap(headwise[0, h], target_hw, mass_threshold=mt)
             row[f"overlay_head_{h + 1}{mode_sfx}"] = wandb.Image(
-                _overlay_image(img_uint8, hm_up, vis_cfg.overlay_alpha)
+                _overlay_image(img_uint8, hm_up, vis_cfg.overlay_alpha, mass_threshold=mt)
             )
 
         if getattr(vis_cfg, "enable_eigen", False):
@@ -618,6 +706,7 @@ def build_attention_wandb_table(
                 row, outputs, img_uint8,
                 head_reduction=vis_cfg.rollout_head_reduction,
                 alpha=vis_cfg.overlay_alpha,
+                mass_threshold=mt,
             )
         rows.append(row)
 
@@ -657,6 +746,7 @@ class ExtValConfig:
         rollout_discard_ratio : 0.0~1.0
         enable_eigen          : EigenAttention 시각화 여부
         encoder_accessor      : model 내 encoder attribute 이름
+        mass_threshold        : DINO-style per-image cumulative mass cutoff (기본 0.75)
     """
     val_dir: str
     num_images: int = 8
@@ -670,6 +760,7 @@ class ExtValConfig:
     rollout_discard_ratio: float = 0.0
     enable_eigen: bool = False
     encoder_accessor: str = "encoder"
+    mass_threshold: float = 0.75
 
     def to_vis_cfg(self, class_names: tuple[str, str] = ("hemangioma", "hcc")) -> WandbVisualizationConfig:
         """ExtValConfig → WandbVisualizationConfig 변환 헬퍼."""
@@ -686,6 +777,7 @@ class ExtValConfig:
             rollout_discard_ratio=self.rollout_discard_ratio,
             enable_eigen=self.enable_eigen,
             table_key=self.table_key,
+            mass_threshold=self.mass_threshold,
         )
 
     def log_to_wandb(self, model: keras.Model) -> None:
@@ -726,6 +818,8 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
 
     enable_eigen=True 시 k=1,2,3 EigenAttention map 및 overlay가
     기존 columns 뒤에 추가 logging됨.
+
+    heatmap 정규화: DINO-style per-image mass threshold (vis_cfg.mass_threshold, 기본 0.75).
     """
 
     def __init__(self, vis_cfg: WandbVisualizationConfig):
@@ -769,24 +863,27 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
 
         img_uint8 = _prepare_display_image(original, self.cfg.normalize_from_minus1)
         target_hw = img_uint8.shape[:2]
-        merged_up = _resize_heatmap(merged[0], target_hw)
+        mt = self.cfg.mass_threshold
+        merged_up = _resize_heatmap(merged[0], target_hw, mass_threshold=mt)
 
-        mode_sfx = self.cfg.mode_suffix          # '_SA' or '_CA'
+        mode_sfx = self.cfg.mode_suffix           # '_SA' or '_CA'
         attn_vis_label = self.cfg.attention_mode  # e.g. 'last_layer'
 
         row = {
             "path": path,
             "label": true_label,
             "raw_image": wandb.Image(img_uint8),
-            f"attention_map_{attn_vis_label}{mode_sfx}": wandb.Image(_colormap_heatmap(merged_up)),
+            f"attention_map_{attn_vis_label}{mode_sfx}": wandb.Image(
+                _colormap_heatmap(merged_up, mass_threshold=mt)
+            ),
             f"overlay_{attn_vis_label}{mode_sfx}": wandb.Image(
-                _overlay_image(img_uint8, merged_up, self.cfg.overlay_alpha)
+                _overlay_image(img_uint8, merged_up, self.cfg.overlay_alpha, mass_threshold=mt)
             ),
         }
         for h in range(headwise.shape[1]):
-            hm_up = _resize_heatmap(headwise[0, h], target_hw)
+            hm_up = _resize_heatmap(headwise[0, h], target_hw, mass_threshold=mt)
             row[f"overlay_head_{h + 1}{mode_sfx}"] = wandb.Image(
-                _overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha)
+                _overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha, mass_threshold=mt)
             )
 
         if getattr(self.cfg, "enable_eigen", False):
@@ -794,6 +891,7 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
                 row, outputs, img_uint8,
                 head_reduction=self.cfg.rollout_head_reduction,
                 alpha=self.cfg.overlay_alpha,
+                mass_threshold=mt,
             )
 
         return row
@@ -804,7 +902,6 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
         if (epoch + 1) % self.cfg.log_every_n_epochs != 0:
             return
 
-        # wandb run config에 token_attention_mode 최초 1회 기록
         if not self._mode_logged:
             _log_token_attention_mode_once(self.cfg.token_attention_mode)
             self._mode_logged = True
@@ -835,6 +932,8 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
         - ``"rollout"``
 
     enable_eigen=True 시 k=1,2,3 EigenAttention map 및 overlay 추가 logging.
+
+    heatmap 정규화: DINO-style per-image mass threshold (vis_cfg.mass_threshold, 기본 0.75).
     """
 
     def __init__(self, vis_cfg: WandbVisualizationConfig):
@@ -873,6 +972,7 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
 
         mode_sfx = self.cfg.mode_suffix
         attn_vis_label = self.cfg.attention_mode
+        mt = self.cfg.mass_threshold
 
         row = {
             "path": path,
@@ -890,15 +990,17 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
         )
         if result is not None:
             merged, headwise = result
-            merged_up = _resize_heatmap(merged[0], img_uint8.shape[:2])
-            row[f"attention_map_{attn_vis_label}{mode_sfx}"] = wandb.Image(_colormap_heatmap(merged_up))
+            merged_up = _resize_heatmap(merged[0], img_uint8.shape[:2], mass_threshold=mt)
+            row[f"attention_map_{attn_vis_label}{mode_sfx}"] = wandb.Image(
+                _colormap_heatmap(merged_up, mass_threshold=mt)
+            )
             row[f"overlay_{attn_vis_label}{mode_sfx}"] = wandb.Image(
-                _overlay_image(img_uint8, merged_up, self.cfg.overlay_alpha)
+                _overlay_image(img_uint8, merged_up, self.cfg.overlay_alpha, mass_threshold=mt)
             )
             for h in range(headwise.shape[1]):
-                hm_up = _resize_heatmap(headwise[0, h], img_uint8.shape[:2])
+                hm_up = _resize_heatmap(headwise[0, h], img_uint8.shape[:2], mass_threshold=mt)
                 row[f"overlay_head_{h + 1}{mode_sfx}"] = wandb.Image(
-                    _overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha)
+                    _overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha, mass_threshold=mt)
                 )
 
         if getattr(self.cfg, "enable_eigen", False):
@@ -906,15 +1008,16 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
                 row, attn_outputs, img_uint8,
                 head_reduction=self.cfg.rollout_head_reduction,
                 alpha=self.cfg.overlay_alpha,
+                mass_threshold=mt,
             )
 
         grad_model = self._resolve_model_for_gradcam()
         layer_name = _resolve_gradcam_layer(grad_model, self.cfg.gradcam_layer_name)
         for class_idx in (0, 1):
             heatmap = make_gradcam_heatmap(grad_model, resized, class_idx, layer_name)
-            hm_up = _resize_heatmap(heatmap, img_uint8.shape[:2])
+            hm_up = _resize_heatmap(heatmap, img_uint8.shape[:2], mass_threshold=mt)
             row[f"gradcam_class_{class_idx}"] = wandb.Image(
-                _overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha)
+                _overlay_image(img_uint8, hm_up, self.cfg.overlay_alpha, mass_threshold=mt)
             )
         return row
 
@@ -964,7 +1067,6 @@ class WandbBenchmarkVisualizer(keras.callbacks.Callback):
         if (epoch + 1) % self.cfg.log_every_n_epochs != 0:
             return
 
-        # wandb run config에 token_attention_mode 최초 1회 기록
         if not self._mode_logged:
             _log_token_attention_mode_once(self.cfg.token_attention_mode)
             self._mode_logged = True
