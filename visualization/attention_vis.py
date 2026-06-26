@@ -15,6 +15,13 @@ References
     spatial grid.  Unlike CLS-rollout, this is NOT anchored to a single
     token and therefore captures scene-level structure.
 
+* DINO mass-threshold visualization : Caron et al., 2021
+    "Emerging Properties in Self-Supervised Vision Transformers"
+    https://arxiv.org/abs/2104.14294
+    Key idea: keep only patches whose cumulative attention mass exceeds
+    (1 - threshold), so that uniform / flat attention maps render dark
+    rather than artifactually spanning the full colormap range.
+
 Shape contract
 --------------
 SA mode  (token_attention_mode='sa'):
@@ -254,24 +261,82 @@ def per_head_cls_attention(
 
 
 # ---------------------------------------------------------------------------
-# 4. Heatmap helpers
+# 4. Heatmap helpers  (DINO-style mass threshold normalization)
 # ---------------------------------------------------------------------------
 def _attn_to_heatmap(
     attn_1d: np.ndarray,
     patch_grid: tuple[int, int],
     input_hw: tuple[int, int],
     colormap: int = cv2.COLORMAP_JET,
+    mass_threshold: float = 0.75,
 ) -> np.ndarray:
-    """[N] float -> [H, W, 3] uint8 heatmap, upsampled to input_hw."""
+    """[N] float -> [H, W, 3] uint8 heatmap, upsampled to input_hw.
+
+    Normalization strategy: DINO-style cumulative mass threshold.
+    ---------------------------------------------------------------
+    Reference: Caron et al., "Emerging Properties in Self-Supervised
+    Vision Transformers", ICCV 2021.  https://arxiv.org/abs/2104.14294
+
+    Only patches whose attention mass falls in the top-(mass_threshold)
+    fraction of total attention are kept; all others are zeroed out.
+    This prevents flat / uniform attention maps from artifactually
+    spanning the full colormap range via simple per-image min-max
+    normalization.
+
+    Example (8 patches, uniform distribution):
+        raw   = [0.124, 0.124, 0.124, 0.124, 0.125, 0.125, 0.125, 0.129]
+        -- old min-max → normalized spans [0.0, 1.0] → full jet range
+           → boundary patch always appears RED (artifact)
+        -- DINO mass (threshold=0.75):
+           cumulative mass of top-75%: need ~6 patches to reach 0.75
+           each patch contributes ~0.125; uniform → many patches share
+           the threshold boundary → keep_mask is sparse → map stays dark
+           → correctly signals "no focused attention here"
+
+    Parameters
+    ----------
+    attn_1d        : [N] float, raw attention weights (need not sum to 1)
+    patch_grid     : (grid_h, grid_w) — spatial layout of patches
+    input_hw       : (H, W) — target output resolution
+    colormap       : OpenCV colormap constant (default: COLORMAP_JET)
+    mass_threshold : fraction of total attention mass to retain.
+                     0.75 = keep patches covering top 75% of mass.
+                     Lower values → sparser / sharper maps.
+                     Higher values → more inclusive maps.
+    """
     gh, gw = patch_grid
     H, W   = input_hw
-    amap = attn_1d.reshape(gh, gw).astype(np.float32)
-    mn, mx = amap.min(), amap.max()
-    amap = (amap - mn) / (mx - mn + 1e-8)
-    amap_u8    = (amap * 255).astype(np.uint8)
+
+    flat = attn_1d.flatten().astype(np.float32)
+    N    = len(flat)
+
+    # --- DINO-style mass threshold ---
+    # 1) normalise to a probability distribution
+    prob = flat / (flat.sum() + 1e-8)               # [N], sums to 1
+
+    # 2) sort patches by attention value (ascending) so we can compute
+    #    how much *cumulative* mass is contributed from the highest patches
+    sorted_idx = np.argsort(prob)                   # ascending
+    cumsum     = np.cumsum(prob[sorted_idx])         # cumulative mass, ascending
+
+    # 3) build keep mask: retain patches whose cumulative mass (from the
+    #    top) exceeds (1 - mass_threshold), i.e. the top-75% mass patches
+    keep_mask            = np.zeros(N, dtype=np.float32)
+    keep_mask[sorted_idx[cumsum > (1.0 - mass_threshold)]] = 1.0
+
+    # 4) zero-out sub-threshold patches, then normalise kept range to [0, 1]
+    masked = flat * keep_mask
+    mx     = masked.max()
+    if mx < 1e-8:
+        # Fully flat / near-zero attention: render as all-zero (dark) map
+        amap_u8 = np.zeros((gh, gw), dtype=np.uint8)
+    else:
+        amap_norm = masked / mx                     # [0, 1]
+        amap_u8   = (amap_norm.reshape(gh, gw) * 255).astype(np.uint8)
+
     heat_small = cv2.applyColorMap(amap_u8, colormap)
     heat_large = cv2.resize(heat_small, (W, H), interpolation=cv2.INTER_LINEAR)
-    return heat_large
+    return heat_large                               # [H, W, 3] BGR uint8
 
 
 def overlay_heatmap(
@@ -304,11 +369,17 @@ def build_attention_wandb_table(
     eigen_layer_fusion: str = "last",
     last_layer_only_heads: bool = True,
     token_attention_mode: str = "sa",
+    mass_threshold: float = 0.75,
 ) -> wandb.Table:
     """Build WandB Table: Rollout + (optional) EigenAttention + per-head overlays.
 
     Works for both SA [B,H,T,T] and CA [B,H,1,N] attention shapes.
     Pass token_attention_mode=cfg.token_attention_mode for correct column suffix.
+
+    Heatmap normalization uses DINO-style mass threshold (default 0.75).
+    Flat / uniform attention maps render dark rather than spanning the full
+    colormap range.  Adjust mass_threshold to control map sparsity:
+        0.60 → sparse/sharp   0.75 → default   0.90 → inclusive
 
     EigenAttention is skipped entirely (no column, no crash) if eigen_attention
     returns (None, None) for any reason (shape mismatch, SVD failure, etc.).
@@ -357,14 +428,16 @@ def build_attention_wandb_table(
     for i in range(B):
         img = images_np[i]
 
-        rollout_heat    = _attn_to_heatmap(rollout_all[i], patch_grid, input_hw)
+        rollout_heat    = _attn_to_heatmap(rollout_all[i], patch_grid, input_hw,
+                                           mass_threshold=mass_threshold)
         rollout_overlay = overlay_heatmap(img, rollout_heat, alpha=alpha)
 
         eigen_raw_imgs, eigen_overlay_imgs = [], []
         if eigen_ok:
             for k in range(k_eigen):
                 try:
-                    e_heat = _attn_to_heatmap(eigenmaps[i, :, k], patch_grid, input_hw)
+                    e_heat = _attn_to_heatmap(eigenmaps[i, :, k], patch_grid, input_hw,
+                                              mass_threshold=mass_threshold)
                     e_raw  = cv2.cvtColor(e_heat, cv2.COLOR_BGR2RGB)
                     e_ov   = overlay_heatmap(img, e_heat, alpha=alpha)
                     eigen_raw_imgs.append(wandb.Image(e_raw))
@@ -376,7 +449,8 @@ def build_attention_wandb_table(
 
         head_overlays = []
         for h in range(n_heads):
-            h_heat = _attn_to_heatmap(per_head_all[i, h], patch_grid, input_hw)
+            h_heat = _attn_to_heatmap(per_head_all[i, h], patch_grid, input_hw,
+                                      mass_threshold=mass_threshold)
             h_ov   = overlay_heatmap(img, h_heat, alpha=alpha)
             head_overlays.append(wandb.Image(h_ov))
 
@@ -405,6 +479,7 @@ def build_eigen_wandb_table(
     layer_fusion: str = "last",
     alpha: float = 0.5,
     token_attention_mode: str = "sa",
+    mass_threshold: float = 0.75,
 ) -> tuple[wandb.Table | None, np.ndarray | None]:
     """Lightweight table: raw eigenmap + overlay for top-k eigenvectors.
 
@@ -437,7 +512,8 @@ def build_eigen_wandb_table(
         raw_imgs, ov_imgs = [], []
         for k in range(k_components):
             try:
-                heat = _attn_to_heatmap(eigenmaps[i, :, k], patch_grid, input_hw)
+                heat = _attn_to_heatmap(eigenmaps[i, :, k], patch_grid, input_hw,
+                                        mass_threshold=mass_threshold)
                 raw_imgs.append(wandb.Image(cv2.cvtColor(heat, cv2.COLOR_BGR2RGB)))
                 ov_imgs.append(wandb.Image(overlay_heatmap(img, heat, alpha=alpha)))
             except Exception as e:
