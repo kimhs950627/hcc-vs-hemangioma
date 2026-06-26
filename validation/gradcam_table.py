@@ -16,6 +16,15 @@ Pipeline
    Col 4: GradCAM overlay for class=1 (HCC)
 4. WandB에 logging
 
+Colormap
+--------
+matplotlib 'jet' colormap 사용:
+  - cam=0.0 (low activation)  → 파랑(blue)
+  - cam=0.5 (mid activation)  → 초록(green)
+  - cam=1.0 (high activation) → 빨강(red)
+  - 두 클래스 모두 동일한 jet colormap 적용 (class별 구분은 caption으로 표시)
+  - RGBA → RGB slicing으로 alpha 채널 제거
+
 이미지당 Forward Pass 최적화
 -----------------------------
 이전 버전:
@@ -82,6 +91,12 @@ import numpy as np
 from PIL import Image as _PIL_Image
 
 try:
+    import matplotlib.cm as _mpl_cm
+    _JET = _mpl_cm.get_cmap("jet")
+except Exception:
+    _JET = None
+
+try:
     import wandb as _wandb
 except Exception:
     _wandb = None
@@ -111,6 +126,8 @@ class GradCAMTableConfig:
     wandb_prefix    : Optional prefix prepended to wandb_key. Default "".
     input_scale     : "0_1"   -> model receives [0,1] float32.
                       "0_255" -> model receives [0,255] float32 (default).
+    colormap        : matplotlib colormap name for GradCAM heatmap. Default "jet".
+                      Examples: "jet", "inferno", "hot", "RdYlGn"
     """
     test_clean_dir : str
     n_per_class    : int   = 8
@@ -120,6 +137,7 @@ class GradCAMTableConfig:
     class_names    : tuple = ("Hemangioma", "HCC")
     wandb_prefix   : str   = ""
     input_scale    : str   = "0_255"   # "0_1" or "0_255"
+    colormap       : str   = "jet"     # matplotlib colormap name
 
     @property
     def table_key(self) -> str:
@@ -161,6 +179,36 @@ def _np_to_wandb_image(img_np: np.ndarray, caption: str = "") -> "_wandb.Image":
     arr_uint8 = np.clip(img_np * 255.0, 0, 255).astype(np.uint8)
     pil = _PIL_Image.fromarray(arr_uint8)
     return _wandb.Image(pil, caption=caption)
+
+
+# ─────────────────────────────────────────────────────────────
+# Colormap helper
+# ─────────────────────────────────────────────────────────────
+
+def _cam_to_rgb(cam_up: np.ndarray, colormap_name: str = "jet") -> np.ndarray:
+    """Apply matplotlib colormap to a [0,1] CAM array.
+
+    Parameters
+    ----------
+    cam_up       : (H, W) float32, range [0, 1]
+    colormap_name: matplotlib colormap name. Default "jet".
+                   jet:     blue(low) → green(mid) → red(high)
+                   inferno: black → purple → orange → yellow(high)
+                   hot:     black → red → yellow → white(high)
+
+    Returns
+    -------
+    heat : (H, W, 3) float32, range [0, 1]  — RGBA alpha channel stripped
+    """
+    try:
+        import matplotlib.cm as cm
+        cmap = cm.get_cmap(colormap_name)
+    except Exception:
+        # fallback: grayscale if matplotlib unavailable
+        return np.stack([cam_up, cam_up, cam_up], axis=-1).astype(np.float32)
+
+    rgba = cmap(cam_up)                          # (H, W, 4) float64, range [0, 1]
+    return rgba[..., :3].astype(np.float32)      # drop alpha → (H, W, 3)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -251,8 +299,19 @@ def _gradcam_both_overlays_and_pred(
     class_names: tuple,
     alpha: float = 0.45,
     input_scale: str = "0_255",
+    colormap: str = "jet",
 ) -> Tuple[str, np.ndarray, np.ndarray]:
     """Single persistent-tape forward pass → pred_label + two GradCAM overlays.
+
+    Colormap
+    --------
+    matplotlib 'jet' (default) 사용:
+      cam=0.0 → blue  (low activation)
+      cam=0.5 → green (mid activation)
+      cam=1.0 → red   (high activation)
+
+    두 클래스(HCC, Hemangioma) 모두 동일한 jet colormap 적용.
+    class별 구분은 WandB table의 column caption으로 표시.
 
     Strategy
     --------
@@ -279,12 +338,13 @@ def _gradcam_both_overlays_and_pred(
     class_names     : (negative_name, positive_name)
     alpha           : Heatmap blend weight
     input_scale     : "0_255" or "0_1"
+    colormap        : matplotlib colormap name (default "jet")
 
     Returns
     -------
     pred_name   : str           — class_names[argmax(logits)]
-    overlay_neg : (H,W,3) f32  — GradCAM for class=0 (cool colormap)
-    overlay_pos : (H,W,3) f32  — GradCAM for class=1 (warm colormap)
+    overlay_neg : (H,W,3) f32  — GradCAM for class=0  (jet colormap)
+    overlay_pos : (H,W,3) f32  — GradCAM for class=1  (jet colormap)
     """
     patch_embed = encoder.patch_embed
     blocks      = encoder.blocks
@@ -356,11 +416,12 @@ def _gradcam_both_overlays_and_pred(
         cam     = tf.nn.relu(cam)
         cam     = cam / (tf.reduce_max(cam) + 1e-8)
         cam_up  = tf.image.resize(cam[..., None], [H, W]).numpy()[0, :, :, 0]
-        zero    = np.zeros_like(cam_up)
-        if class_index == 1:                                  # HCC: warm (R→B)
-            heat = np.stack([cam_up, zero, 1.0 - cam_up], axis=-1)
-        else:                                                 # Hem: cool (B→R)
-            heat = np.stack([1.0 - cam_up, zero, cam_up], axis=-1)
+
+        # ── matplotlib colormap (default: jet) ───────────────────────────────
+        # jet:  blue(0.0) → green(0.5) → red(1.0)
+        # 두 클래스 모두 동일한 colormap 적용; class 구분은 caption으로 표시
+        heat = _cam_to_rgb(cam_up, colormap_name=colormap)   # (H, W, 3) [0,1]
+
         return np.clip(
             (1.0 - alpha) * img_display + alpha * heat, 0.0, 1.0
         ).astype(np.float32)
@@ -385,8 +446,11 @@ def run_gradcam_table(
         [0] "Original"                       -- wandb.Image of original US frame
         [1] "True Label"                     -- string label ("HCC" or "Hemangioma")
         [2] "Pred Label"                     -- argmax prediction + ✓/✗ mark
-        [3] f"GradCAM ({class_names[0]})"    -- overlay targeting negative class (cool)
-        [4] f"GradCAM ({class_names[1]})"    -- overlay targeting positive class (warm)
+        [3] f"GradCAM ({class_names[0]})"    -- jet heatmap targeting negative class
+        [4] f"GradCAM ({class_names[1]})"    -- jet heatmap targeting positive class
+
+    Colormap: matplotlib 'jet' (configurable via GradCAMTableConfig.colormap)
+        blue (low activation) → green (mid) → red (high activation)
 
     Forward pass cost: **1회/image** (persistent GradientTape)
 
@@ -427,7 +491,7 @@ def run_gradcam_table(
     print(
         f"[gradcam_table] {len(records)} images | "
         f"pool={pool_mode!r}  attn={attn_mode!r}  scale={cfg.input_scale!r}  "
-        f"forward_pass=1/image (persistent tape)"
+        f"colormap={cfg.colormap!r}  forward_pass=1/image (persistent tape)"
     )
     print("[gradcam_table] Generating GradCAM overlays ...")
 
@@ -447,21 +511,22 @@ def run_gradcam_table(
 
             # ── 1 forward pass → pred + overlay×2 ────────────────────────────
             pred_name, overlay_neg, overlay_pos = _gradcam_both_overlays_and_pred(
-                encoder       = encoder,
+                encoder         = encoder,
                 classifier_head = classifier_head,
-                pool_mode     = pool_mode,
-                img_np        = img_np,
-                class_names   = cfg.class_names,
-                alpha         = cfg.overlay_alpha,
-                input_scale   = cfg.input_scale,
+                pool_mode       = pool_mode,
+                img_np          = img_np,
+                class_names     = cfg.class_names,
+                alpha           = cfg.overlay_alpha,
+                input_scale     = cfg.input_scale,
+                colormap        = cfg.colormap,
             )
 
             correct_mark  = "✓" if pred_name == cls_name else "✗"
             img_display   = _to_display_np(img_np, cfg.input_scale)
 
             w_orig    = _np_to_wandb_image(img_display,  caption=f"{cls_name} | {img_path.name}")
-            w_neg_cam = _np_to_wandb_image(overlay_neg,  caption=f"GradCAM→{cfg.class_names[0]}")
-            w_pos_cam = _np_to_wandb_image(overlay_pos,  caption=f"GradCAM→{cfg.class_names[1]}")
+            w_neg_cam = _np_to_wandb_image(overlay_neg,  caption=f"GradCAM→{cfg.class_names[0]} ({cfg.colormap})")
+            w_pos_cam = _np_to_wandb_image(overlay_pos,  caption=f"GradCAM→{cfg.class_names[1]} ({cfg.colormap})")
 
             table.add_data(w_orig, cls_name, f"{pred_name} {correct_mark}", w_neg_cam, w_pos_cam)
             print(f"OK  (pred={pred_name} {correct_mark})")
