@@ -5,11 +5,12 @@ Pipeline
 --------
 1. test_clean/HCC/ 와 test_clean/Hemangioma/ 에서 파일명 순서대로 n_per_class 개씩 선택
 2. 각 이미지에 대해 class_index=0 (Hemangioma) 과 class_index=1 (HCC) 두 가지 GradCAM overlay 생성
-3. wandb.Table 4-column 생성:
+3. wandb.Table 5-column 생성:
    Col 0: Original Image
    Col 1: True Label (str)
-   Col 2: GradCAM overlay for class=0 (Hemangioma)
-   Col 3: GradCAM overlay for class=1 (HCC)
+   Col 2: Pred Label (str)          ← NEW: argmax of softmax output
+   Col 3: GradCAM overlay for class=0 (Hemangioma)
+   Col 4: GradCAM overlay for class=1 (HCC)
 4. WandB에 logging
 
 GradCAM 구현 핵심 (FIXED — 기존 버그 수정)
@@ -216,6 +217,56 @@ def _unwrap_encoder_and_head(stage2_model):
 
 
 # ─────────────────────────────────────────────────────────────
+# Predicted label helper  ← NEW
+# ─────────────────────────────────────────────────────────────
+
+def _predict_label(
+    encoder,
+    classifier_head,
+    pool_mode: str,
+    img_np: np.ndarray,
+    class_names: tuple,
+    input_scale: str = "0_255",
+) -> str:
+    """Run a single forward pass and return the predicted class name.
+
+    Parameters
+    ----------
+    encoder         : ConvHybridViTBackbone
+    classifier_head : Dense head layer
+    pool_mode       : "cls" or "gap"
+    img_np          : (H, W, 3) float32 in model input range
+    class_names     : (negative_name, positive_name)
+    input_scale     : "0_255" or "0_1"
+
+    Returns
+    -------
+    pred_name : str  — class_names[argmax(softmax(logits))]
+    """
+    x = tf.constant(img_np[None], dtype=tf.float32)  # [1, H, W, 3]
+
+    # patch_embed → tokens (CLS already prepended inside patch_embed.call)
+    tokens, fmap, gh, gw = encoder.patch_embed(x, training=False)
+
+    # Transformer blocks
+    seq = tokens
+    for block in encoder.blocks:
+        result = block(seq, training=False, return_attention=False)
+        seq = result if not isinstance(result, tuple) else result[0]
+
+    seq = encoder.norm(seq, training=False)
+
+    if pool_mode == "cls":
+        embedding = seq[:, 0, :]
+    else:
+        embedding = tf.reduce_mean(seq[:, 1:, :], axis=1)
+
+    logits = classifier_head(embedding, training=False)  # [1, num_cls]
+    pred_idx = int(tf.argmax(logits, axis=-1).numpy()[0])
+    return class_names[pred_idx]
+
+
+# ─────────────────────────────────────────────────────────────
 # GradCAM core — FIXED
 # ─────────────────────────────────────────────────────────────
 
@@ -373,8 +424,9 @@ def run_gradcam_table(
     Table columns:
         [0] "Original"                       -- wandb.Image of original US frame
         [1] "True Label"                     -- string label ("HCC" or "Hemangioma")
-        [2] f"GradCAM ({class_names[0]})"    -- overlay targeting negative class (cool)
-        [3] f"GradCAM ({class_names[1]})"    -- overlay targeting positive class (warm)
+        [2] "Pred Label"                     -- argmax prediction string  ← NEW
+        [3] f"GradCAM ({class_names[0]})"    -- overlay targeting negative class (cool)
+        [4] f"GradCAM ({class_names[1]})"    -- overlay targeting positive class (warm)
 
     Parameters
     ----------
@@ -431,9 +483,11 @@ def run_gradcam_table(
     )
     print("[gradcam_table] Generating GradCAM overlays ...")
 
+    # ── 5-column table  (Original | True | Pred | GradCAM×2) ─────────────────
     columns = [
         "Original",
         "True Label",
+        "Pred Label",                        # ← NEW
         f"GradCAM ({cfg.class_names[0]})",
         f"GradCAM ({cfg.class_names[1]})",
     ]
@@ -444,6 +498,13 @@ def run_gradcam_table(
         try:
             img_np = _load_image_np(img_path, cfg.image_size, cfg.input_scale)
 
+            # ── Predicted label (1 forward pass, no tape) ─────────────────────
+            pred_name = _predict_label(
+                encoder, classifier_head, pool_mode,
+                img_np, cfg.class_names, cfg.input_scale,
+            )
+
+            # ── GradCAM overlays ──────────────────────────────────────────────
             overlay_neg = _gradcam_overlay_np(
                 encoder, classifier_head, pool_mode,
                 img_np, class_index=0, alpha=cfg.overlay_alpha,
@@ -455,22 +516,28 @@ def run_gradcam_table(
                 input_scale=cfg.input_scale,
             )
 
+            # ── WandB Image objects ───────────────────────────────────────────
             img_display = _to_display_np(img_np, cfg.input_scale)
+            # mark correct / wrong prediction in caption
+            correct_mark = "✓" if pred_name == cls_name else "✗"
             w_orig    = _np_to_wandb_image(
-                img_display, caption=f"{cls_name} | {img_path.name}"
+                img_display,
+                caption=f"{cls_name} | {img_path.name}",
             )
             w_neg_cam = _np_to_wandb_image(
-                overlay_neg, caption=f"GradCAM\u2192{cfg.class_names[0]}"
+                overlay_neg,
+                caption=f"GradCAM→{cfg.class_names[0]}",
             )
             w_pos_cam = _np_to_wandb_image(
-                overlay_pos, caption=f"GradCAM\u2192{cfg.class_names[1]}"
+                overlay_pos,
+                caption=f"GradCAM→{cfg.class_names[1]}",
             )
 
-            table.add_data(w_orig, cls_name, w_neg_cam, w_pos_cam)
-            print("OK")
+            table.add_data(w_orig, cls_name, f"{pred_name} {correct_mark}", w_neg_cam, w_pos_cam)
+            print(f"OK  (pred={pred_name} {correct_mark})")
         except Exception as e:
             print(f"FAILED: {e}")
-            table.add_data(None, cls_name, None, None)
+            table.add_data(None, cls_name, "ERROR", None, None)
 
     _wandb.log({cfg.table_key: table})
     print(
