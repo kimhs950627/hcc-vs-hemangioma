@@ -54,7 +54,8 @@ BackboneType = Literal["efficientnet", "resnet", "none"]
 #   EfficientNetV2B0: keras.applications.efficientnet_v2.preprocess_input
 #       [0, 255] → [-1, 1]  (rescale + normalize)
 #   ResNet50V2:       keras.applications.resnet_v2.preprocess_input
-#       [0, 255] → zero-centered (channel-wise mean subtraction)
+#       [0, 255] → x / 127.5 - 1.0 → [-1, 1]  (tf mode, EfficientNetV2와 동일)
+#       ※ ResNet50 V1의 caffe mode(BGR mean subtraction)와 혼동 주의
 #
 # Visualization pipeline — _load_raw_image (this file):
 #   [BUG FIX] previously used tf.image.convert_image_dtype which silently
@@ -67,7 +68,7 @@ BackboneType = Literal["efficientnet", "resnet", "none"]
 #
 #   backbone_type options (set in WandbVisualizationConfig / ExtValConfig):
 #     'efficientnet' (default) : EfficientNetV2B0 preprocess → [-1, 1]
-#     'resnet'                 : ResNet50V2 preprocess        → zero-centered
+#     'resnet'                 : ResNet50V2 preprocess        → x/127.5 - 1.0 → [-1, 1]  (tf mode)
 #     'none'                   : pass-through (raw [0, 255])
 #
 #   original_display (for overlay rendering) is stored as [0,1] separately
@@ -89,7 +90,8 @@ def _apply_backbone_preprocess(
             'efficientnet' → keras.applications.efficientnet_v2.preprocess_input
                              [0,255] → [-1, 1]
             'resnet'       → keras.applications.resnet_v2.preprocess_input
-                             [0,255] → zero-centered (ImageNet mean subtraction)
+                             [0,255] → x/127.5 - 1.0 → [-1, 1]  (tf mode)
+                             ※ ResNet50 V1 caffe mode(BGR mean sub)와 다름
             'none'         → pass-through, returns image_batch unchanged
 
     Returns:
@@ -190,7 +192,8 @@ class WandbVisualizationConfig:
     - ``"efficientnet"`` (기본값): EfficientNetV2B0
         keras.applications.efficientnet_v2.preprocess_input → [0,255] → [-1,1]
     - ``"resnet"``:               ResNet50V2
-        keras.applications.resnet_v2.preprocess_input       → [0,255] → zero-centered
+        keras.applications.resnet_v2.preprocess_input → [0,255] → x/127.5 - 1.0 → [-1, 1]
+        (V2는 tf mode. ResNet50 V1 caffe BGR mean subtraction과 다름)
     - ``"none"``:                 pass-through ([0,255] 그대로 encoder 입력)
         커스텀 backbone이나 preprocess를 encoder 내부에서 처리하는 경우 사용.
 
@@ -749,7 +752,7 @@ def build_attention_wandb_table(
         encoder forward pass 전에 _apply_backbone_preprocess()를 호출하여
         학습 파이프라인과 동일한 preprocess_input을 적용함.
         'efficientnet': EfficientNetV2B0 preprocess → [-1,1]
-        'resnet':       ResNet50V2 preprocess       → zero-centered
+        'resnet':       ResNet50V2 preprocess       → x/127.5 - 1.0 → [-1, 1]  (tf mode)
         'none':         pass-through
     """
     _require_wandb()
@@ -840,7 +843,8 @@ class ExtValConfig:
         - ``"efficientnet"`` (기본값): EfficientNetV2B0
             keras.applications.efficientnet_v2.preprocess_input [0,255] → [-1,1]
         - ``"resnet"``:               ResNet50V2
-            keras.applications.resnet_v2.preprocess_input       [0,255] → zero-centered
+            keras.applications.resnet_v2.preprocess_input [0,255] → x/127.5 - 1.0 → [-1, 1]
+            (V2는 tf mode. ResNet50 V1 caffe BGR mean subtraction과 다름)
         - ``"none"``:                 pass-through ([0,255] 그대로 encoder 입력)
 
     Attributes:
