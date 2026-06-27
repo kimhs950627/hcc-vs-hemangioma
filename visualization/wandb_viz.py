@@ -18,6 +18,7 @@ except Exception:
 
 AttentionMode = Literal["last_layer", "rollout", "last"]
 TokenAttentionMode = Literal["sa", "ca"]
+BackboneType = Literal["efficientnet", "resnet", "none"]
 
 # ---------------------------------------------------------------------------
 # Shape contract (conv-hybrid-ViT encoder)
@@ -44,6 +45,65 @@ TokenAttentionMode = Literal["sa", "ca"]
 #   Processing is per-image (not per-batch) so each image's own distribution
 #   sets the threshold independently.
 # ---------------------------------------------------------------------------
+# Input range contract (IMPORTANT)
+# ---------------------------------------------------------------------------
+# Training pipeline (dataloader.py):
+#   _load_image  →  tf.cast(img, float32)  →  [0, 255]  float32
+#   backbone preprocess_input is applied INSIDE the encoder model call.
+#
+#   EfficientNetV2B0: keras.applications.efficientnet_v2.preprocess_input
+#       [0, 255] → [-1, 1]  (rescale + normalize)
+#   ResNet50V2:       keras.applications.resnet_v2.preprocess_input
+#       [0, 255] → zero-centered (channel-wise mean subtraction)
+#
+# Visualization pipeline — _load_raw_image (this file):
+#   [BUG FIX] previously used tf.image.convert_image_dtype which silently
+#   divided by 255.0, producing [0, 1] input to the encoder — an OOD range
+#   that corrupted attention maps (especially for external images).
+#
+#   Now: tf.cast(img, float32)  →  [0, 255]  (matches training pipeline)
+#   Then _apply_backbone_preprocess(resized, backbone_type) is called at
+#   each call site before passing to the encoder, matching the training path.
+#
+#   backbone_type options (set in WandbVisualizationConfig / ExtValConfig):
+#     'efficientnet' (default) : EfficientNetV2B0 preprocess → [-1, 1]
+#     'resnet'                 : ResNet50V2 preprocess        → zero-centered
+#     'none'                   : pass-through (raw [0, 255])
+#
+#   original_display (for overlay rendering) is stored as [0,1] separately
+#   and is NOT passed through preprocess_input.
+# ---------------------------------------------------------------------------
+
+
+def _apply_backbone_preprocess(
+    image_batch: tf.Tensor,
+    backbone_type: BackboneType = "efficientnet",
+) -> tf.Tensor:
+    """backbone_type에 따라 keras preprocess_input을 적용한다.
+
+    입력: [0, 255] float32 tensor  (shape [B, H, W, 3])
+
+    Args:
+        image_batch  : [B, H, W, 3] float32, range [0, 255]
+        backbone_type:
+            'efficientnet' → keras.applications.efficientnet_v2.preprocess_input
+                             [0,255] → [-1, 1]
+            'resnet'       → keras.applications.resnet_v2.preprocess_input
+                             [0,255] → zero-centered (ImageNet mean subtraction)
+            'none'         → pass-through, returns image_batch unchanged
+
+    Returns:
+        preprocessed tensor, same shape as input.
+    """
+    if backbone_type == "efficientnet":
+        from keras.applications.efficientnet_v2 import preprocess_input
+        return preprocess_input(image_batch)
+    elif backbone_type == "resnet":
+        from keras.applications.resnet_v2 import preprocess_input
+        return preprocess_input(image_batch)
+    else:
+        # 'none': raw [0,255] pass-through
+        return image_batch
 
 
 @dataclass
@@ -120,6 +180,23 @@ class WandbVisualizationConfig:
     주의: batch 단위가 아닌 image 단위로 처리되므로
     각 이미지의 attention 분포가 독립적으로 threshold를 결정함.
     """
+    backbone_type: BackboneType = "efficientnet"
+    """Backbone preprocess_input 라우팅.
+
+    학습 파이프라인과 동일한 preprocess_input을 시각화 경로에도 적용하기 위한 설정.
+    _load_raw_image는 [0,255] float32를 반환하므로, encoder forward 전에
+    이 값에 따라 backbone별 preprocess_input이 적용된다.
+
+    - ``"efficientnet"`` (기본값): EfficientNetV2B0
+        keras.applications.efficientnet_v2.preprocess_input → [0,255] → [-1,1]
+    - ``"resnet"``:               ResNet50V2
+        keras.applications.resnet_v2.preprocess_input       → [0,255] → zero-centered
+    - ``"none"``:                 pass-through ([0,255] 그대로 encoder 입력)
+        커스텀 backbone이나 preprocess를 encoder 내부에서 처리하는 경우 사용.
+
+    ※ 주의: training pipeline의 normalize=False → [0,255] → backbone 내부 preprocess
+    경로와 일치해야 함. 잘못된 설정 시 attention map이 OOD 입력으로 인해 collapse됨.
+    """
 
     # ── derived helper ────────────────────────────────────────────────────
     @property
@@ -181,13 +258,29 @@ def _list_test_images(test_dir: str, num_images: int) -> list[tuple[str, int | N
 
 
 def _load_raw_image(path: str, image_size: tuple[int, int]) -> tuple[np.ndarray, tf.Tensor]:
+    """이미지를 로드하여 (display용 [0,1] numpy, encoder용 [0,255] tensor) 를 반환.
+
+    [BUG FIX] 이전 구현은 tf.image.convert_image_dtype(img, tf.float32) 를 사용했는데,
+    이 함수는 uint8 → float32 변환 시 /255.0 을 자동으로 수행하여 [0,1] range를 만든다.
+    학습 파이프라인(dataloader.py)은 tf.cast(img, float32) → [0,255] 를 사용하므로
+    시각화 경로의 encoder 입력이 OOD range([0,1])가 되어 attention map이 collapse됨.
+
+    수정:
+        - tf.cast(img, tf.float32) → [0, 255]  (학습 파이프라인과 동일)
+        - display용 original_display = img_float / 255.0  → [0, 1]  (overlay rendering용)
+        - encoder preprocess_input은 호출 측에서 _apply_backbone_preprocess()로 처리.
+
+    Returns:
+        original_display : np.ndarray, [0, 1] float32 — _prepare_display_image에 전달
+        resized          : tf.Tensor,  [1, H, W, 3] float32, [0, 255] — encoder preprocess 전
+    """
     raw = tf.io.read_file(path)
     img = tf.io.decode_image(raw, channels=3, expand_animations=False)
-    img = tf.image.convert_image_dtype(img, tf.float32)
-    original = img.numpy()
-    resized = tf.image.resize(img, image_size, method="bilinear")
-    resized = tf.expand_dims(resized, axis=0)
-    return original, resized
+    img_float = tf.cast(img, tf.float32)           # [0, 255] — 학습 파이프라인과 동일
+    original_display = (img_float / 255.0).numpy() # [0, 1]  — display/overlay용
+    resized = tf.image.resize(img_float, image_size, method="bilinear")  # [0, 255]
+    resized = tf.expand_dims(resized, axis=0)       # [1, H, W, 3], [0, 255]
+    return original_display, resized
 
 
 def _prepare_display_image(image: np.ndarray, normalize_from_minus1: bool = False) -> np.ndarray:
@@ -651,6 +744,13 @@ def build_attention_wandb_table(
         column names 변화 없음 (하위 호환).
 
     heatmap 정규화는 DINO-style per-image mass threshold (vis_cfg.mass_threshold).
+
+    backbone_type (vis_cfg.backbone_type):
+        encoder forward pass 전에 _apply_backbone_preprocess()를 호출하여
+        학습 파이프라인과 동일한 preprocess_input을 적용함.
+        'efficientnet': EfficientNetV2B0 preprocess → [-1,1]
+        'resnet':       ResNet50V2 preprocess       → zero-centered
+        'none':         pass-through
     """
     _require_wandb()
     _log_token_attention_mode_once(vis_cfg.token_attention_mode)
@@ -658,6 +758,7 @@ def build_attention_wandb_table(
     mode_sfx = vis_cfg.mode_suffix           # '_SA' or '_CA'
     attn_vis_label = vis_cfg.attention_mode  # e.g. 'last_layer'
     mt = vis_cfg.mass_threshold              # per-image DINO threshold
+    backbone_type = vis_cfg.backbone_type
 
     def _get_encoder_outputs(m, img_batch):
         enc = getattr(m, encoder_accessor, None)
@@ -667,7 +768,8 @@ def build_attention_wandb_table(
 
     rows = []
     for path, true_label in image_paths:
-        original, resized = _load_raw_image(path, vis_cfg.image_size)
+        original_display, resized_raw = _load_raw_image(path, vis_cfg.image_size)
+        resized = _apply_backbone_preprocess(resized_raw, backbone_type)
         outputs = _get_encoder_outputs(model, resized)
         result = _extract_attention_maps(
             outputs,
@@ -680,7 +782,7 @@ def build_attention_wandb_table(
             continue
         merged, headwise = result
 
-        img_uint8 = _prepare_display_image(original, vis_cfg.normalize_from_minus1)
+        img_uint8 = _prepare_display_image(original_display, vis_cfg.normalize_from_minus1)
         target_hw = img_uint8.shape[:2]
         merged_up = _resize_heatmap(merged[0], target_hw, mass_threshold=mt)
 
@@ -734,6 +836,13 @@ class ExtValConfig:
         - ``"last_layer"`` (기본값)
         - ``"rollout"``: 모든 block attention 누적
 
+    backbone_type 옵션 (학습 파이프라인과 반드시 일치시켜야 함):
+        - ``"efficientnet"`` (기본값): EfficientNetV2B0
+            keras.applications.efficientnet_v2.preprocess_input [0,255] → [-1,1]
+        - ``"resnet"``:               ResNet50V2
+            keras.applications.resnet_v2.preprocess_input       [0,255] → zero-centered
+        - ``"none"``:                 pass-through ([0,255] 그대로 encoder 입력)
+
     Attributes:
         val_dir               : 외부 검증 이미지 루트 경로
         num_images            : logging할 이미지 수
@@ -747,6 +856,7 @@ class ExtValConfig:
         enable_eigen          : EigenAttention 시각화 여부
         encoder_accessor      : model 내 encoder attribute 이름
         mass_threshold        : DINO-style per-image cumulative mass cutoff (기본 0.75)
+        backbone_type         : 'efficientnet' | 'resnet' | 'none'
     """
     val_dir: str
     num_images: int = 8
@@ -761,6 +871,7 @@ class ExtValConfig:
     enable_eigen: bool = False
     encoder_accessor: str = "encoder"
     mass_threshold: float = 0.75
+    backbone_type: BackboneType = "efficientnet"
 
     def to_vis_cfg(self, class_names: tuple[str, str] = ("hemangioma", "hcc")) -> WandbVisualizationConfig:
         """ExtValConfig → WandbVisualizationConfig 변환 헬퍼."""
@@ -778,6 +889,7 @@ class ExtValConfig:
             enable_eigen=self.enable_eigen,
             table_key=self.table_key,
             mass_threshold=self.mass_threshold,
+            backbone_type=self.backbone_type,
         )
 
     def log_to_wandb(self, model: keras.Model) -> None:
@@ -820,6 +932,10 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
     기존 columns 뒤에 추가 logging됨.
 
     heatmap 정규화: DINO-style per-image mass threshold (vis_cfg.mass_threshold, 기본 0.75).
+
+    backbone_type (vis_cfg.backbone_type):
+        encoder forward pass 전에 _apply_backbone_preprocess()를 호출하여
+        학습 파이프라인과 동일한 preprocess_input을 적용함.
     """
 
     def __init__(self, vis_cfg: WandbVisualizationConfig):
@@ -847,7 +963,8 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
         return model(image_batch, training=False)
 
     def _build_stage1_row(self, path: str, true_label: int | None):
-        original, resized = _load_raw_image(path, self.cfg.image_size)
+        original_display, resized_raw = _load_raw_image(path, self.cfg.image_size)
+        resized = _apply_backbone_preprocess(resized_raw, self.cfg.backbone_type)
         outputs = self._forward_for_attention(resized)
 
         result = _extract_attention_maps(
@@ -861,7 +978,7 @@ class WandbAttentionVisualizer(keras.callbacks.Callback):
             return None
         merged, headwise = result
 
-        img_uint8 = _prepare_display_image(original, self.cfg.normalize_from_minus1)
+        img_uint8 = _prepare_display_image(original_display, self.cfg.normalize_from_minus1)
         target_hw = img_uint8.shape[:2]
         mt = self.cfg.mass_threshold
         merged_up = _resize_heatmap(merged[0], target_hw, mass_threshold=mt)
@@ -934,6 +1051,10 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
     enable_eigen=True 시 k=1,2,3 EigenAttention map 및 overlay 추가 logging.
 
     heatmap 정규화: DINO-style per-image mass threshold (vis_cfg.mass_threshold, 기본 0.75).
+
+    backbone_type (vis_cfg.backbone_type):
+        encoder forward pass 전에 _apply_backbone_preprocess()를 호출하여
+        학습 파이프라인과 동일한 preprocess_input을 적용함.
     """
 
     def __init__(self, vis_cfg: WandbVisualizationConfig):
@@ -963,8 +1084,9 @@ class WandbStage2Visualizer(keras.callbacks.Callback):
         return self.model
 
     def _build_stage2_row(self, path: str, true_label: int | None):
-        original, resized = _load_raw_image(path, self.cfg.image_size)
-        img_uint8 = _prepare_display_image(original, self.cfg.normalize_from_minus1)
+        original_display, resized_raw = _load_raw_image(path, self.cfg.image_size)
+        resized = _apply_backbone_preprocess(resized_raw, self.cfg.backbone_type)
+        img_uint8 = _prepare_display_image(original_display, self.cfg.normalize_from_minus1)
         outputs = self._forward_outputs(resized)
         probs, logits = _get_predictions(outputs)
         pred_label = int(np.argmax(probs[0])) if probs is not None else None
