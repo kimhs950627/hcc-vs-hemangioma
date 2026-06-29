@@ -434,12 +434,19 @@ def _extract_cosine_scores_from_ds(
 def _delong_auc_variance(
     labels : np.ndarray,
     scores : np.ndarray,
-) -> tuple[float, np.ndarray]:
+) -> tuple[float, float]:
+    """DeLong AUC estimator with variance (scalar outputs).
+
+    Returns
+    -------
+    auroc : float
+    var   : float  (scalar, NOT array — avoids downstream shape issues)
+    """
     pos = scores[labels == 1]
     neg = scores[labels == 0]
     n_pos, n_neg = len(pos), len(neg)
     if n_pos == 0 or n_neg == 0:
-        return float("nan"), np.array([float("nan")])
+        return float("nan"), float("nan")
 
     mat_pos = np.zeros(n_pos)
     mat_neg = np.zeros(n_neg)
@@ -449,8 +456,9 @@ def _delong_auc_variance(
         mat_neg[j] = np.mean((pos > n) + 0.5 * (pos == n))
 
     auroc = float(np.mean(mat_pos))
-    var   = (np.var(mat_pos, ddof=1) / n_pos + np.var(mat_neg, ddof=1) / n_neg)
-    return auroc, np.array([var])
+    # explicit float() cast — prevents shape-(1,) array propagation
+    var   = float(np.var(mat_pos, ddof=1) / n_pos + np.var(mat_neg, ddof=1) / n_neg)
+    return auroc, var
 
 
 def delong_test(
@@ -458,18 +466,24 @@ def delong_test(
     scores_a : np.ndarray,
     scores_b : np.ndarray,
 ) -> dict:
+    """Non-parametric DeLong AUROC comparison.
+
+    All intermediate values are explicitly cast to Python float to avoid
+    numpy scalar / 0-dim array type errors in downstream float() calls.
+    """
     from scipy.stats import norm
     auc_a, var_a = _delong_auc_variance(labels, scores_a)
     auc_b, var_b = _delong_auc_variance(labels, scores_b)
-    se = np.sqrt(var_a + var_b)
-    z  = (auc_a - auc_b) / (se + 1e-12)
-    p  = float(2.0 * norm.sf(np.abs(z)))
+    # var_a / var_b are now guaranteed scalar floats
+    se = float(np.sqrt(float(var_a) + float(var_b)))
+    z  = float((float(auc_a) - float(auc_b)) / (se + 1e-12))
+    p  = float(2.0 * norm.sf(abs(z)))   # builtin abs() — safe for any numeric type
     return {
         "auroc_a"  : float(auc_a),
         "auroc_b"  : float(auc_b),
-        "z_stat"   : float(z),
+        "z_stat"   : z,
         "p_value"  : p,
-        "se"       : float(se),
+        "se"       : se,
     }
 
 
