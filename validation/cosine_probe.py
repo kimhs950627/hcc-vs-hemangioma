@@ -1146,3 +1146,491 @@ def run_cosine_probe(
         test_metrics  = test_metrics,
         delong_records= delong_records,
     )
+
+# ─────────────────────────────────────────────────────────────
+# Calibration reliability diagram
+# ─────────────────────────────────────────────────────────────
+
+def plot_reliability_diagram(
+    conf_scores : np.ndarray,   # (N,) softmax P(HCC)
+    labels      : np.ndarray,   # (N,) binary ground-truth
+    n_bins      : int = 10,
+    split       : str = "Val",
+    save_path   : Optional[Path] = None,
+) -> plt.Figure:
+    """Reliability diagram to visualise softmax calibration error.
+
+    Shows observed positive fraction vs mean predicted confidence per bin.
+    A perfectly calibrated model should sit on the y=x diagonal.
+
+    Also reports:
+        ECE  — Expected Calibration Error
+        MCE  — Maximum Calibration Error
+        ACE  — Adaptive (equal-sample) Calibration Error
+    """
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    bin_centres: list[float] = []
+    bin_accuracy: list[float] = []
+    bin_confidence: list[float] = []
+    bin_counts: list[int] = []
+
+    for lo, hi in zip(bins[:-1], bins[1:]):
+        mask = (conf_scores >= lo) & (conf_scores < hi)
+        if not mask.any():
+            continue
+        bin_centres.append(float((lo + hi) / 2))
+        bin_accuracy.append(float(labels[mask].mean()))
+        bin_confidence.append(float(conf_scores[mask].mean()))
+        bin_counts.append(int(mask.sum()))
+
+    bin_counts_arr    = np.array(bin_counts, dtype=np.float64)
+    bin_accuracy_arr  = np.array(bin_accuracy)
+    bin_confidence_arr = np.array(bin_confidence)
+    total             = bin_counts_arr.sum()
+
+    ece = float(np.sum(bin_counts_arr * np.abs(bin_accuracy_arr - bin_confidence_arr)) / (total + 1e-8))
+    mce = float(np.max(np.abs(bin_accuracy_arr - bin_confidence_arr))) if len(bin_accuracy_arr) else 0.0
+
+    # Adaptive CE: equal-population bins
+    sorted_idx = np.argsort(conf_scores)
+    ace_bins   = np.array_split(sorted_idx, n_bins)
+    ace = 0.0
+    for b in ace_bins:
+        if len(b) == 0:
+            continue
+        ace += len(b) / len(conf_scores) * abs(labels[b].mean() - conf_scores[b].mean())
+
+    # ── plot ──
+    fig, ax = plt.subplots(figsize=(6, 6), facecolor=_BG)
+    _apply_dark_ax(ax)
+
+    ax.bar(bin_centres, bin_accuracy, width=1.0 / n_bins * 0.85,
+           color="#4f98a3", alpha=0.75, label="Fraction positive (observed)")
+    ax.bar(bin_centres, bin_confidence, width=1.0 / n_bins * 0.85,
+           color="#e8af34", alpha=0.40, label="Mean confidence (model)")
+
+    ax.plot([0, 1], [0, 1], ls="--", lw=1.5, color=_BORDER, label="Perfect calibration")
+
+    ax.set_xlim([0, 1]);  ax.set_ylim([0, 1])
+    ax.set_xlabel("Confidence (softmax P(HCC))", fontsize=11)
+    ax.set_ylabel("Fraction positive",           fontsize=11)
+    ax.set_title(
+        f"Reliability Diagram ({split})\n"
+        f"ECE={ece:.4f}  MCE={mce:.4f}  ACE={ace:.4f}",
+        fontsize=10, pad=8, color=_TEXT,
+    )
+    ax.legend(framealpha=0.15, facecolor=_BG, labelcolor=_TEXT, fontsize=9)
+    fig.tight_layout()
+
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight", facecolor=_BG)
+        print(f"[cosine_probe] Reliability diagram ({split}) → {save_path}")
+
+    return fig, {"ece": ece, "mce": mce, "ace": ace}
+
+
+# ─────────────────────────────────────────────────────────────
+# Confidence vs Cosine scatter plot  (disagreement visualisation)
+# ─────────────────────────────────────────────────────────────
+
+def plot_conf_vs_cosine_scatter(
+    conf_scores  : np.ndarray,   # (N,)
+    cosine_scores: np.ndarray,   # (N,)  HCC cosine (mean-mode)
+    delta_scores : np.ndarray,   # (N,)
+    labels       : np.ndarray,   # (N,)
+    cutoff_conf  : float,
+    cutoff_cos   : float,
+    split        : str,
+    save_path    : Optional[Path] = None,
+) -> plt.Figure:
+    """Scatter: confidence (x) vs HCC cosine score (y), coloured by true label.
+
+    Quadrant lines at (cutoff_conf, cutoff_cos) highlight four cases:
+        Q1 (↑conf, ↑cos)  : agreement — positive
+        Q2 (↓conf, ↑cos)  : disagreement — cos says HCC, conf says Hem
+        Q3 (↓conf, ↓cos)  : agreement — negative
+        Q4 (↑conf, ↓cos)  : disagreement — conf says HCC, cos says Hem
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6), facecolor=_BG)
+    fig.suptitle(
+        f"Confidence vs Cosine Score Scatter ({split})",
+        color=_TEXT, fontsize=12, y=1.01,
+    )
+
+    panel_data = [
+        ("HCC Cosine Score",  cosine_scores, cutoff_cos,
+         ["Q1: agree (+)", "Q2: cos+/conf−", "Q3: agree (−)", "Q4: conf+/cos−"]),
+        ("ΔScore (HCC−Hem)",  delta_scores,  None,
+         None),
+    ]
+
+    for ax, (ylabel, ysc, ycut, quad_labels) in zip(axes, panel_data):
+        _apply_dark_ax(ax)
+        for cls_idx, (cls_name, marker) in enumerate([("Hemangioma", "o"), ("HCC", "^")]):
+            m = labels == cls_idx
+            ax.scatter(conf_scores[m], ysc[m],
+                       c=_CLS_COLOR[cls_name], s=28, alpha=0.65, marker=marker,
+                       edgecolors="none", label=f"{cls_name}  n={m.sum()}", zorder=3)
+
+        ax.axvline(cutoff_conf, color="#a86fdf", lw=1.5, ls="--",
+                   label=f"conf cutoff={cutoff_conf:.3f}", alpha=0.85)
+        if ycut is not None:
+            ax.axhline(ycut, color="#fdc551", lw=1.5, ls="--",
+                       label=f"cos cutoff={ycut:.3f}", alpha=0.85)
+
+        ax.set_xlabel("Confidence (softmax)", fontsize=10)
+        ax.set_ylabel(ylabel, fontsize=10)
+        ax.legend(framealpha=0.15, facecolor=_BG, labelcolor=_TEXT, fontsize=8)
+
+    fig.tight_layout()
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight", facecolor=_BG)
+        print(f"[cosine_probe] Conf-vs-cosine scatter ({split}) → {save_path}")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────
+# Confusion matrix plot
+# ─────────────────────────────────────────────────────────────
+
+def plot_confusion_matrix(
+    scores    : np.ndarray,
+    labels    : np.ndarray,
+    cutoff    : float,
+    roc_name  : str,
+    split     : str,
+    class_names: tuple[str, str] = ("Hemangioma", "HCC"),
+    save_path : Optional[Path] = None,
+) -> plt.Figure:
+    """Normalised confusion matrix as a 2×2 heatmap."""
+    from sklearn.metrics import confusion_matrix as _cm
+    preds = (scores >= cutoff).astype(int)
+    cm = _cm(labels, preds, labels=[0, 1])
+    cm_norm = cm.astype(float) / (cm.sum(axis=1, keepdims=True) + 1e-8)
+
+    fig, ax = plt.subplots(figsize=(5, 4.5), facecolor=_BG)
+    _apply_dark_ax(ax)
+
+    im = ax.imshow(cm_norm, vmin=0, vmax=1, aspect="auto",
+                   cmap="YlOrRd", alpha=0.85)
+    plt.colorbar(im, ax=ax, fraction=0.04, pad=0.04).ax.yaxis.set_tick_params(color=_TEXT)
+
+    for i in range(2):
+        for j in range(2):
+            ax.text(j, i,
+                    f"{cm_norm[i, j]:.2f}\n(n={cm[i, j]})",
+                    ha="center", va="center",
+                    color=_TEXT, fontsize=10)
+
+    ax.set_xticks([0, 1]); ax.set_xticklabels(class_names, color=_TEXT)
+    ax.set_yticks([0, 1]); ax.set_yticklabels(class_names, color=_TEXT)
+    ax.set_xlabel("Predicted", fontsize=10, color=_TEXT)
+    ax.set_ylabel("True",      fontsize=10, color=_TEXT)
+    ax.set_title(f"Confusion Matrix — {roc_name}\n({split}, cutoff={cutoff:.3f})",
+                 fontsize=9, color=_TEXT, pad=6)
+
+    fig.tight_layout()
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight", facecolor=_BG)
+        print(f"[cosine_probe] Confusion matrix [{roc_name}] ({split}) → {save_path}")
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────
+# Per-sample WandB image score table
+# ─────────────────────────────────────────────────────────────
+
+def _build_wandb_score_image_table(
+    score_records  : list[dict],
+    model          : object,
+    dataset        : tf.data.Dataset,
+    cfg            : CosineProbeConfig,
+    split          : str,
+    max_samples    : int = 80,
+) -> Optional["_wandb.Table"]:
+    """Build a wandb.Table with per-sample image + all cosine scores.
+
+    Columns: image | true_label | confidence | hcc_cos_mean | delta_mean |
+             hcc_cos_kmeans | delta_kmeans | pred_conf | pred_cos
+    """
+    if _wandb is None or _wandb.run is None:
+        return None
+
+    pos = cfg.positive_class
+    conf_cut  = None
+    cos_cut   = None
+
+    rows = [r for r in score_records if r["split"] == split][:max_samples]
+    if not rows:
+        return None
+
+    # Re-collect images in order (best effort; assumes dataset is not shuffled)
+    all_imgs: list[np.ndarray] = []
+    for x_batch, _ in dataset:
+        imgs_np = x_batch.numpy()
+        for img in imgs_np:
+            if len(all_imgs) >= len(rows):
+                break
+            all_imgs.append(img)
+        if len(all_imgs) >= len(rows):
+            break
+
+    table = _wandb.Table(columns=[
+        "image", "split", "true_label",
+        "confidence_score",
+        "hcc_cosine_mean", "hem_cosine_mean", "delta_mean",
+        "hcc_cosine_kmeans", "hem_cosine_kmeans", "delta_kmeans",
+    ])
+
+    label_names = {0: cfg.class_names[0], 1: cfg.class_names[1]}
+
+    for idx, row in enumerate(rows):
+        if idx < len(all_imgs):
+            img = all_imgs[idx]
+            # normalise to uint8 for WandB
+            if img.dtype != np.uint8:
+                lo, hi = img.min(), img.max()
+                img_disp = ((img - lo) / (hi - lo + 1e-8) * 255).astype(np.uint8)
+            else:
+                img_disp = img
+            wimg = _wandb.Image(
+                _PIL_Image.fromarray(img_disp if img_disp.shape[-1] == 3
+                                     else img_disp[:, :, 0]),
+                caption=f"{label_names.get(row['true_label'], row['true_label'])} "
+                        f"| conf={row['confidence_score']:.3f} "
+                        f"| Δcos={row['delta_mean']:.3f}",
+            )
+        else:
+            wimg = None
+
+        table.add_data(
+            wimg,
+            split,
+            label_names.get(row["true_label"], row["true_label"]),
+            row["confidence_score"],
+            row["hcc_cosine_mean"],
+            row["hem_cosine_mean"],
+            row["delta_mean"],
+            row["hcc_cosine_kmeans"],
+            row["hem_cosine_kmeans"],
+            row["delta_kmeans"],
+        )
+
+    return table
+
+
+# ─────────────────────────────────────────────────────────────
+# Test-set DeLong  (separate from val DeLong)
+# ─────────────────────────────────────────────────────────────
+
+def run_test_delong(
+    test_data   : dict,           # split_data["Test"]
+) -> list[dict]:
+    """DeLong test on held-out test set."""
+    tl = test_data["labels"]
+    pairs = [
+        ("A vs B-mean",       test_data["conf"],          test_data["hcc_cos_mean"]),
+        ("A vs C-mean",       test_data["conf"],          test_data["delta_mean"]),
+        ("A vs B-kmeans",     test_data["conf"],          test_data["hcc_cos_kmeans"]),
+        ("A vs C-kmeans",     test_data["conf"],          test_data["delta_kmeans"]),
+        ("B-mean vs B-kmeans",test_data["hcc_cos_mean"],  test_data["hcc_cos_kmeans"]),
+        ("C-mean vs C-kmeans",test_data["delta_mean"],    test_data["delta_kmeans"]),
+    ]
+    records: list[dict] = []
+    for name, sa, sb in pairs:
+        r = delong_test(tl, sa, sb)
+        records.append({"comparison": name, **r})
+        print(f"  [test] {name:30s}  z={r['z_stat']:+.3f}  p={r['p_value']:.4f}  "
+              f"ΔAUROC={r['auroc_a'] - r['auroc_b']:+.4f}")
+    return records
+
+
+# ─────────────────────────────────────────────────────────────
+# Extended run_cosine_probe_v2  (모든 기능 통합)
+# ─────────────────────────────────────────────────────────────
+
+def run_cosine_probe_v2(
+    stage2_model : object,
+    val_ds       : tf.data.Dataset,
+    test_ds      : tf.data.Dataset,
+    cfg          : CosineProbeConfig,
+    train_ds     : Optional[tf.data.Dataset] = None,
+) -> dict:
+    """run_cosine_probe + calibration + scatter + confusion matrix + test DeLong.
+
+    Supersedes run_cosine_probe.  Adds:
+        - reliability_diagram  (ECE / MCE / ACE)
+        - conf_vs_cosine scatter  (disagreement quadrant)
+        - confusion matrix  (per ROC type, val + test)
+        - test-set DeLong
+        - per-sample WandB image table  (Val + Test)
+
+    Returns the same dict as run_cosine_probe plus:
+        calibration_val / calibration_test  : dict with ece, mce, ace
+        test_delong_records                 : list[dict]
+    """
+    # ── run base pipeline ─────────────────────────────────────
+    base_results = run_cosine_probe(
+        stage2_model = stage2_model,
+        val_ds       = val_ds,
+        test_ds      = test_ds,
+        cfg          = cfg,
+        train_ds     = train_ds,
+    )
+
+    out_dir = cfg.out_dir
+    banks   = base_results["banks"]
+    cutoffs = base_results["cutoffs"]
+
+    # ── re-collect scores  (re-extract for new plots) ─────────
+    print("\n[ext-1] Collecting scores for extended plots …")
+    pos = cfg.positive_class
+
+    split_scores: dict[str, dict] = {}
+    for split_tag, ds in [("Val", val_ds), ("Test", test_ds)]:
+        conf, lbl = _extract_confidence_scores(stage2_model, ds, pos)
+        _, _, _, embs, _ = _extract_cosine_scores_from_ds(
+            stage2_model, ds,
+            banks["mean"]["hcc_bank"], banks["mean"]["hem_bank"], pos,
+        )
+        _, _, delta_km, _, _ = _extract_cosine_scores_from_ds(
+            stage2_model, ds,
+            banks["kmeans"]["hcc_bank"], banks["kmeans"]["hem_bank"], pos,
+        )
+        hcc_cos_m = _cosine_sim_to_bank(embs, banks["mean"]["hcc_bank"])
+        hem_cos_m = _cosine_sim_to_bank(embs, banks["mean"]["hem_bank"])
+        delta_m   = hcc_cos_m - hem_cos_m
+        split_scores[split_tag] = dict(
+            conf         = conf,
+            labels       = lbl,
+            embs         = embs,
+            hcc_cos_mean = hcc_cos_m.astype(np.float32),
+            hem_cos_mean = hem_cos_m.astype(np.float32),
+            delta_mean   = delta_m.astype(np.float32),
+            hcc_cos_kmeans = _cosine_sim_to_bank(embs, banks["kmeans"]["hcc_bank"]).astype(np.float32),
+            hem_cos_kmeans = _cosine_sim_to_bank(embs, banks["kmeans"]["hem_bank"]).astype(np.float32),
+            delta_kmeans   = delta_km.astype(np.float32),
+        )
+
+    # ── calibration ───────────────────────────────────────────
+    print("\n[ext-2] Calibration reliability diagrams …")
+    calib_results: dict[str, dict] = {}
+    calib_figs: dict[str, plt.Figure] = {}
+    for split_tag, sd in split_scores.items():
+        fig_c, calib_m = plot_reliability_diagram(
+            conf_scores = sd["conf"],
+            labels      = sd["labels"],
+            n_bins      = 10,
+            split       = split_tag,
+            save_path   = out_dir / f"reliability_{split_tag.lower()}.png",
+        )
+        calib_results[split_tag] = calib_m
+        calib_figs[split_tag]    = fig_c
+        print(f"  {split_tag}  ECE={calib_m['ece']:.4f}  MCE={calib_m['mce']:.4f}  "
+              f"ACE={calib_m['ace']:.4f}")
+    pd.DataFrame([
+        {"split": sp, **m} for sp, m in calib_results.items()
+    ]).to_csv(out_dir / "calibration.csv", index=False)
+
+    # ── conf vs cosine scatter ─────────────────────────────────
+    print("\n[ext-3] Confidence vs Cosine scatter plots …")
+    scatter_figs: dict[str, plt.Figure] = {}
+    for split_tag, sd in split_scores.items():
+        scatter_figs[split_tag] = plot_conf_vs_cosine_scatter(
+            conf_scores   = sd["conf"],
+            cosine_scores = sd["hcc_cos_mean"],
+            delta_scores  = sd["delta_mean"],
+            labels        = sd["labels"],
+            cutoff_conf   = cutoffs.get("ROC-A (Confidence)", 0.5),
+            cutoff_cos    = cutoffs.get("ROC-B (HCC Cosine / mean)", 0.0),
+            split         = split_tag,
+            save_path     = out_dir / f"conf_vs_cosine_{split_tag.lower()}.png",
+        )
+
+    # ── confusion matrices ─────────────────────────────────────
+    print("\n[ext-4] Confusion matrices …")
+    for split_tag, sd in split_scores.items():
+        score_map = {
+            "ROC-A (Confidence)"          : sd["conf"],
+            "ROC-B (HCC Cosine / mean)"   : sd["hcc_cos_mean"],
+            "ROC-C (ΔScore / mean)"       : sd["delta_mean"],
+            "ROC-B (HCC Cosine / kmeans)" : sd["hcc_cos_kmeans"],
+            "ROC-C (ΔScore / kmeans)"     : sd["delta_kmeans"],
+        }
+        for roc_name, sc in score_map.items():
+            c = cutoffs.get(roc_name, 0.5)
+            fig_cm = plot_confusion_matrix(
+                scores      = sc,
+                labels      = sd["labels"],
+                cutoff      = c,
+                roc_name    = roc_name,
+                split       = split_tag,
+                class_names = cfg.class_names,
+                save_path   = out_dir / (
+                    "cm_" + split_tag.lower() + "_" +
+                    roc_name.lower()
+                    .replace(" ", "_").replace("(", "").replace(")", "")
+                    .replace("/", "").replace("−", "minus") + ".png"
+                ),
+            )
+            plt.close(fig_cm)
+
+    # ── test-set DeLong ───────────────────────────────────────
+    print("\n[ext-5] Test-set DeLong test …")
+    test_delong = run_test_delong(split_scores["Test"])
+    pd.DataFrame(test_delong).to_csv(out_dir / "delong_test.csv", index=False)
+
+    # ── per-sample WandB image table ──────────────────────────
+    print("\n[ext-6] Building WandB per-sample score tables …")
+    # rebuild score_records from split_scores
+    score_records: list[dict] = []
+    for split_tag, sd in split_scores.items():
+        for i in range(len(sd["labels"])):
+            score_records.append({
+                "split"             : split_tag,
+                "true_label"        : int(sd["labels"][i]),
+                "confidence_score"  : float(sd["conf"][i]),
+                "hcc_cosine_mean"   : float(sd["hcc_cos_mean"][i]),
+                "hem_cosine_mean"   : float(sd["hem_cos_mean"][i]),
+                "delta_mean"        : float(sd["delta_mean"][i]),
+                "hcc_cosine_kmeans" : float(sd["hcc_cos_kmeans"][i]),
+                "hem_cosine_kmeans" : float(sd["hem_cos_kmeans"][i]),
+                "delta_kmeans"      : float(sd["delta_kmeans"][i]),
+            })
+
+    if _wandb is not None and _wandb.run is not None:
+        pfx = f"{cfg.wandb_prefix}/{cfg.model_id}"
+        extra_log: dict = {}
+
+        for split_tag, ds in [("Val", val_ds), ("Test", test_ds)]:
+            tbl = _build_wandb_score_image_table(
+                score_records, stage2_model, ds, cfg, split=split_tag)
+            if tbl is not None:
+                extra_log[f"{pfx}/{split_tag.lower()}_image_score_table"] = tbl
+
+        for split_tag, fig in calib_figs.items():
+            extra_log[f"{pfx}/reliability_{split_tag.lower()}"] = _fig_to_wandb_image(
+                fig, f"Reliability Diagram ({split_tag})")
+        for split_tag, fig in scatter_figs.items():
+            extra_log[f"{pfx}/conf_vs_cosine_{split_tag.lower()}"] = _fig_to_wandb_image(
+                fig, f"Conf vs Cosine ({split_tag})")
+
+        if extra_log:
+            _wandb.log(extra_log)
+            print(f"[cosine_probe] Extended WandB logs → {pfx}/")
+
+    for fig in list(calib_figs.values()) + list(scatter_figs.values()):
+        plt.close(fig)
+
+    print("\n[cosine_probe_v2] All extended analyses complete.")
+    print(f"  Outputs → {out_dir}")
+
+    return {
+        **base_results,
+        "calibration_val"    : calib_results.get("Val", {}),
+        "calibration_test"   : calib_results.get("Test", {}),
+        "test_delong_records": test_delong,
+    }
