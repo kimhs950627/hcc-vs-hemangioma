@@ -921,56 +921,228 @@ def plot_tsne(
 # WandB logging
 # ─────────────────────────────────────────────────────────────
 
+def _interpret_delong_row(row: dict) -> str:
+    delta = float(row["auroc_a"]) - float(row["auroc_b"])
+    p     = float(row["p_value"])
+    better = "first metric (A)" if delta > 0 else "second metric (B/C)"
+    signif = "statistically significant (p<0.05)" if p < 0.05 else "not statistically significant (p≥0.05)"
+    return (
+        f"{row['comparison']}: ΔAUROC={delta:+.4f}, p={p:.4f}. "
+        f"The {better} had higher AUROC. The difference was {signif}."
+    )
+
+
+def _interpret_calibration(split: str, calib: dict) -> str:
+    ece = float(calib.get("ece", float("nan")))
+    mce = float(calib.get("mce", float("nan")))
+    ace = float(calib.get("ace", float("nan")))
+    if ece < 0.05:
+        level = "well calibrated — softmax output approximates true fraction positive"
+    elif ece < 0.10:
+        level = "moderately calibrated — some overconfidence present"
+    else:
+        level = ("poorly calibrated / significantly overconfident — "
+                 "softmax output should NOT be interpreted as a true probability without temperature scaling")
+    return (
+        f"{split} calibration: ECE={ece:.4f}, MCE={mce:.4f}, ACE={ace:.4f}. "
+        f"Model is {level}."
+    )
+
+
+def _build_interpretation_df(
+    val_delong   : list[dict],
+    test_delong  : list[dict],
+    calib_results: dict[str, dict],
+) -> pd.DataFrame:
+    """Build human-readable interpretation table for cosine_probe/abstract/summary."""
+    rows: list[dict] = []
+
+    rows.append({
+        "section": "Concept",
+        "item": "confidence_vs_probability",
+        "interpretation": (
+            "Softmax output P(HCC) is NOT a calibrated clinical probability. "
+            "It reflects the model's relative certainty between classes (logit ratio), "
+            "not the true frequency of HCC among cases with that score. "
+            "Calibration metrics (ECE/MCE/ACE) quantify this gap. "
+            "The cosine-based HCC Score provides a complementary, representation-space view "
+            "aligned with how radiologists reason: 'how much does this lesion resemble typical HCC?'"
+        ),
+    })
+
+    for row in val_delong:
+        rows.append({
+            "section": "DeLong/Val",
+            "item": row["comparison"],
+            "interpretation": _interpret_delong_row(row),
+        })
+    for row in test_delong:
+        rows.append({
+            "section": "DeLong/Test",
+            "item": row["comparison"],
+            "interpretation": _interpret_delong_row(row),
+        })
+
+    for split_tag in ("Val", "Test"):
+        if split_tag in calib_results:
+            rows.append({
+                "section": "Calibration",
+                "item": split_tag,
+                "interpretation": _interpret_calibration(split_tag, calib_results[split_tag]),
+            })
+
+    rows.append({
+        "section": "Metrics",
+        "item": "ROC-B vs ROC-A",
+        "interpretation": (
+            "ROC-B (HCC Cosine Score, mean prototype) measures embedding-space similarity "
+            "to the HCC prototype cluster. If AUROC-B ≈ AUROC-A, cosine similarity is a "
+            "competitive and interpretable alternative. If AUROC-B < AUROC-A, both metrics "
+            "provide complementary discriminative information."
+        ),
+    })
+    rows.append({
+        "section": "Metrics",
+        "item": "ROC-C vs ROC-A",
+        "interpretation": (
+            "ROC-C (ΔScore = HCC cosine − Hemangioma cosine) captures the discriminative "
+            "margin in embedding space. High ΔScore means the lesion is simultaneously more "
+            "similar to HCC prototypes AND less similar to Hemangioma prototypes, directly "
+            "mirroring the radiologist's differential diagnosis reasoning."
+        ),
+    })
+
+    return pd.DataFrame(rows)
+
+
 def _log_wandb(
-    cfg           : CosineProbeConfig,
-    val_results   : dict,
-    test_results  : dict,
-    delong_records: list[dict],
-    roc_figs      : dict[str, plt.Figure],
-    dist_figs     : dict[str, plt.Figure],
-    tsne_fig      : Optional[plt.Figure],
-    score_records : list[dict],
+    cfg             : CosineProbeConfig,
+    val_results     : dict,
+    test_results    : dict,
+    delong_records  : list[dict],
+    roc_figs        : dict[str, plt.Figure],
+    dist_figs       : dict[str, plt.Figure],
+    tsne_fig        : Optional[plt.Figure],
+    score_records   : list[dict],
+    # v2 extras (defaulted to None for backward compat with run_cosine_probe)
+    scatter_figs    : Optional[dict[str, plt.Figure]] = None,
+    cm_figs         : Optional[dict[str, plt.Figure]] = None,
+    calib_figs      : Optional[dict[str, plt.Figure]] = None,
+    calib_results   : Optional[dict[str, dict]]       = None,
+    test_delong     : Optional[list[dict]]             = None,
+    out_dir         : Optional[Path]                   = None,
 ) -> None:
+    """Structured W&B logging with sub-prefix hierarchy.
+
+    Sub-prefix layout
+    -----------------
+    cosine_probe/ROC/               Triple ROC images (Val / Test)
+    cosine_probe/scatter/           Conf-vs-cosine scatter plots
+    cosine_probe/confusion_matrix/  Confusion matrices per ROC key
+    cosine_probe/images/            Reliability diagrams, cosine distributions, t-SNE
+    cosine_probe/table/             All metric / DeLong / calibration / score tables
+    cosine_probe/abstract/          Human-readable interpretation table
+    cosine_probe/original_csv       W&B Artifact — all CSV exports for post-hoc reuse
+    """
     if _wandb is None or _wandb.run is None:
         print("[cosine_probe] WandB run not active — skipping logging.")
         return
 
-    pfx = f"{cfg.wandb_prefix}/{cfg.model_id}"
+    pfx = cfg.wandb_prefix.rstrip("/")   # e.g. "cosine_probe"
     log_dict: dict = {}
 
-    for split_tag, res in [("val", val_results), ("test", test_results)]:
-        for roc_key, m in res["metrics"].items():
-            tag = (roc_key.lower()
-                   .replace(" ", "_").replace("(", "").replace(")", "")
-                   .replace("/", "_").replace("−", "minus"))
-            for k, v in m.items():
-                if isinstance(v, (int, float)):
-                    log_dict[f"{pfx}/{split_tag}/{tag}_{k}"] = v
+    # ── ROC images ──────────────────────────────────────────────
+    for split_tag, fig in roc_figs.items():
+        log_dict[f"{pfx}/ROC/{split_tag.lower()}_triple_roc"] = _fig_to_wandb_image(
+            fig, f"Triple ROC ({split_tag})"
+        )
 
-    for row in delong_records:
-        comp = row["comparison"].replace(" ", "_")
-        for k, v in row.items():
-            if k != "comparison" and isinstance(v, (int, float)):
-                log_dict[f"{pfx}/delong_{comp}_{k}"] = v
+    # ── Scatter ─────────────────────────────────────────────────
+    if scatter_figs:
+        for split_tag, fig in scatter_figs.items():
+            log_dict[f"{pfx}/scatter/{split_tag.lower()}_conf_vs_cosine"] = _fig_to_wandb_image(
+                fig, f"Confidence vs Cosine Score ({split_tag})"
+            )
 
-    for split, fig in roc_figs.items():
-        log_dict[f"{pfx}/triple_roc_{split.lower()}"] = _fig_to_wandb_image(
-            fig, f"Triple ROC ({split})")
-    for split, fig in dist_figs.items():
-        log_dict[f"{pfx}/cosine_dist_{split.lower()}"] = _fig_to_wandb_image(
-            fig, f"Cosine distribution ({split})")
+    # ── Confusion matrices ───────────────────────────────────────
+    if cm_figs:
+        for key, fig in cm_figs.items():
+            # key format: "{split_tag}/{roc_name_slug}"
+            safe_key = key.replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
+            log_dict[f"{pfx}/confusion_matrix/{safe_key}"] = _fig_to_wandb_image(
+                fig, f"Confusion Matrix ({key})"
+            )
+
+    # ── Other images (reliability, cosine distribution, t-SNE) ──
+    if calib_figs:
+        for split_tag, fig in calib_figs.items():
+            log_dict[f"{pfx}/images/{split_tag.lower()}_reliability"] = _fig_to_wandb_image(
+                fig, f"Reliability Diagram ({split_tag})"
+            )
+    for split_tag, fig in dist_figs.items():
+        log_dict[f"{pfx}/images/{split_tag.lower()}_cosine_distribution"] = _fig_to_wandb_image(
+            fig, f"Cosine Distribution ({split_tag})"
+        )
     if tsne_fig is not None:
-        log_dict[f"{pfx}/tsne"] = _fig_to_wandb_image(tsne_fig, "t-SNE embedding space")
+        log_dict[f"{pfx}/images/tsne"] = _fig_to_wandb_image(tsne_fig, "t-SNE embedding space")
 
-    if score_records:
-        log_dict[f"{pfx}/cosine_score_table"] = _wandb.Table(
-            dataframe=pd.DataFrame(score_records))
+    # ── Tables ───────────────────────────────────────────────────
+    if val_results.get("metrics"):
+        log_dict[f"{pfx}/table/val_metrics"] = _wandb.Table(
+            dataframe=pd.DataFrame(
+                [{"roc": rn, **m} for rn, m in val_results["metrics"].items()]
+            )
+        )
+    if test_results.get("metrics"):
+        log_dict[f"{pfx}/table/test_metrics"] = _wandb.Table(
+            dataframe=pd.DataFrame(
+                [{"roc": rn, **m} for rn, m in test_results["metrics"].items()]
+            )
+        )
     if delong_records:
-        log_dict[f"{pfx}/delong_table"] = _wandb.Table(
-            dataframe=pd.DataFrame(delong_records))
+        log_dict[f"{pfx}/table/delong_val"] = _wandb.Table(
+            dataframe=pd.DataFrame(delong_records)
+        )
+    if test_delong:
+        log_dict[f"{pfx}/table/delong_test"] = _wandb.Table(
+            dataframe=pd.DataFrame(test_delong)
+        )
+    if calib_results:
+        log_dict[f"{pfx}/table/calibration"] = _wandb.Table(
+            dataframe=pd.DataFrame(
+                [{"split": sp, **m} for sp, m in calib_results.items()]
+            )
+        )
+    if score_records:
+        log_dict[f"{pfx}/table/all_scores"] = _wandb.Table(
+            dataframe=pd.DataFrame(score_records)
+        )
+
+    # ── Abstract (human-readable interpretation) ─────────────────
+    _test_dl = test_delong or []
+    _calib   = calib_results or {}
+    interpretation_df = _build_interpretation_df(delong_records, _test_dl, _calib)
+    log_dict[f"{pfx}/abstract/summary"] = _wandb.Table(dataframe=interpretation_df)
 
     _wandb.log(log_dict)
     print(f"[cosine_probe] WandB logged under prefix: {pfx}/")
+
+    # ── CSV Artifact ─────────────────────────────────────────────
+    if out_dir is not None and out_dir.exists():
+        csv_files = sorted(out_dir.glob("*.csv"))
+        if csv_files:
+            art = _wandb.Artifact(
+                name=f"{cfg.model_id}-cosine-probe-csv",
+                type="analysis",
+                description="Original CSV exports from cosine_probe for post-hoc reuse",
+                metadata={"model_id": cfg.model_id},
+            )
+            for csv_file in csv_files:
+                art.add_file(str(csv_file),
+                             name=f"cosine_probe/original_csv/{csv_file.name}")
+            _wandb.run.log_artifact(art)
+            print(f"[cosine_probe] CSV artifact logged: {len(csv_files)} files")
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1499,6 +1671,247 @@ def run_test_delong(
     return records
 
 
+
 # ─────────────────────────────────────────────────────────────
 # Extended run_cosine_probe_v2  (모든 기능 통합)
-# ──────
+# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Extended run_cosine_probe_v2  (모든 기능 통합)
+# ─────────────────────────────────────────────────────────────
+
+def run_cosine_probe_v2(
+    stage2_model : object,
+    val_ds       : tf.data.Dataset,
+    test_ds      : tf.data.Dataset,
+    cfg          : CosineProbeConfig,
+    train_ds     : Optional[tf.data.Dataset] = None,
+    base_results : Optional[dict]            = None,
+) -> dict:
+    """Extended cosine probe: adds scatter, confusion matrix, calibration,
+    test DeLong, and fully structured WandB logging.
+
+    Parameters
+    ----------
+    base_results : dict returned by run_cosine_probe().
+        If provided, embeddings / scores are reused (no second forward pass).
+        If None, run_cosine_probe() is called internally.
+
+    WandB sub-prefix layout
+    -----------------------
+    cosine_probe/ROC/               Triple ROC images
+    cosine_probe/scatter/           Conf-vs-cosine scatter plots
+    cosine_probe/confusion_matrix/  Per-ROC confusion matrices
+    cosine_probe/images/            Reliability diagrams, distributions, t-SNE
+    cosine_probe/table/             Metric / DeLong / calibration / score tables
+    cosine_probe/abstract/          Human-readable interpretation
+    cosine_probe/original_csv       W&B Artifact — all CSV files
+    """
+    out_dir = cfg.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── [ext-0] Base probe (reuse if already run) ─────────────
+    if base_results is None:
+        print("[cosine_probe_v2] Running base probe …")
+        base_results = run_cosine_probe(
+            stage2_model=stage2_model,
+            val_ds=val_ds, test_ds=test_ds,
+            cfg=cfg, train_ds=train_ds,
+        )
+
+    split_data    = base_results["split_data"]
+    banks         = base_results["banks"]
+    cutoffs       = base_results["cutoffs"]
+    val_metrics   = base_results["val_metrics"]
+    test_metrics  = base_results["test_metrics"]
+    delong_records= base_results["delong_records"]
+
+    # ── [ext-1] Test-set DeLong ──────────────────────────────
+    print("\n[v2-1/5] Test-set DeLong …")
+    test_delong = run_test_delong(split_data["Test"])
+    pd.DataFrame(test_delong).to_csv(out_dir / "delong_test.csv", index=False)
+
+    # ── [ext-2] Calibration (reliability diagram) ────────────
+    print("\n[v2-2/5] Calibration analysis …")
+    calib_figs: dict[str, plt.Figure]    = {}
+    calib_results: dict[str, dict]       = {}
+
+    for split_tag, ds in [("Val", val_ds), ("Test", test_ds)]:
+        fig, stats = plot_reliability_diagram(
+            conf_scores=split_data[split_tag]["conf"],
+            labels     =split_data[split_tag]["labels"],
+            split      =split_tag,
+            save_path  =out_dir / f"reliability_{split_tag.lower()}.png",
+        )
+        calib_figs[split_tag]    = fig
+        calib_results[split_tag] = stats
+    pd.DataFrame(
+        [{"split": sp, **m} for sp, m in calib_results.items()]
+    ).to_csv(out_dir / "calibration.csv", index=False)
+
+    # ── [ext-3] Scatter: conf vs cosine ──────────────────────
+    print("\n[v2-3/5] Scatter plots …")
+    scatter_figs: dict[str, plt.Figure] = {}
+
+    for split_tag, ds in [("Val", val_ds), ("Test", test_ds)]:
+        sd = split_data[split_tag]
+        fig = plot_conf_vs_cosine_scatter(
+            conf_scores  =sd["conf"],
+            cosine_scores=sd["hcc_cos_mean"],
+            delta_scores =sd["delta_mean"],
+            labels       =sd["labels"],
+            cutoff_conf  =cutoffs["ROC-A (Confidence)"],
+            cutoff_cos   =cutoffs["ROC-B (HCC Cosine / mean)"],
+            split        =split_tag,
+            save_path    =out_dir / f"scatter_{split_tag.lower()}.png",
+        )
+        scatter_figs[split_tag] = fig
+
+    # ── [ext-4] Confusion matrices ───────────────────────────
+    print("\n[v2-4/5] Confusion matrices …")
+    cm_figs: dict[str, plt.Figure] = {}
+    roc_keys_to_plot = [
+        "ROC-A (Confidence)",
+        "ROC-B (HCC Cosine / mean)",
+        "ROC-C (ΔScore / mean)",
+    ]
+
+    for split_tag, ds in [("Val", val_ds), ("Test", test_ds)]:
+        sd = split_data[split_tag]
+        score_lookup = {
+            "ROC-A (Confidence)"         : sd["conf"],
+            "ROC-B (HCC Cosine / mean)"  : sd["hcc_cos_mean"],
+            "ROC-C (ΔScore / mean)"      : sd["delta_mean"],
+            "ROC-B (HCC Cosine / kmeans)": sd["hcc_cos_kmeans"],
+            "ROC-C (ΔScore / kmeans)"    : sd["delta_kmeans"],
+        }
+        for roc_name in roc_keys_to_plot:
+            slug = (roc_name.lower()
+                    .replace(" ", "_").replace("(", "").replace(")", "")
+                    .replace("/", "_").replace("−", "minus").replace("δ", "delta"))
+            cm_key = f"{split_tag}/{slug}"
+            fig = plot_confusion_matrix(
+                scores     =score_lookup[roc_name],
+                labels     =sd["labels"],
+                cutoff     =cutoffs[roc_name],
+                roc_name   =roc_name,
+                split      =split_tag,
+                class_names=cfg.class_names,
+                save_path  =out_dir / f"cm_{split_tag.lower()}_{slug}.png",
+            )
+            cm_figs[cm_key] = fig
+
+    # ── [ext-5] WandB structured logging ────────────────────
+    print("\n[v2-5/5] WandB structured logging …")
+
+    # Rebuild roc_figs / dist_figs for v2 (re-generate from saved PNGs if closed)
+    roc_figs : dict[str, plt.Figure] = {}
+    dist_figs: dict[str, plt.Figure] = {}
+
+    for split_tag, ds in [("Val", val_ds), ("Test", test_ds)]:
+        sd = split_data[split_tag]
+        sd_scores = {
+            "ROC-A (Confidence)"          : (sd["conf"],           sd["labels"]),
+            "ROC-B (HCC Cosine / mean)"   : (sd["hcc_cos_mean"],   sd["labels"]),
+            "ROC-C (ΔScore / mean)"       : (sd["delta_mean"],     sd["labels"]),
+            "ROC-B (HCC Cosine / kmeans)" : (sd["hcc_cos_kmeans"], sd["labels"]),
+            "ROC-C (ΔScore / kmeans)"     : (sd["delta_kmeans"],   sd["labels"]),
+        }
+        roc_figs[split_tag] = plot_triple_roc(
+            sd_scores, cutoffs, split=split_tag,
+            save_path=out_dir / f"triple_roc_{split_tag.lower()}.png",
+        )
+        dist_figs[split_tag] = plot_cosine_distribution(
+            hcc_cos  =sd["hcc_cos_mean"],
+            hem_cos  =sd["hem_cos_mean"],
+            delta    =sd["delta_mean"],
+            labels   =sd["labels"],
+            cutoffs  =cutoffs,
+            split    =split_tag,
+            save_path=out_dir / f"cosine_dist_{split_tag.lower()}.png",
+        )
+
+    score_records: list[dict] = []
+    for split_tag, sd in split_data.items():
+        for i in range(len(sd["labels"])):
+            score_records.append({
+                "split"             : split_tag,
+                "true_label"        : int(sd["labels"][i]),
+                "confidence_score"  : float(sd["conf"][i]),
+                "hcc_cosine_mean"   : float(sd["hcc_cos_mean"][i]),
+                "hem_cosine_mean"   : float(sd["hem_cos_mean"][i]),
+                "delta_mean"        : float(sd["delta_mean"][i]),
+                "hcc_cosine_kmeans" : float(sd["hcc_cos_kmeans"][i]),
+                "hem_cosine_kmeans" : float(sd["hem_cos_kmeans"][i]),
+                "delta_kmeans"      : float(sd["delta_kmeans"][i]),
+            })
+    pd.DataFrame(score_records).to_csv(out_dir / "all_scores.csv", index=False)
+
+    # t-SNE
+    tsne_fig: Optional[plt.Figure] = None
+    try:
+        hcc_train_emb = (
+            np.load(out_dir / "hcc_train_emb.npy")
+            if (out_dir / "hcc_train_emb.npy").exists()
+            else split_data["Val"]["embs"][split_data["Val"]["labels"] == 1]
+        )
+        hem_train_emb = (
+            np.load(out_dir / "hem_train_emb.npy")
+            if (out_dir / "hem_train_emb.npy").exists()
+            else split_data["Val"]["embs"][split_data["Val"]["labels"] == 0]
+        )
+        tsne_fig = plot_tsne(
+            train_hcc_emb   = hcc_train_emb,
+            train_hem_emb   = hem_train_emb,
+            hcc_assign_mean = banks["mean"]["hcc_assign"],
+            hem_assign_mean = banks["mean"]["hem_assign"],
+            hcc_assign_km   = banks["kmeans"]["hcc_assign"],
+            hem_assign_km   = banks["kmeans"]["hem_assign"],
+            hcc_bank_mean   = banks["mean"]["hcc_bank"],
+            hem_bank_mean   = banks["mean"]["hem_bank"],
+            hcc_bank_km     = banks["kmeans"]["hcc_bank"],
+            hem_bank_km     = banks["kmeans"]["hem_bank"],
+            cfg             = cfg,
+            save_path       = out_dir / "tsne.png",
+            val_embs        = split_data["Val"].get("embs"),
+            val_labels      = split_data["Val"].get("labels"),
+        )
+    except Exception as e:
+        print(f"[cosine_probe_v2] WARNING: t-SNE failed: {e}  (skipping)")
+
+    _log_wandb(
+        cfg           = cfg,
+        val_results   = {"metrics": val_metrics},
+        test_results  = {"metrics": test_metrics},
+        delong_records= delong_records,
+        roc_figs      = roc_figs,
+        dist_figs     = dist_figs,
+        tsne_fig      = tsne_fig,
+        score_records = score_records,
+        scatter_figs  = scatter_figs,
+        cm_figs       = cm_figs,
+        calib_figs    = calib_figs,
+        calib_results = calib_results,
+        test_delong   = test_delong,
+        out_dir       = out_dir,
+    )
+
+    for fig in (list(roc_figs.values()) + list(dist_figs.values()) +
+                list(scatter_figs.values()) + list(cm_figs.values()) +
+                list(calib_figs.values())):
+        plt.close(fig)
+    if tsne_fig is not None:
+        plt.close(tsne_fig)
+
+    print("\n[cosine_probe_v2] Done.")
+    print(f"  Outputs → {out_dir}")
+
+    return dict(
+        banks          = banks,
+        cutoffs        = cutoffs,
+        val_metrics    = val_metrics,
+        test_metrics   = test_metrics,
+        delong_records = delong_records,
+        test_delong    = test_delong,
+        calib_results  = calib_results,
+        split_data     = split_data,
+    )
