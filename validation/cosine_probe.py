@@ -42,16 +42,23 @@ prototype_mode
 Both "mean" AND "kmeans" prototypes are always computed and all downstream
 metrics / plots are produced for each mode independently.
 
+Design note (v2 refactor)
+--------------------------
+``run_cosine_probe`` now returns ``split_data`` as part of its result dict so
+that ``run_cosine_probe_v2`` can reuse the already-extracted embeddings and
+scores without a second forward pass through the model.  The [ext-1] block
+in v2 is therefore removed entirely.
+
 Usage
 -----
-from validation.cosine_probe import CosineProbeConfig, run_cosine_probe
+from validation.cosine_probe import CosineProbeConfig, run_cosine_probe_v2
 
 cfg = CosineProbeConfig(
     model_id        = model_id,
     work_dir        = cfg.work_dir,
     embedding_source= "saved",          # tries saved first, falls back to live
 )
-results = run_cosine_probe(
+results = run_cosine_probe_v2(
     stage2_model  = classifier,
     val_ds        = val_ds,
     test_ds       = test_ds,
@@ -428,6 +435,54 @@ def _extract_cosine_scores_from_ds(
 
 
 # ─────────────────────────────────────────────────────────────
+# Score extraction helper  (single pass, all modes)
+# ─────────────────────────────────────────────────────────────
+
+def _extract_all_scores_for_split(
+    model  : object,
+    dataset: tf.data.Dataset,
+    banks  : dict[str, dict],
+    pos    : int,
+) -> dict[str, np.ndarray]:
+    """Extract confidence + cosine scores for one dataset split in a single pass.
+
+    Embeddings are extracted once (mean-mode bank pass) then reused for
+    kmeans-mode cosine computation.  Confidence requires a separate forward
+    pass through the full classifier head (not the encoder), so it is
+    collected independently but still in a single loop.
+
+    Returns a flat dict:
+        conf, labels, embs,
+        hcc_cos_mean, hem_cos_mean, delta_mean,
+        hcc_cos_kmeans, hem_cos_kmeans, delta_kmeans
+    """
+    # ── single embedding pass (mean bank — embs are bank-agnostic) ──
+    hcc_cos_m, hem_cos_m, delta_m, embs, labels = _extract_cosine_scores_from_ds(
+        model, dataset, banks["mean"]["hcc_bank"], banks["mean"]["hem_bank"], pos
+    )
+    # ── kmeans cosine computed from already-extracted embs (no second pass) ──
+    hcc_cos_km = _cosine_sim_to_bank(embs, banks["kmeans"]["hcc_bank"])
+    hem_cos_km = _cosine_sim_to_bank(embs, banks["kmeans"]["hem_bank"])
+    delta_km   = (hcc_cos_km - hem_cos_km).astype(np.float32)
+
+    # ── confidence (separate classifier head forward pass) ──
+    conf, lbl2 = _extract_confidence_scores(model, dataset, pos)
+    assert np.array_equal(labels, lbl2), "label mismatch between embedding and confidence pass"
+
+    return dict(
+        conf           = conf,
+        labels         = labels,
+        embs           = embs,
+        hcc_cos_mean   = hcc_cos_m,
+        hem_cos_mean   = hem_cos_m,
+        delta_mean     = delta_m,
+        hcc_cos_kmeans = hcc_cos_km.astype(np.float32),
+        hem_cos_kmeans = hem_cos_km.astype(np.float32),
+        delta_kmeans   = delta_km,
+    )
+
+
+# ─────────────────────────────────────────────────────────────
 # DeLong test  (non-parametric AUROC comparison)
 # ─────────────────────────────────────────────────────────────
 
@@ -798,7 +853,6 @@ def plot_tsne(
 
         else:
             # ── kmeans mode: cluster circles + cluster centres ──
-            # colour gradient within each subgroup
             n_km_hcc = len(hcc_bank_km)
             n_km_hem = len(hem_bank_km)
 
@@ -920,7 +974,7 @@ def _log_wandb(
 
 
 # ─────────────────────────────────────────────────────────────
-# Public API
+# Public API  —  run_cosine_probe
 # ─────────────────────────────────────────────────────────────
 
 def run_cosine_probe(
@@ -946,7 +1000,9 @@ def run_cosine_probe(
 
     Returns
     -------
-    dict with banks, cutoffs, val/test metrics, DeLong results.
+    dict with keys:
+        banks, cutoffs, val_metrics, test_metrics, delong_records,
+        split_data   ← NEW: raw per-sample scores reused by v2 (no re-extraction)
     """
     out_dir = cfg.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -973,39 +1029,25 @@ def run_cosine_probe(
         np.save(out_dir / f"hcc_assign_{mode}.npy", bd["hcc_assign"])
         np.save(out_dir / f"hem_assign_{mode}.npy", bd["hem_assign"])
 
-    # ── 2. Extract scores for val / test ─────────────────────
-    print("\n[2/7] Extracting scores (confidence + cosine, both modes) …")
-
-    # confidence pass (labels only needed once)
+    # ── 2. Extract scores for val / test (single pass per split) ─
+    print("\n[2/7] Extracting scores (single pass per split) …")
     split_data: dict[str, dict[str, np.ndarray]] = {}
     for split_tag, ds in [("Val", val_ds), ("Test", test_ds)]:
-        conf, lbl = _extract_confidence_scores(stage2_model, ds, pos)
-        entry = dict(conf=conf, labels=lbl)
-
-        for mode, bd in banks.items():
-            hcc_cos, hem_cos, delta, embs, lbl2 = _extract_cosine_scores_from_ds(
-                stage2_model, ds, bd["hcc_bank"], bd["hem_bank"], pos
-            )
-            assert np.array_equal(lbl, lbl2), f"label mismatch at {split_tag}/{mode}"
-            entry[f"hcc_cos_{mode}"] = hcc_cos
-            entry[f"hem_cos_{mode}"] = hem_cos
-            entry[f"delta_{mode}"]   = delta
-            if mode == "mean":          # store once (same embeddings regardless of bank)
-                entry["embs"] = embs
-
+        entry = _extract_all_scores_for_split(stage2_model, ds, banks, pos)
         split_data[split_tag] = entry
         # save CSV
         pd.DataFrame({
-            "confidence_score"      : conf,
+            "confidence_score"      : entry["conf"],
             "hcc_cosine_mean"       : entry["hcc_cos_mean"],
             "hem_cosine_mean"       : entry["hem_cos_mean"],
             "delta_mean"            : entry["delta_mean"],
             "hcc_cosine_kmeans"     : entry["hcc_cos_kmeans"],
             "hem_cosine_kmeans"     : entry["hem_cos_kmeans"],
             "delta_kmeans"          : entry["delta_kmeans"],
-            "label"                 : lbl,
+            "label"                 : entry["labels"],
         }).to_csv(out_dir / f"{split_tag.lower()}_scores.csv", index=False)
-        print(f"  {split_tag}  n={len(lbl)}  class_dist={np.bincount(lbl).tolist()}")
+        print(f"  {split_tag}  n={len(entry['labels'])}  "
+              f"class_dist={np.bincount(entry['labels']).tolist()}")
 
     # ── 3. Cutoffs from val ──────────────────────────────────
     print(f"\n[3/7] Determining cutoffs from Val ({cfg.cutoff_strategy}) …")
@@ -1054,7 +1096,6 @@ def run_cosine_probe(
 
     # ── 5. DeLong tests ──────────────────────────────────────
     print("\n[5/7] DeLong test (A vs B/C, mean and kmeans) …")
-    vl = split_data["Val"]["labels"]
     delong_pairs = [
         ("A vs B-mean",   val_d["conf"], val_d["hcc_cos_mean"]),
         ("A vs C-mean",   val_d["conf"], val_d["delta_mean"]),
@@ -1065,7 +1106,7 @@ def run_cosine_probe(
     ]
     delong_records: list[dict] = []
     for name, sa, sb in delong_pairs:
-        res = delong_test(vl, sa, sb)
+        res = delong_test(val_d["labels"], sa, sb)
         delong_records.append({"comparison": name, **res})
         print(f"  {name:30s}  z={res['z_stat']:+.3f}  p={res['p_value']:.4f}  "
               f"ΔAUROC={res['auroc_a'] - res['auroc_b']:+.4f}")
@@ -1154,11 +1195,12 @@ def run_cosine_probe(
     print(f"  Outputs → {out_dir}")
 
     return dict(
-        banks         = banks,
-        cutoffs       = cutoffs,
-        val_metrics   = val_metrics,
-        test_metrics  = test_metrics,
-        delong_records= delong_records,
+        banks          = banks,
+        cutoffs        = cutoffs,
+        val_metrics    = val_metrics,
+        test_metrics   = test_metrics,
+        delong_records = delong_records,
+        split_data     = split_data,   # ← v2 reuses this; no second forward pass
     )
 
 # ─────────────────────────────────────────────────────────────
@@ -1373,10 +1415,6 @@ def _build_wandb_score_image_table(
     if _wandb is None or _wandb.run is None:
         return None
 
-    pos = cfg.positive_class
-    conf_cut  = None
-    cos_cut   = None
-
     rows = [r for r in score_records if r["split"] == split][:max_samples]
     if not rows:
         return None
@@ -1404,7 +1442,6 @@ def _build_wandb_score_image_table(
     for idx, row in enumerate(rows):
         if idx < len(all_imgs):
             img = all_imgs[idx]
-            # normalise to uint8 for WandB
             if img.dtype != np.uint8:
                 lo, hi = img.min(), img.max()
                 img_disp = ((img - lo) / (hi - lo + 1e-8) * 255).astype(np.uint8)
@@ -1464,187 +1501,4 @@ def run_test_delong(
 
 # ─────────────────────────────────────────────────────────────
 # Extended run_cosine_probe_v2  (모든 기능 통합)
-# ─────────────────────────────────────────────────────────────
-
-def run_cosine_probe_v2(
-    stage2_model : object,
-    val_ds       : tf.data.Dataset,
-    test_ds      : tf.data.Dataset,
-    cfg          : CosineProbeConfig,
-    train_ds     : Optional[tf.data.Dataset] = None,
-) -> dict:
-    """run_cosine_probe + calibration + scatter + confusion matrix + test DeLong.
-
-    Supersedes run_cosine_probe.  Adds:
-        - reliability_diagram  (ECE / MCE / ACE)
-        - conf_vs_cosine scatter  (disagreement quadrant)
-        - confusion matrix  (per ROC type, val + test)
-        - test-set DeLong
-        - per-sample WandB image table  (Val + Test)
-
-    Returns the same dict as run_cosine_probe plus:
-        calibration_val / calibration_test  : dict with ece, mce, ace
-        test_delong_records                 : list[dict]
-    """
-    # ── run base pipeline ─────────────────────────────────────
-    base_results = run_cosine_probe(
-        stage2_model = stage2_model,
-        val_ds       = val_ds,
-        test_ds      = test_ds,
-        cfg          = cfg,
-        train_ds     = train_ds,
-    )
-
-    out_dir = cfg.out_dir
-    banks   = base_results["banks"]
-    cutoffs = base_results["cutoffs"]
-
-    # ── re-collect scores  (re-extract for new plots) ─────────
-    print("\n[ext-1] Collecting scores for extended plots …")
-    pos = cfg.positive_class
-
-    split_scores: dict[str, dict] = {}
-    for split_tag, ds in [("Val", val_ds), ("Test", test_ds)]:
-        conf, lbl = _extract_confidence_scores(stage2_model, ds, pos)
-        _, _, _, embs, _ = _extract_cosine_scores_from_ds(
-            stage2_model, ds,
-            banks["mean"]["hcc_bank"], banks["mean"]["hem_bank"], pos,
-        )
-        _, _, delta_km, _, _ = _extract_cosine_scores_from_ds(
-            stage2_model, ds,
-            banks["kmeans"]["hcc_bank"], banks["kmeans"]["hem_bank"], pos,
-        )
-        hcc_cos_m = _cosine_sim_to_bank(embs, banks["mean"]["hcc_bank"])
-        hem_cos_m = _cosine_sim_to_bank(embs, banks["mean"]["hem_bank"])
-        delta_m   = hcc_cos_m - hem_cos_m
-        split_scores[split_tag] = dict(
-            conf         = conf,
-            labels       = lbl,
-            embs         = embs,
-            hcc_cos_mean = hcc_cos_m.astype(np.float32),
-            hem_cos_mean = hem_cos_m.astype(np.float32),
-            delta_mean   = delta_m.astype(np.float32),
-            hcc_cos_kmeans = _cosine_sim_to_bank(embs, banks["kmeans"]["hcc_bank"]).astype(np.float32),
-            hem_cos_kmeans = _cosine_sim_to_bank(embs, banks["kmeans"]["hem_bank"]).astype(np.float32),
-            delta_kmeans   = delta_km.astype(np.float32),
-        )
-
-    # ── calibration ───────────────────────────────────────────
-    print("\n[ext-2] Calibration reliability diagrams …")
-    calib_results: dict[str, dict] = {}
-    calib_figs: dict[str, plt.Figure] = {}
-    for split_tag, sd in split_scores.items():
-        fig_c, calib_m = plot_reliability_diagram(
-            conf_scores = sd["conf"],
-            labels      = sd["labels"],
-            n_bins      = 10,
-            split       = split_tag,
-            save_path   = out_dir / f"reliability_{split_tag.lower()}.png",
-        )
-        calib_results[split_tag] = calib_m
-        calib_figs[split_tag]    = fig_c
-        print(f"  {split_tag}  ECE={calib_m['ece']:.4f}  MCE={calib_m['mce']:.4f}  "
-              f"ACE={calib_m['ace']:.4f}")
-    pd.DataFrame([
-        {"split": sp, **m} for sp, m in calib_results.items()
-    ]).to_csv(out_dir / "calibration.csv", index=False)
-
-    # ── conf vs cosine scatter ─────────────────────────────────
-    print("\n[ext-3] Confidence vs Cosine scatter plots …")
-    scatter_figs: dict[str, plt.Figure] = {}
-    for split_tag, sd in split_scores.items():
-        scatter_figs[split_tag] = plot_conf_vs_cosine_scatter(
-            conf_scores   = sd["conf"],
-            cosine_scores = sd["hcc_cos_mean"],
-            delta_scores  = sd["delta_mean"],
-            labels        = sd["labels"],
-            cutoff_conf   = cutoffs.get("ROC-A (Confidence)", 0.5),
-            cutoff_cos    = cutoffs.get("ROC-B (HCC Cosine / mean)", 0.0),
-            split         = split_tag,
-            save_path     = out_dir / f"conf_vs_cosine_{split_tag.lower()}.png",
-        )
-
-    # ── confusion matrices ─────────────────────────────────────
-    print("\n[ext-4] Confusion matrices …")
-    for split_tag, sd in split_scores.items():
-        score_map = {
-            "ROC-A (Confidence)"          : sd["conf"],
-            "ROC-B (HCC Cosine / mean)"   : sd["hcc_cos_mean"],
-            "ROC-C (ΔScore / mean)"       : sd["delta_mean"],
-            "ROC-B (HCC Cosine / kmeans)" : sd["hcc_cos_kmeans"],
-            "ROC-C (ΔScore / kmeans)"     : sd["delta_kmeans"],
-        }
-        for roc_name, sc in score_map.items():
-            c = cutoffs.get(roc_name, 0.5)
-            fig_cm = plot_confusion_matrix(
-                scores      = sc,
-                labels      = sd["labels"],
-                cutoff      = c,
-                roc_name    = roc_name,
-                split       = split_tag,
-                class_names = cfg.class_names,
-                save_path   = out_dir / (
-                    "cm_" + split_tag.lower() + "_" +
-                    roc_name.lower()
-                    .replace(" ", "_").replace("(", "").replace(")", "")
-                    .replace("/", "").replace("−", "minus") + ".png"
-                ),
-            )
-            plt.close(fig_cm)
-
-    # ── test-set DeLong ───────────────────────────────────────
-    print("\n[ext-5] Test-set DeLong test …")
-    test_delong = run_test_delong(split_scores["Test"])
-    pd.DataFrame(test_delong).to_csv(out_dir / "delong_test.csv", index=False)
-
-    # ── per-sample WandB image table ──────────────────────────
-    print("\n[ext-6] Building WandB per-sample score tables …")
-    # rebuild score_records from split_scores
-    score_records: list[dict] = []
-    for split_tag, sd in split_scores.items():
-        for i in range(len(sd["labels"])):
-            score_records.append({
-                "split"             : split_tag,
-                "true_label"        : int(sd["labels"][i]),
-                "confidence_score"  : float(sd["conf"][i]),
-                "hcc_cosine_mean"   : float(sd["hcc_cos_mean"][i]),
-                "hem_cosine_mean"   : float(sd["hem_cos_mean"][i]),
-                "delta_mean"        : float(sd["delta_mean"][i]),
-                "hcc_cosine_kmeans" : float(sd["hcc_cos_kmeans"][i]),
-                "hem_cosine_kmeans" : float(sd["hem_cos_kmeans"][i]),
-                "delta_kmeans"      : float(sd["delta_kmeans"][i]),
-            })
-
-    if _wandb is not None and _wandb.run is not None:
-        pfx = f"{cfg.wandb_prefix}/{cfg.model_id}"
-        extra_log: dict = {}
-
-        for split_tag, ds in [("Val", val_ds), ("Test", test_ds)]:
-            tbl = _build_wandb_score_image_table(
-                score_records, stage2_model, ds, cfg, split=split_tag)
-            if tbl is not None:
-                extra_log[f"{pfx}/{split_tag.lower()}_image_score_table"] = tbl
-
-        for split_tag, fig in calib_figs.items():
-            extra_log[f"{pfx}/reliability_{split_tag.lower()}"] = _fig_to_wandb_image(
-                fig, f"Reliability Diagram ({split_tag})")
-        for split_tag, fig in scatter_figs.items():
-            extra_log[f"{pfx}/conf_vs_cosine_{split_tag.lower()}"] = _fig_to_wandb_image(
-                fig, f"Conf vs Cosine ({split_tag})")
-
-        if extra_log:
-            _wandb.log(extra_log)
-            print(f"[cosine_probe] Extended WandB logs → {pfx}/")
-
-    for fig in list(calib_figs.values()) + list(scatter_figs.values()):
-        plt.close(fig)
-
-    print("\n[cosine_probe_v2] All extended analyses complete.")
-    print(f"  Outputs → {out_dir}")
-
-    return {
-        **base_results,
-        "calibration_val"    : calib_results.get("Val", {}),
-        "calibration_test"   : calib_results.get("Test", {}),
-        "test_delong_records": test_delong,
-    }
+# ──────
