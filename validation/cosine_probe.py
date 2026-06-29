@@ -99,9 +99,9 @@ EmbeddingSource = Literal["saved", "live"]
 # The type alias is kept for config documentation.
 PrototypeMode   = Literal["mean", "kmeans"]
 
-_BG     = "#1c1b19"
+_BG     = "#ffffff"
 _GRID   = "#262523"
-_TEXT   = "#cdccca"
+_TEXT   = "#1a1a1a"
 _BORDER = "#393836"
 
 # ROC style per mode × score type
@@ -585,7 +585,7 @@ def _metrics_at_cutoff(scores: np.ndarray, labels: np.ndarray, cutoff: float) ->
 # ─────────────────────────────────────────────────────────────
 
 def _apply_dark_ax(ax: plt.Axes) -> None:
-    ax.set_facecolor(_BG)
+    ax.set_facecolor("white")
     for spine in ax.spines.values():
         spine.set_edgecolor(_BORDER)
     ax.tick_params(colors=_TEXT)
@@ -640,7 +640,7 @@ def plot_triple_roc(
     ax.set_ylabel("Sensitivity  (TPR)",      fontsize=11)
     ax.set_title(f"Triple ROC ({split})  —  Confidence vs Cosine",
                  fontsize=11, pad=8, color=_TEXT)
-    ax.legend(framealpha=0.15, facecolor=_BG, labelcolor=_TEXT, fontsize=7.5)
+    ax.legend(framealpha=0.85, facecolor=_BG, edgecolor="#cccccc", labelcolor=_TEXT, fontsize=7.5)
     ax.set_xlim([-0.02, 1.02])
     ax.set_ylim([-0.02, 1.02])
     fig.tight_layout()
@@ -702,7 +702,7 @@ def plot_cosine_distribution(
         ax.set_title(title, color=_TEXT, fontsize=10, loc="left", pad=3)
         ax.set_xlabel(title, color=_TEXT, fontsize=9)
         ax.set_ylabel("Density", color=_TEXT, fontsize=9)
-        ax.legend(framealpha=0.15, facecolor=_BG, labelcolor=_TEXT,
+        ax.legend(framealpha=0.85, facecolor=_BG, edgecolor="#cccccc", labelcolor=_TEXT,
                   fontsize=8, loc="upper right")
 
     fig.tight_layout()
@@ -907,7 +907,7 @@ def plot_tsne(
         ax.set_title(mode_label, color=_TEXT, fontsize=10, pad=4)
         ax.set_xlabel("t-SNE dim 1", color=_TEXT, fontsize=9)
         ax.set_ylabel("t-SNE dim 2", color=_TEXT, fontsize=9)
-        ax.legend(framealpha=0.15, facecolor=_BG, labelcolor=_TEXT,
+        ax.legend(framealpha=0.85, facecolor=_BG, edgecolor="#cccccc", labelcolor=_TEXT,
                   fontsize=7.5, loc="best", ncol=2)
 
     fig.tight_layout()
@@ -1447,7 +1447,7 @@ def plot_reliability_diagram(
         f"ECE={ece:.4f}  MCE={mce:.4f}  ACE={ace:.4f}",
         fontsize=10, pad=8, color=_TEXT,
     )
-    ax.legend(framealpha=0.15, facecolor=_BG, labelcolor=_TEXT, fontsize=9)
+    ax.legend(framealpha=0.85, facecolor=_BG, edgecolor="#cccccc", labelcolor=_TEXT, fontsize=9)
     fig.tight_layout()
 
     if save_path is not None:
@@ -1509,7 +1509,7 @@ def plot_conf_vs_cosine_scatter(
 
         ax.set_xlabel("Confidence (softmax)", fontsize=10)
         ax.set_ylabel(ylabel, fontsize=10)
-        ax.legend(framealpha=0.15, facecolor=_BG, labelcolor=_TEXT, fontsize=8)
+        ax.legend(framealpha=0.85, facecolor=_BG, edgecolor="#cccccc", labelcolor=_TEXT, fontsize=8)
 
     fig.tight_layout()
     if save_path is not None:

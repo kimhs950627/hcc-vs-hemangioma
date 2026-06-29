@@ -697,7 +697,8 @@ def _render_classification_heatmap(
     import matplotlib.pyplot as plt
 
     cm = confusion_matrix(y_true, y_pred, labels=list(range(len(class_names))))
-    fig, ax = plt.subplots(figsize=(5, 4), dpi=160)
+    fig, ax = plt.subplots(figsize=(5, 4), dpi=160, facecolor="white")
+    ax.set_facecolor("white")
     im = ax.imshow(cm, cmap="Blues")
     ax.set_xticks(np.arange(len(class_names)), labels=class_names, rotation=20, ha='right')
     ax.set_yticks(np.arange(len(class_names)), labels=class_names)

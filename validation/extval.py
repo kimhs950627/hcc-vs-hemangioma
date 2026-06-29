@@ -459,7 +459,9 @@ def _make_boxplot(
         raise ValueError('arrays and labels must have the same length')
     _palette   = ['#C0504D', '#4F81BD', '#9BBB59', '#8064A2']
     box_colors = [_palette[i % len(_palette)] for i in range(len(labels))]
-    fig, ax    = plt.subplots(figsize=(6, 5), dpi=150)
+    fig, ax    = plt.subplots(figsize=(6, 5), dpi=150,
+                              facecolor="white")
+    ax.set_facecolor("white")
     bp = ax.boxplot(
         list(arrays), patch_artist=True, notch=False, widths=0.50,
         medianprops=dict(color='black', linewidth=2.0),
@@ -478,6 +480,7 @@ def _make_boxplot(
     ax.grid(axis='y', linestyle='--', linewidth=0.6, alpha=0.40)
     ax.set_axisbelow(True)
     ax.spines[['top', 'right']].set_visible(False)
+    fig.set_facecolor("white")
     fig.tight_layout()
     return fig
 
