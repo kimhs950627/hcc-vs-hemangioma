@@ -243,4 +243,71 @@ GitHub: [kimhs950627](https://github.com/kimhs950627)
 
 ---
 
-*Last updated: 2026-06-25*
+
+---
+
+## 📋 TODO — 결과 수치 기입 목록 (paper_outline_medical_journal.md)
+
+> **작성일**: 2026-06-30  
+> 아래 항목들은 `paper_outline_medical_journal.md` 내 결과 표에 채워 넣어야 할 수치들이다.  
+> 실험 완료 후 순서대로 확인하고 ✅ 표시할 것.
+
+### [Table 1] Ablation — Backbone × Training Mode (Val set)
+
+각 실험 번호(#1~8)에 대해 다음 수치를 채울 것:
+
+- [ ] **#1** ResNet50V2 / CE Only → AUROC, Sens, Spec, F1, Cutoff
+- [ ] **#2** EfficientNetV2B0 / CE Only → AUROC, Sens, Spec, F1, Cutoff
+- [ ] **#3** ResNet50V2 / CE+SupCon → AUROC, Sens, Spec, F1, Cutoff
+- [x] **#4** EfficientNetV2B0 / CE+SupCon → **기입 완료** (AUROC 1.000, Sens 94.3%, Spec 100.0%, F1 0.971, Cutoff 0.004)
+- [ ] **#5** ResNet50V2 / VICReg (SSL) → AUROC (미실행 → 실행 후 기입)
+- [ ] **#6** EfficientNetV2B0 / VICReg (SSL) → AUROC (linear probe)
+- [ ] **#7** ResNet50V2 / NNCLR (SSL) → AUROC (linear probe)
+- [ ] **#8** EfficientNetV2B0 / NNCLR (SSL) → AUROC (linear probe)
+
+### [Table 2] Primary Model — Confidence Score (Test set)
+
+> 기준 모델: EfficientNetV2B0 + CE + SupCon (W&B run: `znkaz53c`)
+
+- [ ] Test set AUROC + 95% CI (DeLong)
+- [ ] Test set Accuracy, Sensitivity, Specificity
+- [ ] Test set PPV, NPV, F1
+- [ ] Test set Confusion matrix: TP / FP / FN / TN
+
+### [Table 3] Three-Way ROC Comparison — Dual Output (Val set)
+
+> Cosine score 계산 필요 (prototype 구성 → inference → ROC 분석)
+
+- [ ] **ROC-B**: HCC Cosine Score → AUROC + 95% CI + DeLong p-value vs ROC-A
+- [ ] **ROC-C**: Δscore (HCC cos − Hem cos) → AUROC + 95% CI + DeLong p-value vs ROC-A
+- [ ] ROC-A vs ROC-B pairwise DeLong test
+- [ ] ROC-A vs ROC-C pairwise DeLong test
+
+### [Table 4] Dual-Output Discordance Analysis (Val set)
+
+> Confidence score cutoff (0.004) + Δscore cutoff (Youden's J, Val set) 적용 후:
+
+- [ ] Concordant High (둘 다 high): N = ___
+- [ ] Discordant (Conf high / Δscore low): N = ___
+- [ ] Discordant (Conf low / Δscore high): N = ___
+- [ ] Concordant Low (둘 다 low): N = ___
+
+### [Appendix B] Hyperparameter 설정
+
+- [ ] Stage 1 (SSL): batch size, LR, epochs, Transformer depth, embedding dim
+- [ ] Stage 1: SupCon τ (해당 없음) / VICReg λ·μ·ν (기본값 25/25/1 확인)
+- [ ] Stage 1: NNCLR queue size
+- [ ] Stage 2: batch size, epochs, Transformer depth, embedding dim, SupCon τ
+- [ ] cfg 파일 확정 후 Appendix B 전체 기입
+
+### 기타 (선택 사항)
+
+- [ ] t-SNE 시각화 figure → paper_outline Figure 1 위치에 삽입
+- [ ] Decision Curve Analysis (DCA) 결과 → 추가 Figure
+- [ ] 임상 메타데이터 (연령, 성별, 병변 크기) 가용 시 Table 1 보완
+- [ ] IRB 승인번호 확인 후 2.1절 삽입
+- [ ] 참고문헌 [8], [11], [14] DOI 확정 후 삽입
+
+
+*Last updated: 2026-06-30*
+
