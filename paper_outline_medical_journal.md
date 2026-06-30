@@ -1,6 +1,6 @@
 # 논문 초고 개요 — 의학 저널 투고용
 
-> **작성 상태**: 임상적 의의 중심 재작성 (rev. 2026-06-30 — clinical marker framing 전면 개정)
+> **작성 상태**: 임상적 의의 중심 재작성 (rev. 2026-06-30 — §3.4 t-SNE 삭제, Stage 2 ablation 통합, 섹션 재번호)
 > **목표 저널 등급**: PubMed 등재, SCIE Q1–Q2
 > *(예: Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
@@ -31,7 +31,7 @@ B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심
 
 ### 결과 (Results)
 
-검증 세트에서 confidence score의 AUROC 0.9946, 민감도 95.67%, 특이도 100.0%를 달성하였다. t-SNE 시각화에서 HCC-hemangioma 임베딩 군집의 명확한 분리가 확인되어 cosine 기반 표지자의 타당성을 지지하였다.
+검증 세트에서 confidence score의 AUROC 0.9946, 민감도 95.67%, 특이도 100.0%를 달성하였다. Ablation에서 CE+SupCon 조건은 CE only 대비 임베딩 군집의 분리도가 향상되었으며, 이는 cosine 기반 표지자의 타당성을 지지하였다.
 
 > 📝 **[TODO: Test 결과 / ROC 비교]** 테스트 세트 성능 및 ROC-B/C 수치 기입
 
@@ -102,11 +102,11 @@ B-mode 초음파는 현재 이용 가능한 감시 도구 중 가장 접근성�
 
 CNN은 병변의 질감, 경계 패턴, 에코 강도 분포 등 국소 특징 포착에 강점을 가지며[9], vision transformer는 영상 전역에 걸친 맥락 포착에 강점을 가진다.[9][10] Hybrid 구조는 두 강점을 결합하여 국소 특징과 전역 맥락을 동시에 모델링한다.[11]
 
-### 2.4 학습 전략 — Cosine 기반 표지자의 타당성 확보
+### 2.4 학습 전략 및 Ablation 설계 — Cosine 기반 표지자의 타당성 확보
 
-두 가지 학습 조건을 비교하였다: 교차 엔트로피 단독(CE only)과 교차 엔트로피 + supervised contrastive learning(CE + SupCon) 결합.[15]
+총 8개 조합을 비교하였다 (Table 2): backbone(EfficientNetV2B0 / ResNet50V2) × 학습 방식(CE only / CE+SupCon / VICReg SSL / NNCLR SSL). 이 ablation의 목적은 단순한 성능 비교가 아니라, **SupCon 결합이 cosine 기반 표지자의 임상적 타당성을 확보하는 데 필요한 임베딩 구조를 형성하는가**를 검증하는 것이다.
 
-**SupCon의 핵심 역할은 cosine 기반 표지자의 임상적 타당성을 확보하는 데 있다.** CE만으로 학습할 경우, 임베딩 공간은 분류 경계 형성 이외의 방식으로 최적화되지 않으므로 임베딩 간 거리가 영상의학적 의미를 자동으로 갖지 않는다. 반면 SupCon이 추가되면, 동일 클래스 병변이 임베딩 공간에서 인접하고(intra-class compactness) 다른 클래스는 분리되도록(inter-class separability) 학습 목적 자체가 설계된다.[15] 따라서 클래스 prototype에 대한 cosine similarity는 학습 목적과 정합적인 영상표지자가 된다. 비교 목적으로 자기 지도 학습(SSL) 변형 실험(VICReg, NNCLR)도 수행하였다.
+CE만으로 학습할 경우, 임베딩 공간은 분류 경계 형성 이외의 방식으로 최적화되지 않으므로 임베딩 간 거리가 영상의학적 의미를 자동으로 갖지 않는다. SupCon이 추가되면 동일 클래스 병변이 임베딩 공간에서 인접하고(intra-class compactness) 다른 클래스는 분리되도록(inter-class separability) 학습 목적 자체가 설계된다.[15] 따라서 클래스 prototype에 대한 cosine similarity는 학습 목적과 정합적인 영상표지자가 된다.
 
 모든 모델은 384 × 384 흑백 입력 영상, Adam optimizer, cosine annealing + warmup 학습률 스케줄 하에 학습되었다. 데이터 증강에는 수평/수직 반전, 무작위 자르기 및 크기 조정, 밝기/대비 변환, Gaussian blur가 포함되었다.
 
@@ -148,9 +148,9 @@ CNN은 병변의 질감, 경계 패턴, 에코 강도 분포 등 국소 특징 �
 
 > 📝 **[TODO: 인구통계표]** Table 1 완성
 
-### 3.2 Ablation: 학습 조건별 성능 비교
+### 3.2 Ablation: 학습 조건별 성능 비교 (CE Only vs CE+SupCon vs SSL)
 
-다양한 backbone 및 학습 방식 조합에 대한 ablation 결과를 Table 2에 제시하였다. SupCon 결합 조건에서 임베딩 군집의 분리도가 개선되었으며, t-SNE 시각화에서 이를 확인하였다. 이 결과는 SupCon이 cosine 기반 표지자의 타당성을 확보하기 위한 학습 전략으로 유효함을 지지한다.
+다양한 backbone 및 학습 방식 조합에 대한 ablation 결과를 Table 2에 제시하였다. CE+SupCon 조건(#3, #4)은 CE only(#1, #2)와 동등 혹은 우수한 분류 성능을 보이면서 임베딩 군집의 분리도를 개선하였다. 이 분리도 개선은 cosine 기반 표지자의 타당성 확보를 위한 핵심 근거이며, SupCon이 표지자 구성을 위한 유효한 학습 전략임을 지지한다. SSL 변형(VICReg, NNCLR) 조건은 분류 헤드를 추가한 fine-tuning 성능도 함께 제시하여 비교 맥락을 제공한다.
 
 #### Table 2. Ablation: Backbone × Training Mode — Validation Set
 
@@ -166,11 +166,13 @@ CNN은 병변의 질감, 경계 패턴, 에코 강도 분포 등 국소 특징 �
 | 8 | EfficientNetV2B0 | NNCLR (SSL) | — | — | — | — | — | — | — |
 
 *CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; SSL = Self-Supervised Learning (fine-tuned head).
-Bold: primary model. — : run not available.*
+Bold: primary model (#4). — : run not available.*
 
 > 📝 **[TODO: Table 2]** #5 (ResNet VICReg), #8 (EfficientNet NNCLR) 수치 미기입
 
 ### 3.3 주력 모델 성능 (EfficientNetV2B0 + CE + SupCon)
+
+> **Figure 1 (t-SNE 시각화 — HCC/Hemangioma 임베딩 군집 분리)**: 위치 예정, 추후 첨부.
 
 #### Table 3. Primary Model — Confidence Score Performance
 
@@ -191,11 +193,7 @@ Bold: primary model. — : run not available.*
 
 검증 세트에서 위양성이 한 건도 없었다(특이도 100%). 이는 confidence score 기준으로 HCC로 판정된 경우 모델이 극히 높은 정밀도로 감별하였음을 시사한다. 위음성(n=12)의 특성(병변 크기, echo pattern)에 대한 상세 분석은 추후 기술한다.
 
-### 3.4 임베딩 구조와 Cosine 기반 표지자의 타당성
-
-t-SNE를 이용한 임베딩 공간 시각화에서 HCC와 hemangioma 군집 간 뚜렷한 분리가 관찰되었다. 이 결과는 단순한 시각적 확인을 넘어, cosine 기반 표지자의 임상적 타당성을 직접 뒷받침한다. 학습된 임베딩 공간이 질환 특이적 기하학적 구조를 보존하지 못한다면, prototype에 대한 cosine similarity는 의미 있는 영상표지자로 기능하기 어렵다. 관찰된 군집 분리는 이 설정에서 HCC cosine score와 Δscore가 영상 유사성에 기반한 표지자 후보로 기능할 수 있음을 지지한다.
-
-### 3.5 이중 출력 ROC 비교 — 표지자로서의 비열등성 검증
+### 3.4 이중 출력 ROC 비교 — 표지자로서의 비열등성 검증
 
 #### Table 4. Three-Way ROC Comparison (Validation Set)
 
@@ -211,7 +209,7 @@ t-SNE를 이용한 임베딩 공간 시각화에서 HCC와 hemangioma 군집 간
 
 이 비교의 목적은 두 가지이다. 첫째, cosine 기반 표지자가 confidence score와 동등한 AUROC를 보이는지(비열등성 검증). 둘째, 두 지표가 불일치하는 사례에서 서로 다른 임상 정보를 제공하는지(상보성 확인). 두 목적을 모두 충족할 경우, 이중 출력 체계는 단일 출력 체계 대비 임상적으로 더 풍부한 정보를 제공하는 체계로 정당화된다.
 
-### 3.6 이중 출력 불일치 분석
+### 3.5 이중 출력 불일치 분석
 
 #### Table 5. Dual-Output Discordance (Validation Set)
 
@@ -254,7 +252,7 @@ HCC cosine score는 이 유사성 기반 추론을 수치화한 것으로 해석
 
 ### 4.4 SupCon의 역할 — 임베딩 공간 구조화
 
-Cosine score를 의미 있는 표지자로 삼으려면 임베딩 공간 자체가 클래스별 기하학적 응집성을 갖도록 학습되어야 한다. CE-only 학습에서는 분류 경계 형성 이후 임베딩의 세밀한 구조가 부수적으로만 최적화된다. SupCon이 추가되면 intra-class compactness와 inter-class separability가 학습 목적에 직접 포함되어, cosine similarity가 학습 목적과 정합적인 유사성 척도가 된다.[15] 이는 cosine score를 임상 표지자 후보로 제안하는 이론적 근거이며, ablation(Table 2)과 t-SNE 시각화가 이를 경험적으로 지지한다.
+Cosine score를 의미 있는 표지자로 삼으려면 임베딩 공간 자체가 클래스별 기하학적 응집성을 갖도록 학습되어야 한다. CE-only 학습에서는 분류 경계 형성 이후 임베딩의 세밀한 구조가 부수적으로만 최적화된다. SupCon이 추가되면 intra-class compactness와 inter-class separability가 학습 목적에 직접 포함되어, cosine similarity가 학습 목적과 정합적인 유사성 척도가 된다.[15] 이는 cosine score를 임상 표지자 후보로 제안하는 이론적 근거이며, ablation(Table 2)이 이를 경험적으로 지지한다.
 
 ProtoPNet 계열(Chen & Li, 2019)[23], D-ProtoPNet[24], MAProtoNet 등 선행 prototype 기반 해석가능 모델들과 비교할 때, 본 접근법은 추가적인 prototype 학습 단계나 아키텍처 변경 없이 기존 분류 임베딩에서 직접 cosine score를 도출하는 구현 효율성을 가진다. 다만 이들 모델처럼 시각적 prototype 부위를 직접 제시하는 기능은 없으므로, 해석 가능성의 성격이 다름을 명확히 한다.
 
@@ -322,7 +320,7 @@ ProtoPNet 계열(Chen & Li, 2019)[23], D-ProtoPNet[24], MAProtoNet 등 선행 pr
 |-----------|----------|-------------|
 | Stage 1: SSL Pre-training (VICReg, NNCLR) | EfficientNetV2B0 / ResNet50V2 × 2 알고리즘 | ~6 hr |
 | Stage 2: Classification + SupCon | CE Only × 2 backbone + CE+SupCon × 2 backbone | ~4 hr |
-| Stage 3: Cosine Score 계산 및 평가 | Prototype 추출, ROC-A/B/C 분석, t-SNE | ~1 hr |
+| Stage 3: Cosine Score 계산 및 평가 | Prototype 추출, ROC-A/B/C 분석 | ~1 hr |
 | 기타 (디버깅, 시각화) | — | ~1 hr |
 | **합계** | — | **~12 GPU·hr** |
 
