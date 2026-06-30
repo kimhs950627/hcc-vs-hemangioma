@@ -117,7 +117,40 @@ CNN backbone으로는 ImageNet 사전학습 가중치로 초기화된 ResNet50V2
 
 다양한 backbone 및 학습 방식 조합에 대한 ablation 결과를 Table 1에 제시하였다. 교차 엔트로피 단독 조건(CE-only) 대비 SupCon 결합 조건에서 임베딩 군집의 분리도가 개선되었으며, 이는 t-SNE 시각화에서 확인되었다. 자기 지도 학습 사전학습 변형들은 비교 목적으로 포함되었으나, 최종 분류 성능과 cosine score 유효성에서 SupCon 직접 학습 방식과 통계적으로 유의한 차이를 보이지 않아 본 연구의 핵심 주장에서 제외하였다. 이 결과는 이중 출력 체계의 임상적 유용성이 특정 학습 커리큘럼에 종속적이지 않음을 시사한다.
 
-*(Table 1: backbone × 학습 조건별 AUROC / Sensitivity / Specificity / F1 — 결과 수집 후 삽입)*
+#### Table 1. Ablation: Backbone × Training Mode — Diagnostic Performance on Validation Set
+
+> 📝 **TODO**: 아래 표의 모든 수치를 실험 결과로 채울 것. 현재 회색칸은 미기입 항목.
+
+| # | Backbone | Training Mode | AUROC | Sensitivity (%) | Specificity (%) | F1 Score | Cutoff (Youden's J) |
+|---|----------|--------------|-------|-----------------|-----------------|----------|---------------------|
+| 1 | ResNet50V2 | CE Only | ___ | ___ | ___ | ___ | ___ |
+| 2 | EfficientNetV2B0 | CE Only | ___ | ___ | ___ | ___ | ___ |
+| 3 | ResNet50V2 | CE + SupCon | ___ | ___ | ___ | ___ | ___ |
+| 4 | EfficientNetV2B0 | CE + SupCon | **1.000** | **94.3** | **100.0** | **0.971** | **0.004** |
+| 5 | ResNet50V2 | VICReg (SSL) | ___ | ___ | ___ | ___ | — |
+| 6 | EfficientNetV2B0 | VICReg (SSL) | ___ | ___ | ___ | ___ | — |
+| 7 | ResNet50V2 | NNCLR (SSL) | ___ | ___ | ___ | ___ | — |
+| 8 | EfficientNetV2B0 | NNCLR (SSL) | ___ | ___ | ___ | ___ | — |
+
+*CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; SSL = Self-Supervised Learning (fine-tuned head). AUROC 95% CI via DeLong method. Cutoff determined on validation set only (Youden's J); SSL rows report AUROC only (linear probe, no Youden cutoff computed).*
+
+#### Table 2. Primary Model Performance — Confidence Score (EfficientNetV2B0 + CE + SupCon)
+
+> 📝 **TODO**: Test set 수치를 실험 완료 후 채울 것.
+
+| Metric | Validation Set | Test Set |
+|--------|---------------|----------|
+| AUROC (95% CI) | 1.000 (–) | ___ (___ – ___) |
+| Optimal Cutoff (Youden's J) | 0.004 | — *(Val cutoff 고정 적용)* |
+| Accuracy (%) | 97.0 | ___ |
+| Sensitivity (%) | 94.3 | ___ |
+| Specificity (%) | 100.0 | ___ |
+| PPV (%) | 100.0 | ___ |
+| NPV (%) | 94.1 | ___ |
+| F1 Score | 0.971 | ___ |
+| TP / FP / FN / TN | 261 / 0 / 16 / 253 | ___ / ___ / ___ / ___ |
+
+*95% CI for test set metrics: bootstrap n=1,000.*
 
 ### 3.3 Confidence score 기반 진단 성능
 
@@ -131,7 +164,30 @@ t-SNE를 이용한 임베딩 공간 시각화에서 HCC와 hemangioma 군집 간
 
 본 원고의 중심 비교 분석은 confidence score, HCC cosine score, Δscore에 대한 세 종류의 ROC 분석 비교이다. 현재 confidence score의 검증 성능은 확보되어 있으며 근완벽 변별력을 보였다. Cosine 기반 ROC 분석 결과(ROC-B, ROC-C)는 최종 결과 표 및 그림에 반영될 예정이다. 이 비교의 목적은 cosine 기반 점수가 confidence score와 동등한 AUROC를 보이는지(비열등성 검증)와, 두 지표가 일치하지 않는 사례에서 서로 다른 임상 정보를 제공하는지(상보성 확인)를 함께 평가하는 것이다. DeLong 검정으로 ROC-A 대비 ROC-B, ROC-A 대비 ROC-C의 쌍별 AUROC 비교를 수행하여 p값을 보고할 예정이다.
 
-*(Figure 1: 3종 ROC 곡선 비교 — 결과 수집 후 삽입)*
+#### Table 3. Three-Way ROC Comparison — Dual Output System (Validation Set)
+
+> 📝 **TODO**: ROC-B, ROC-C 수치를 cosine score 계산 후 채울 것.
+
+| Output | Score Type | AUROC | 95% CI | DeLong p-value vs ROC-A |
+|--------|-----------|-------|--------|-------------------------|
+| ROC-A | Confidence Score (softmax) | **1.000** | — | — (reference) |
+| ROC-B | HCC Cosine Score | ___ | ___ – ___ | ___ |
+| ROC-C | Δscore (HCC cosine − Hem cosine) | ___ | ___ – ___ | ___ |
+
+*Pairwise comparisons (ROC-A vs ROC-B, ROC-A vs ROC-C) by DeLong correlated ROC test. p > 0.05 interpreted as support for non-inferiority of cosine-based metrics.*
+
+#### Table 4. Dual-Output Discordance Analysis (Validation Set)
+
+> 📝 **TODO**: confidence score와 Δscore 임계값 적용 후 각 사분면 N 수 채울 것.
+
+| Confidence Score | Δscore | N (cases) | Predicted Label | Interpretation |
+|-----------------|--------|-----------|-----------------|----------------|
+| High (≥ cutoff) | High (≥ cutoff) | ___ | HCC | Concordant high — strong HCC evidence |
+| High (≥ cutoff) | Low (< cutoff) | ___ | HCC | **Discordant** — possible shortcut learning; caution warranted |
+| Low (< cutoff) | High (≥ cutoff) | ___ | Hemangioma | Discordant — embedding space suggests HCC-like; review |
+| Low (< cutoff) | Low (< cutoff) | ___ | Hemangioma | Concordant low — strong benign evidence |
+
+*(Figure 1: 3종 ROC 곡선 비교 + Dual-output scatter plot — 결과 수집 후 삽입)*
 
 ### 3.6 이중 출력 체계 하에서의 오류 패턴 분석
 
@@ -191,6 +247,65 @@ DeLong 검정을 통한 쌍별 ROC 비교(ROC-A 대비 ROC-B, ROC-A 대비 ROC-C
 
 ---
 
+---
+
+## 부록 (Appendix)
+
+### Appendix A. 실험 환경 (Computational Environment)
+
+본 연구의 모든 모델 학습 및 평가는 Kaggle Notebooks 클라우드 컴퓨팅 환경에서 수행되었다.
+
+#### Table A1. Hardware & Software Specification
+
+| 항목 | 세부 사항 |
+|------|-----------|
+| **플랫폼** | Kaggle Notebooks (Cloud-based GPU environment) |
+| **GPU** | NVIDIA Tesla P100-PCIE-16GB (single GPU) |
+| **GPU VRAM** | 16 GB HBM2 |
+| **총 GPU 사용 시간** | 약 12 GPU·hours (전 실험 합산) |
+| **CPU** | Intel Xeon (Kaggle 기본 제공, 4 vCPU) |
+| **RAM** | 29 GB (Kaggle 기본 제공) |
+| **Storage** | Kaggle Dataset I/O (ephemeral) |
+| **OS** | Ubuntu 20.04 LTS |
+| **Python** | 3.11+ |
+| **Deep Learning Framework** | Keras 3 (TensorFlow backend) |
+| **주요 라이브러리** | TensorFlow ≥ 2.16, scikit-learn, scipy, NumPy, Matplotlib |
+| **실험 추적** | Weights & Biases (W&B) |
+
+#### 실험별 GPU 시간 배분 (추정치)
+
+| 실험 그룹 | 주요 내용 | 예상 GPU·hr |
+|-----------|----------|-------------|
+| Stage 1: SSL Pre-training (VICReg, NNCLR) | EfficientNetV2B0 / ResNet50V2 × 2 알고리즘 | ~6 hr |
+| Stage 2: Classification + SupCon | CE Only × 2 backbone + CE+SupCon × 2 backbone | ~4 hr |
+| Stage 3: Cosine Score 계산 및 평가 | Prototype 추출, ROC-A/B/C 분석, t-SNE | ~1 hr |
+| 기타 (디버깅, 시각화) | — | ~1 hr |
+| **합계** | — | **~12 GPU·hr** |
+
+> **비고**: Kaggle P100 환경은 세션당 최대 9시간의 GPU 사용 제한이 있으며,  
+> 장시간 학습은 세션 분할 및 checkpoint 재개 방식으로 수행되었다.  
+> 상세 hyperparameter 및 학습 설정(cfg)은 추후 별도 기재 예정이다.
+
+### Appendix B. 하이퍼파라미터 설정
+
+> 📝 **TODO**: cfg 파일 확정 후 아래 표를 완성할 것.
+
+| Hyperparameter | Stage 1 (SSL) | Stage 2 (Classifier) |
+|---------------|--------------|----------------------|
+| Input resolution | 384 × 384 | 384 × 384 |
+| Batch size | ___ | ___ |
+| Optimizer | Adam | Adam |
+| Learning rate (init) | ___ | 1 × 10⁻⁴ |
+| LR schedule | ___ | Cosine annealing + warmup |
+| Epochs | ___ | ___ |
+| Transformer depth | ___ | ___ |
+| Embedding dim | ___ | ___ |
+| SupCon temperature (τ) | — | ___ |
+| VICReg λ / μ / ν | 25 / 25 / 1 | — |
+| NNCLR queue size | ___ | — |
+| Augmentation | Flip + Crop + Blur + ColorJitter | Flip + Crop + Blur + ColorJitter |
+
+
 ## 참고문헌
 
 1. Sung H, Ferlay J, Siegel RL, et al. Global Cancer Statistics 2020: GLOBOCAN Estimates of Incidence and Mortality Worldwide for 36 Cancers in 185 Countries. *CA Cancer J Clin*. 2021;71(3):209–249.
@@ -213,3 +328,4 @@ DeLong 검정을 통한 쌍별 ROC 비교(ROC-A 대비 ROC-B, ROC-A 대비 ROC-C
 18. Guo C, Pleiss G, Sun Y, Weinberger KQ. On Calibration of Modern Neural Networks. *ICML*. 2017;70:1321–1330.
 19. Nguyen A, Yosinski J, Clune J. Deep Neural Networks are Easily Fooled: High Confidence Predictions for Unrecognizable Images. *CVPR*. 2015:427–436.
 20. Ribeiro MT, Singh S, Guestrin C. "Why Should I Trust You?": Explaining the Predictions of Any Classifier. *KDD*. 2016:1135–1144.
+
