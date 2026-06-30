@@ -163,7 +163,7 @@ CE만으로 학습할 경우, 임베딩 공간은 분류 경계 형성 이외의
 | 5 | ResNet50V2 | VICReg (SSL) | — | — | — | — | — | — | — |
 | 6 | EfficientNetV2B0 | VICReg (SSL) | 0.9910 | 87.73 | 100.00 | 100.00 | 88.15 | 0.9346 | 93.58 |
 | 7 | ResNet50V2 | NNCLR (SSL) | 0.9874 | 89.17 | 100.00 | 100.00 | 89.40 | 0.9427 | 94.34 |
-| 8 | EfficientNetV2B0 | NNCLR (SSL) | — | — | — | — | — | — | — |
+| **8** | **EfficientNetV2B0** | **NNCLR (SSL)** | **0.9851** | **87.36** | **100.00** | **100.00** | **87.85** | **0.9326** | **93.40** |
 
 *CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; SSL = Self-Supervised Learning (fine-tuned head).
 Bold: primary model (#4). — : run not available.*
