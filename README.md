@@ -15,6 +15,18 @@
 이 score는 radiologic marker로 기능하며, 명확한 cutoff와 함께 임상적 의사결정을 지원한다.
 
 ---
+# 실험 정리
+
+| # | Mode                    | Backbone         | Model ID                                 | Status |
+| - | ----------------------- | ---------------- | ---------------------------------------- | ------ |
+| 1 | Classification Only     | ResNet50V2       | Benchmark-Classification_Only_resnet50v2 | ✅ 완료   |
+| 2 | Classification Only     | EfficientNetV2B0 | Benchmark-Classification_Only            | ✅ 완료   |
+| 3 | Classification + SupCon | ResNet50V2       | ke8bqdcv                                        | ✅ 완료 |
+| 4 | Classification + SupCon | EfficientNetV2B0 | znkaz53c                                        | ✅ 완료 |
+| 5 | VICReg (SSL)            | ResNet50V2       | —                                        | 🔲 미실행 |
+| 6 | VICReg (SSL)            | EfficientNetV2B0 | 6bn40bha                                 | ✅ 완료   |
+| 7 | NNCLR (SSL)             | ResNet50V2       | 7p28wnk2                                 | ✅ 완료   |
+| 8 | NNCLR (SSL)             | EfficientNetV2B0 | zqe3125v                                 | ✅ 완료   |
 
 ## 🧠 Model Architecture Overview
 
