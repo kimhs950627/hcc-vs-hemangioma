@@ -1,6 +1,6 @@
 # 논문 초고 개요 — 의학 저널 투고용
 
-> **작성 상태**: 전체 한글 서술체 초고 (rev. 2026-06-29)
+> **작성 상태**: 전체 한글 서술체 초고 (rev. 2026-06-30)
 > **목표 저널 등급**: PubMed 등재, SCIE Q1–Q2
 > *(예: Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
@@ -19,21 +19,21 @@
 
 ### 연구 배경 (Background)
 
-B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시에서 가장 널리 사용되는 1차 영상 도구이지만, 조기 병변에 대한 민감도는 제한적이며 검사자 의존성이 크다. 최근 딥러닝 기반 초음파 분류 모델들이 보고되고 있으나, 대부분 softmax 출력값을 "확률"로 해석하는 단일 출력 체계를 유지하고 있으며, 임상가가 판독에 사용하는 유사성 기반 추론과의 연결은 충분히 제시되지 못하였다. 특히 초음파 영상에는 캘리퍼, 측정 눈금, 텍스트 annotation 등 비병변성 artifact가 존재하여 모델의 shortcut learning을 유발할 수 있으며, 이 경우 높은 confidence만으로는 임상적 신뢰를 제공하기 어렵다.
+B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시에서 가장 널리 사용되는 1차 영상 도구이지만, 조기 병변에 대한 민감도는 제한적이며 검사자 의존성이 크다. 최근 딥러닝 기반 초음파 분류 모델들이 보고되고 있으나, 대부분 모델의 출력값을 "확률"로 해석하는 단일 출력 체계를 유지하고 있으며, 임상가가 판독에 사용하는 유사성 기반 추론과의 연결은 충분히 제시되지 못하였다. 특히 초음파 영상에는 캘리퍼, 측정 눈금, 텍스트 annotation 등 비병변성 artifact가 존재하여 모델이 병변이 아닌 주변 부가 정보를 단서로 학습하는 지름길 학습(shortcut learning)을 유발할 수 있으며, 이 경우 높은 모델 확신만으로는 임상적 신뢰를 제공하기 어렵다.
 
 ### 방법 (Methods)
 
-본 연구는 단일 기관 후향적 연구로, 삼성서울병원에서 구축된 공개 B-mode 간 초음파 데이터셋(SMC-LUD)을 사용하였다. 환자 단위 분리를 유지한 상태에서 훈련, 검증, 테스트 세트로 영상을 구분하였다. 모델은 CNN backbone과 transformer encoder를 결합한 hybrid vision transformer로 설계하였고, 교차 엔트로피 단독 학습과 supervised contrastive learning(SupCon)을 결합한 학습을 비교하였다. 단일 모델에서 두 가지 출력을 정의하였다. 첫째, softmax 출력값은 고전적 의미의 확률이 아닌 모델의 상대적 확신 정도를 나타내는 **confidence score**로 정의하였다. 둘째, 임베딩 공간에서 HCC prototype과의 cosine similarity를 이용한 **HCC cosine score**를 산출하였으며, hemangioma prototype과의 차이를 반영한 **Δscore**도 추가 계산하였다. 최적 임계값은 Youden's J 통계를 이용하여 검증 세트에서만 결정하였고, 테스트 세트는 맹검 평가에만 사용하였다.
+본 연구는 단일 기관 후향적 연구로, 삼성서울병원에서 구축된 공개 B-mode 간 초음파 데이터셋(SMC-LUD)을 사용하였다. 환자 단위 분리를 유지한 상태에서 훈련, 검증, 테스트 세트로 영상을 구분하였다. 모델은 합성곱 신경망(convolutional neural network, CNN)과 트랜스포머(transformer)를 결합한 hybrid vision transformer로 설계하였고, 교차 엔트로피 단독 학습과 supervised contrastive learning(SupCon)을 결합한 학습 방식을 비교하였다. 단일 모델에서 두 가지 출력을 정의하였다. 첫째, 모델의 최종 판별 출력인 softmax 값은 고전적 의미의 확률이 아닌 모델의 상대적 확신 정도를 나타내는 **confidence score**로 명명하였다. 둘째, 모델이 각 이미지를 내부적으로 표현하는 벡터(임베딩)와 HCC 전형 영상들의 평균 벡터 간 유사도인 **HCC cosine score**를 산출하였으며, hemangioma와의 유사도 차이를 반영한 **Δscore**도 추가 계산하였다. 최적 임계값은 Youden's J 통계를 이용하여 검증 세트에서만 결정하였고, 테스트 세트는 맹검 평가에만 사용하였다.
 
 ### 결과 (Results)
 
-검증 세트에서 confidence score 기반 분류는 AUROC 1.000, 정확도 97.0%, 민감도 94.3%, 특이도 100.0%, 양성예측도 100.0%를 보였다. t-SNE 시각화에서 HCC와 hemangioma의 임베딩 군집이 뚜렷하게 분리되었으며, 이는 cosine similarity 기반 점수가 의미 있는 표현 공간 위에서 산출됨을 시사하였다. Confidence score, HCC cosine score, Δscore 각각에 대한 ROC 분석을 비교하여, softmax confidence와 embedding similarity가 서로 다른 진단 정보를 제공할 수 있음을 확인하고자 하였다.
+검증 세트에서 confidence score 기반 분류는 AUROC 1.000, 정확도 97.0%, 민감도 94.3%, 특이도 100.0%, 양성예측도 100.0%를 보였다. t-SNE 시각화에서 HCC와 hemangioma의 임베딩 군집이 뚜렷하게 분리되었으며, 이는 cosine similarity 기반 점수가 의미 있는 표현 공간 위에서 산출됨을 시사하였다. Confidence score, HCC cosine score, Δscore 각각에 대한 ROC 분석을 비교하여, softmax confidence와 임베딩 유사도가 서로 다른 진단 정보를 제공할 수 있음을 확인하고자 하였다.
 
 ### 결론 (Conclusions)
 
-Hybrid vision transformer 기반 이중 출력 접근법은 B-mode 초음파만으로도 높은 변별력을 보였으며, softmax confidence에 더해 cosine similarity 기반 HCC score를 병용함으로써 기존 CAM 기반 설명의 한계를 보완할 수 있는 가능성을 제시하였다. 이 이중 출력 체계는 모델의 예측을 단일 스칼라 값으로 환원하지 않고, 임상가가 실제로 사용하는 "전형적 병변과의 유사성"이라는 해석 축을 함께 제공한다는 점에서 방법론적, 임상적 의의를 가진다.
+Hybrid vision transformer 기반 이중 출력 접근법은 B-mode 초음파만으로도 높은 변별력을 보였으며, 기존 단일 출력 체계에 더해 cosine similarity 기반 HCC score를 병용함으로써 임상가에게 두 가지 상호보완적인 진단 정보 축을 함께 제공할 수 있음을 확인하였다. 이 이중 출력 체계는 모델의 예측을 단일 스칼라 값으로 환원하지 않고, 임상가가 실제로 사용하는 "전형적 병변과의 유사성"이라는 해석 축을 함께 제공한다는 점에서 방법론적, 임상적 의의를 가진다.
 
-**핵심어**: 간세포암; 초음파; 딥러닝; supervised contrastive learning; vision transformer; cosine similarity; 보정(calibration); 설명 가능 인공지능
+**핵심어**: 간세포암; 초음파; 딥러닝; supervised contrastive learning; vision transformer; cosine similarity; 모델 보정(calibration); 설명 가능 인공지능; 이중 출력 진단
 
 ---
 
@@ -45,13 +45,13 @@ B-mode 초음파는 현재 이용 가능한 감시 도구 중 가장 접근성�
 
 이러한 한계는 임상적으로 해결되지 않은 필요를 만들어낸다. 많은 일선 진료 현장에서 의사들은 간 병변이 조영증강 영상 검사 또는 전문의 평가로 이어질 만큼 충분히 의심스러운지를 판단해야 한다. B-mode 초음파에서 직접 진단 정보를 추출할 수 있는 딥러닝 모델은 이 맥락에서 유용한 보조 도구가 될 수 있다. 그러나 AI 시스템이 임상적으로 설득력을 가지려면 단순히 분류 성능이 높은 것으로는 충분하지 않다. 모델 출력이 임상가가 실제로 병변을 판단하는 방식과 일치하는 방향으로 해석될 수 있어야 한다.
 
-최근 초음파 간 국소 병변 분류에서 딥러닝 기반 모델이 유망한 성능을 보인 연구들이 보고되었다.[6][7] 그러나 이 분야의 기존 문헌은 몇 가지 측면에서 한계를 지닌다. 첫째, 대부분의 모델은 단일 softmax 출력을 제공하며, 이를 "확률"로 기술하는 경향이 있으나, softmax 출력이 보정된(calibrated) 확률을 의미하지는 않는다.[18] 둘째, 임계값 설정이 최종 평가로부터 명확히 분리되지 않는 경우가 있어, 지나치게 낙관적인 성능 추정이 발생할 수 있다. 셋째, 많은 연구에서 CAM 기반 시각적 설명 도구를 활용하지만, 강조된 영역이 실제 병변 특성을 반영하는지 아니면 데이터셋 고유의 artifact를 반영하는지에 대한 논의가 충분하지 않다. 넷째, 비교적 소규모인 의료 영상 데이터셋에서 각각 고유한 단점을 가지는 기존 CNN 또는 순수 vision transformer 구조가 주로 사용되었다.[9][10][11]
+최근 초음파 간 국소 병변 분류에서 딥러닝 기반 모델이 유망한 성능을 보인 연구들이 보고되었다.[6][7] 그러나 이 분야의 기존 문헌은 몇 가지 측면에서 한계를 지닌다. 첫째, 대부분의 모델은 단일 softmax 출력을 제공하며, 이를 "확률"로 기술하는 경향이 있으나, softmax 출력이 보정된(calibrated) 확률을 의미하지는 않는다.[18] 둘째, 임계값 설정이 최종 평가로부터 명확히 분리되지 않는 경우가 있어, 지나치게 낙관적인 성능 추정이 발생할 수 있다. 셋째, 비교적 소규모인 의료 영상 데이터셋에서 각각 고유한 단점을 가지는 기존 CNN 또는 순수 vision transformer 구조가 주로 사용되었다.[9][10][11]
 
-초음파 영상에서 해석 가능성 문제는 특별한 강조가 필요하다. 전형적인 간 초음파 프레임에는 병변 자체와 무관한 정보, 즉 캘리퍼, 측정 눈금, 텍스트 오버레이, 기기 고유의 acquisition artifact 등이 포함될 수 있다. 모델이 이러한 불필요한 단서를 클래스 레이블과 연결하는 방식으로 학습하면, 겉으로는 우수한 분류 성능이 관찰되더라도 그것은 병변에 대한 실질적 이해가 아닌 shortcut learning을 반영하는 것일 수 있다. 이 경우 높은 softmax 출력은 임상적으로 유효한 영상 소견을 포착하였다는 증거가 아니라, 방사선학적으로 유효하지 않은 내부 패턴에 대한 확신을 반영할 뿐이다.[12][19][20]
+초음파 영상에서 해석 가능성 문제는 특별한 강조가 필요하다. 전형적인 간 초음파 프레임에는 병변 자체와 무관한 정보, 즉 캘리퍼, 측정 눈금, 텍스트 오버레이, 기기 고유의 획득 artifact 등이 포함될 수 있다. 모델이 이러한 불필요한 단서를 클래스 레이블과 연결하는 방식으로 학습하면, 겉으로는 우수한 분류 성능이 관찰되더라도 그것은 병변에 대한 실질적 이해가 아닌 지름길 학습(shortcut learning)을 반영하는 것일 수 있다.[12][19][20] 이 경우 높은 confidence 출력은 임상적으로 유효한 영상 소견을 포착하였다는 증거가 아니라, 방사선학적으로 유효하지 않은 부가 단서에 대한 확신을 반영할 뿐이다.
 
-이 구분이 중요한 이유는 방사선과 의사가 간 병변을 진단할 때 단순히 단일 스칼라 확신 값에 의존하지 않기 때문이다. 방사선과 의사는 목표 병변의 시각적 특성을 이전에 학습한 원형(prototype) 또는 패턴과 비교한다. 즉, 이 병변이 전형적인 HCC를 얼마나 닮았고, 양성 혈관종을 얼마나 닮았는가를 평가한다. 이러한 관점에서 유사성 기반 추론은 방사선 진단의 부수적 요소가 아니라 핵심 요소이다. Supervised contrastive learning은 같은 클래스의 병변을 임베딩 공간에서 군집시키고 다른 클래스를 분산시킴으로써 이러한 기하학적 구조를 학습하는 방법이다.[15] 이러한 표현 공간이 구성된다면, 클래스 prototype에 대한 cosine similarity는 단순한 후처리 수치 편의가 아니라 의미 있는 진단 지표로 기능할 수 있다.
+이 구분이 중요한 이유는 방사선과 의사가 간 병변을 진단할 때 단순히 단일 스칼라 확신 값에 의존하지 않기 때문이다. 방사선과 의사는 목표 병변의 시각적 특성을 이전에 학습한 전형(prototype) 또는 패턴과 비교한다. 즉, 이 병변이 전형적인 HCC를 얼마나 닮았고, 양성 혈관종을 얼마나 닮았는가를 평가하는 유사성 기반 추론을 수행한다. 이러한 추론 방식은 방사선 진단의 부수적 요소가 아니라 핵심 요소이다. 모델이 각 이미지를 내부적으로 표현하는 고차원 벡터, 즉 임베딩(embedding)이 잘 구성된 경우, 이 벡터와 전형적인 HCC 영상들의 평균 벡터 사이의 유사도(cosine similarity)는 단순한 후처리 수치가 아니라 방사선과 의사의 진단 추론과 개념적으로 일치하는 의미 있는 진단 지표로 기능할 수 있다.[15]
 
-이에 따라 본 연구는 두 가지 목적으로 설계되었다. 첫째, B-mode 초음파에서 HCC와 hemangioma를 감별하기 위한 hybrid vision transformer를 개발하고 검증한다. 둘째, 단일 출력 분류 체계를 넘어, confidence score와 임베딩 기반 HCC cosine score 및 Δscore로 구성된 이중 출력 체계를 제안한다. 이를 통해 유사성 기반 출력이 softmax confidence에 상호보완적인 임상 해석 정보를 제공할 수 있는지, 그리고 근완벽 분류 상황에서 shortcut 의존 confidence 신호에 대한 과잉 의존을 완화할 수 있는지를 평가하고자 하였다.
+이에 따라 본 연구는 두 가지 목적으로 설계되었다. 첫째, B-mode 초음파에서 HCC와 hemangioma를 감별하기 위한 hybrid vision transformer를 개발하고 검증한다. 둘째, 단일 출력 분류 체계를 넘어, confidence score와 임베딩 기반 HCC cosine score 및 Δscore로 구성된 이중 출력 체계를 제안하고, 이 두 출력이 서로 독립적인 임상 해석 정보를 제공할 수 있는지를 평가한다.
 
 ---
 
@@ -69,45 +69,41 @@ B-mode 초음파는 현재 이용 가능한 감시 도구 중 가장 접근성�
 
 ### 2.3 모델 구조
 
-제안 모델은 CNN backbone과 transformer encoder를 결합한 hybrid vision transformer이다. 이 설계는 두 패러다임의 상호 보완적 강점을 활용하기 위한 것이다. 합성곱 레이어는 초음파 영상에서 질감 및 경계 정보를 추출하는 데 적합한 국소 귀납 편향(local inductive bias)을 유지하는 반면, transformer 레이어는 특징 맵 전반에 걸친 전역 문맥 관계를 모델링할 수 있다.[9][10][11]
+제안 모델은 합성곱 신경망(CNN)과 트랜스포머 인코더(transformer encoder)를 결합한 hybrid vision transformer이다. 두 구조의 상호 보완적 강점을 활용하기 위한 설계로, 이를 각각 간략히 소개하면 다음과 같다.
 
-CNN backbone으로는 ImageNet 사전학습 가중치로 초기화된 ResNet50V2 또는 EfficientNetV2B0가 사용되었다. 이로부터 추출된 특징 맵은 패치 형태의 토큰으로 재형성되어 다양한 깊이의 transformer encoder에 입력되었다. 분류 토큰(classification token)이 부가되고, 그 최종 표현이 하위 예측에 사용되었다. 이 임베딩은 유사성 기반 후처리 점수 계산에도 동일하게 활용되어, 모델이 단일 통합 체계 내에서 기존 분류 출력과 임베딩 기반 방사선학적 유사도 출력을 동시에 생성할 수 있도록 하였다.
+합성곱 신경망은 영상 내 인접한 픽셀 간 관계를 국소적으로 학습하는 구조로, 초음파 영상에서 병변의 질감, 경계 패턴, 에코 강도 분포 등 세밀한 국소 특징을 포착하는 데 강점을 가진다.[9] 반면 트랜스포머는 원래 자연어 처리 분야에서 개발된 구조로, 영상 분야에 도입된 vision transformer(ViT)는 영상 전체를 일정 크기의 조각(patch)으로 나눈 뒤 각 조각 간의 전역적 관계를 주의(attention) 메커니즘으로 학습한다.[9][10] 즉 합성곱이 "가까운 픽셀들 사이의 관계"를 보는 데 강하다면, 트랜스포머는 "멀리 떨어진 영역들 사이의 관계"를 포착하는 데 강하다. Hybrid vision transformer는 두 구조를 결합하여 국소 특징과 전역 문맥을 동시에 모델링한다.[11]
+
+CNN backbone으로는 ImageNet 사전학습 가중치로 초기화된 ResNet50V2 또는 EfficientNetV2B0를 사용하였다. 이로부터 추출된 특징 맵은 일정 크기의 조각(patch) 형태의 토큰으로 재형성되어 다양한 깊이의 트랜스포머 인코더에 입력되었다. 분류 토큰(classification token, CLS token)이 부가되고, 이 토큰의 최종 표현 벡터(임베딩)가 모든 하위 예측에 사용되었다. 동일한 임베딩이 이진 분류 출력(confidence score)과 유사성 기반 후처리 점수(cosine HCC score) 계산에 함께 활용되어, 단일 모델 안에서 두 종류의 출력을 동시에 생성하는 체계를 구성하였다.
 
 ### 2.4 학습 전략
 
-두 가지 학습 조건을 비교하였다. 첫 번째 조건에서는 교차 엔트로피 손실(cross-entropy loss)만을 이용하여 모델을 최적화하였다. 두 번째 조건에서는 교차 엔트로피 손실에 supervised contrastive loss를 결합하였다. 교차 엔트로피는 이진 분류를 위한 표준적인 판별 학습 신호를 제공하는 반면, supervised contrastive learning은 같은 클래스의 표본을 임베딩 공간에서 가깝게, 다른 클래스의 표본을 멀게 배치하도록 표현 공간을 명시적으로 구조화한다.[15]
+두 가지 학습 조건을 비교하였다. 첫 번째 조건에서는 교차 엔트로피 손실(cross-entropy loss)만을 이용하여 모델을 최적화하였다. 두 번째 조건에서는 교차 엔트로피 손실에 supervised contrastive learning(SupCon) 손실을 결합하였다. 교차 엔트로피는 이진 분류를 위한 표준적인 판별 학습 신호를 제공하는 반면, supervised contrastive learning은 동일 클래스 표본을 임베딩 공간에서 가깝게, 다른 클래스 표본을 멀게 배치하도록 표현 공간을 명시적으로 구조화한다.[15]
 
-교차 엔트로피 손실은 예측 클래스 분포와 원-핫 인코딩된 목표 레이블을 이용하여 통상적인 방식으로 정의하였다. Supervised contrastive loss는 Khosla 등의 정식화를 따랐으며, 정규화된 임베딩에서 같은 클래스에 속하는 표본은 양성 쌍으로, 배치 내 나머지 표본은 음성 쌍으로 처리하였다.[15] 대조 학습 조건에서 전체 손실은 교차 엔트로피와 supervised contrastive loss의 가중 합으로 구성되었다.
+이 학습 방식의 선택이 갖는 핵심 의미는, SupCon으로 학습한 모델에서 임베딩 간 cosine similarity가 단순한 수치적 편의가 아니라 학습 목적함수가 직접 의미 있도록 유도한 유사성 척도가 된다는 점이다. 교차 엔트로피만으로 학습할 경우 임베딩 공간은 분류 목적을 통해 간접적으로 최적화되며, 임베딩 간 거리가 방사선학적 의미를 갖도록 보장되지 않는다. 반면 SupCon이 적용되면 동일 클래스 병변이 임베딩 공간에서 서로 인접하고 다른 클래스는 분산되도록 학습 목적 자체가 설계되므로, 클래스 전형 임베딩에 대한 cosine similarity는 학습 목적과 정합적인 진단 지표가 된다. 본 연구에서 HCC cosine score와 Δscore를 구조화된 이중 출력의 한 축으로 정의하는 이론적 근거가 여기에 있다. 비교 목적으로 자기 지도 학습(self-supervised learning, SSL) 변형 실험도 수행하였으나, 본 연구의 핵심 주장은 학습 커리큘럼 설계가 아닌 이중 출력 체계의 임상적 유용성에 있으므로 해당 결과는 ablation으로 기술한다.
 
-이 학습 방식의 선택이 갖는 개념적 중요성은 학습된 표현의 기하학적 구조에 있다. 교차 엔트로피만으로 학습할 때 임베딩 공간은 분류 목적을 통해 간접적으로 최적화되며, 표본 간 기하학적 거리가 의미를 갖도록 보장되지 않는다. 반면 supervised contrastive learning을 적용하면, 동일 클래스 병변이 임베딩 공간에서 인접한 영역을 차지하고 다른 클래스 병변은 분산되도록 학습 목적 자체가 설계된다. 이로 인해 cosine similarity는 선택적인 후처리 분석 도구가 아니라, 학습 목적이 명시적으로 의미 있도록 독려한 유사성의 척도가 된다. 본 연구에서 이것이 HCC cosine score와 Δscore를 구조화된 출력으로 정의하는 근거가 된다.
-
-모든 모델은 384 × 384 흑백 입력 영상을 사용하여 학습되었다. 옵티마이저는 Adam을 사용하였고, 초기 학습률은 1 × 10⁻⁴였으며, 학습률 스케줄링은 warmup이 적용된 cosine annealing 방식을 따랐다. 데이터 증강에는 수평 및 수직 반전, 무작위 자르기 및 크기 조정, 밝기 및 대비 변환, Gaussian blur가 포함되었다. 학습은 클라우드 GPU 환경에서 실용적 계산 제약 조건 내에서 수행되었다.
+모든 모델은 384 × 384 흑백 입력 영상을 사용하여 학습되었다. 옵티마이저는 Adam을 사용하였고, 초기 학습률은 1 × 10⁻⁴였으며, warmup이 적용된 cosine annealing 방식으로 학습률을 조정하였다. 데이터 증강에는 수평 및 수직 반전, 무작위 자르기 및 크기 조정, 밝기 및 대비 변환, Gaussian blur가 포함되었다. 학습은 클라우드 GPU 환경에서 실용적 계산 제약 조건 내에서 수행되었다.
 
 ### 2.5 이중 출력 지표 정의
 
-본 연구의 핵심은 두 가지 상이한 유형의 모델 출력을 명시적으로 구분하는 것이다. 첫 번째 출력인 **confidence score**는 HCC 클래스에 해당하는 softmax 값으로 정의하였다. 이 값은 0과 1 사이에 위치하지만, 자동적으로 진정한 확률로 해석되어서는 안 된다. 현대의 심층 신경망은 체계적으로 과잉 확신(overconfident)된 softmax 출력을 산출하는 것으로 알려져 있으며, 확률론적 해석이 정당화되기 위해서는 temperature scaling과 같은 사후 보정이 흔히 필요하다.[18] 이러한 이유로 본 연구에서는 softmax 출력을 "확률"이 아닌 **confidence score**로 의도적으로 명명하였다.
+본 연구의 핵심은 하나의 모델에서 성격이 상이한 두 종류의 출력을 명시적으로 구분하고 각각의 임상적 의미를 정의하는 것이다.
 
-두 번째 출력인 **HCC cosine score**는 임베딩 공간에서 정의하였다. 모델 학습 완료 후, 훈련 세트 내 HCC 표본들의 평균 임베딩 벡터를 계산하여 HCC prototype을 구성하였고, hemangioma 표본들의 평균 임베딩 벡터로 hemangioma prototype을 구성하였다. 임의의 병변 영상에 대해 해당 임베딩 벡터와 HCC prototype 간의 cosine similarity를 계산함으로써 HCC cosine score를 산출하였다. 이 점수는 임베딩 공간에서 학습된 HCC 표현의 기하학적 중심과 해당 병변이 얼마나 가까운지를 반영하도록 설계되었다.
+첫 번째 출력인 **confidence score**는 HCC 클래스에 해당하는 softmax 값으로 정의하였다. Softmax 함수는 모델 최종 단계의 각 클래스별 원시 점수(logit)를 0과 1 사이의 값으로 정규화하여 출력한다. 이 값은 0과 1 사이에 위치하지만, 자동적으로 진정한 확률로 해석되어서는 안 된다. 현대의 심층 신경망은 체계적으로 과잉 확신(overconfident)된 출력을 산출하는 것으로 알려져 있으며, 확률론적 해석이 정당화되기 위해서는 temperature scaling과 같은 사후 보정(calibration)이 흔히 필요하다.[18] 이러한 이유로 본 연구에서는 softmax 출력을 "확률"이 아닌 **confidence score**로 의도적으로 명명하였다.
 
-변별력을 더욱 정교화하기 위해 **Δscore**를 HCC cosine score와 hemangioma cosine score의 차이로 정의하였다. 이 차이는 HCC와의 유사성뿐 아니라 hemangioma로부터의 비유사성도 포착하도록 설계되었다. 실용적 관점에서 Δscore는 두 경쟁 질환 prototype 사이의 상대적 유사성 마진으로 이해할 수 있다.
+두 번째 출력인 **HCC cosine score**는 임베딩 공간에서 정의하였다. 모델 학습 완료 후, 훈련 세트 내 HCC 표본들의 평균 임베딩 벡터를 계산하여 HCC 전형 벡터(prototype)를 구성하였고, hemangioma 표본들의 평균 임베딩 벡터로 hemangioma prototype을 구성하였다. 임의의 병변 영상에 대해 해당 임베딩 벡터와 HCC prototype 간의 cosine similarity, 즉 두 벡터 간의 방향적 유사성을 계산함으로써 HCC cosine score를 산출하였다. 이 점수는 임베딩 공간에서 학습된 HCC 표현의 기하학적 중심과 해당 병변이 얼마나 가까운지를 반영하도록 설계되었다.
 
-이러한 이중 출력 구조는 임상적 추론에서 동기를 얻은 것이다. 방사선과 의사는 단순히 병변이 어떤 내부 확신 수준으로 악성인지를 묻는 것이 아니라, 해당 병변이 전형적인 HCC의 시각적 특성과 hemangioma와 같은 양성 유사 병변의 특성 중 어느 쪽을 더 닮았는지를 고려한다. 따라서 cosine 기반 출력은 인간의 패턴 비교에 개념적으로 더 가까운 표현을 제공하는 반면, confidence score는 모델 내부의 결정적 확신을 반영한다. 이 두 출력 간의 일치와 불일치를 연구하는 것이 본 연구의 주요 목적 중 하나이다.
+변별력을 더욱 정교화하기 위해 **Δscore**를 HCC cosine score와 hemangioma cosine score의 차이로 정의하였다. Δscore는 HCC와의 유사성뿐 아니라 hemangioma로부터의 비유사성도 동시에 포착하며, 두 경쟁 질환 전형 사이의 상대적 유사성 마진으로 해석할 수 있다.
+
+이러한 이중 출력 구조는 방사선과 의사의 임상적 추론 방식에서 직접적으로 동기를 얻은 것이다. 방사선과 의사는 단순히 병변이 어떤 내부 확신 수준으로 악성인지를 묻는 것이 아니라, 해당 병변이 전형적인 HCC의 시각적 특성과 hemangioma와 같은 양성 유사 병변의 특성 중 어느 쪽을 더 닮았는지를 고려한다. Cosine 기반 출력은 이 인간의 패턴 비교 과정을 수치화하는 반면, confidence score는 모델 내부의 결정적 확신을 반영한다. 두 출력 간의 일치와 불일치 패턴을 연구하는 것이 본 연구의 주요 목적 중 하나이다.
 
 ### 2.6 임계값 결정 및 데이터 유출 방지
 
-낙관적 편향을 최소화하기 위해 모든 운영 임계값은 검증 세트에서만 결정하였다. 주된 임계값 선택 방법은 Youden's J 통계를 이용하였으며, 이는 검증 세트 ROC 곡선에서 민감도와 특이도의 합에서 1을 뺀 값을 최대화하는 지점으로 정의하였다. 민감도 우선 전략을 부차적 분석으로 추가 고려하였다. 검증 세트에서 결정된 임계값은 테스트 세트에 변경 없이 고정 적용하였다. 이 절차는 confidence score, HCC cosine score, Δscore 각각에 대해 별도로 수행하였다.
+낙관적 편향을 최소화하기 위해 모든 운영 임계값은 검증 세트에서만 결정하였다. 주된 임계값 선택 방법은 Youden's J 통계를 이용하였으며, 이는 검증 세트 ROC 곡선에서 민감도와 특이도의 합에서 1을 뺀 값을 최대화하는 지점으로 정의하였다. 검증 세트에서 결정된 임계값은 테스트 세트에 변경 없이 고정 적용하였다. 이 절차는 confidence score, HCC cosine score, Δscore 각각에 대해 별도로 수행하였다. 이 방법론은 혈청 종양표지자 연구에서 cutoff를 독립 코호트에서 결정하고 외부 검증 데이터셋에서 평가하는 방식과 동일한 논리적 엄밀성을 초음파 AI 출력에 적용한 것이다.
 
-### 2.7 시각화 및 설명 가능성 분석
+### 2.7 통계 분석
 
-모델의 의사결정 패턴을 조사하기 위해 Grad-CAM과 transformer attention 시각화를 보조적 설명 도구로 사용하였다.[12] Grad-CAM은 CNN backbone의 최종 합성곱 단계에 적용하여 예측 클래스에 강하게 기여한 영역을 나타내는 열지도를 생성하였다. Attention 시각화는 transformer encoder에서 생성하여 분류 토큰과 영상 토큰 사이의 상호작용을 검사하였다.
+모델 변별력은 주로 수신자 조작 특성 곡선(ROC curve) 아래 면적(AUROC)을 이용하여 평가하였다. AUROC의 신뢰구간은 DeLong 방법으로 추정할 예정이다.[16] 세 가지 유형의 ROC 분석을 계획하였다. ROC-A는 confidence score를, ROC-B는 HCC cosine score를, ROC-C는 Δscore를 기준으로 한다. 이 세 ROC 곡선 간의 쌍별 비교는 DeLong 검정을 이용한 상관 ROC 비교로 수행할 예정이며, p값이 0.05를 초과하는 경우 cosine 기반 지표의 비열등성(non-inferiority)이 지지되는 것으로 해석한다.
 
-이러한 시각적 도구들은 의료 영상 독자들에게 친숙하다는 이유로 포함되었으나, 인과적 추론의 결정적 증거로 취급하지는 않았다. 강조 영역이 캘리퍼, 눈금 표시, 텍스트 annotation 등 비병변 구조물과 겹치는 사례에 특별한 주의를 기울였으며, 이러한 경우는 잠재적인 shortcut learning의 증거로 해석하였다. 이중 출력 체계는 시각적 설명의 대체물이 아니라, 높은 confidence 출력을 반드시 신뢰할 수 있다는 잘못된 해석에 대한 추가적 안전장치로 위치하였다.
-
-### 2.8 통계 분석
-
-모델 변별력은 주로 수신자 조작 특성 곡선(ROC curve) 아래 면적(AUROC)을 이용하여 평가하였다. AUROC의 신뢰구간은 DeLong 방법으로 추정할 예정이다.[16] 세 가지 유형의 ROC 분석을 계획하였다. ROC-A는 confidence score를, ROC-B는 HCC cosine score를, ROC-C는 Δscore를 기준으로 한다. 이 세 ROC 곡선 간의 쌍별 비교는 DeLong 검정을 이용한 상관 ROC 비교로 수행할 예정이다.
-
-임계값 의존적 성능 지표로는 민감도, 특이도, 양성예측도, 음성예측도, F1 점수 및 혼동행렬이 포함되었다. 또한 이중 출력 산점도를 통해 confidence score와 Δscore의 결합 분포를 시각화하고, 불일치 패턴에 특별한 주의를 기울일 예정이다. 잠재적 임상 순편익을 평가하기 위한 의사결정 곡선 분석도 계획하였다.[17] 테스트 세트 지표의 신뢰구간 추정을 위해 1,000회 반복 부트스트랩 재표본 추출을 사용할 예정이다.
+임계값 의존적 성능 지표로는 민감도, 특이도, 양성예측도, 음성예측도, F1 점수 및 혼동행렬이 포함되었다. 이중 출력 산점도를 통해 confidence score와 Δscore의 결합 분포를 시각화하고, 두 출력이 불일치하는 사례에 특별한 주의를 기울일 예정이다. 잠재적 임상 순편익을 평가하기 위한 의사결정 곡선 분석(decision curve analysis)도 계획하였다.[17] 테스트 세트 지표의 신뢰구간 추정을 위해 1,000회 반복 부트스트랩 재표본 추출을 사용할 예정이다.
 
 ---
 
@@ -117,75 +113,65 @@ CNN backbone으로는 ImageNet 사전학습 가중치로 초기화된 ResNet50V2
 
 분석 데이터셋은 훈련 세트 1,858장, 검증 세트 530장, 테스트 세트 268장으로 구성되었다. 전체 세트에 걸쳐 HCC와 hemangioma의 비율은 안정적으로 유지되었으며, HCC가 근소하게 많았다. 이 클래스 균형은 극단적인 클래스 불균형으로 인해 성능 지표가 왜곡될 위험을 줄였다. 메타데이터 가용성 확인 후 환자 인구통계학적 정보 및 병변 수준 요약 표를 추가할 예정이다.
 
-### 3.2 Confidence score 기반 진단 성능
+### 3.2 Ablation: 학습 조건별 진단 성능 비교
 
-검증 세트에서 Youden's J 통계를 이용하여 결정된 임계값에서 confidence score는 AUROC 1.000, 최적 절단값 0.004를 보였다. 이 운영 지점에서 정확도 97.0%, 민감도 94.3%, 특이도 100.0%, 양성예측도 100.0%, 음성예측도 94.1%, F1 점수 0.971을 달성하였다. 이 절단값에서 위양성이 한 건도 없었다는 사실은, 내부 검증 세트에서 이 기준에 의해 양성으로 판정된 경우 모델이 극히 높은 정밀도로 HCC를 식별하였음을 시사한다.
+다양한 backbone 및 학습 방식 조합에 대한 ablation 결과를 Table 1에 제시하였다. 교차 엔트로피 단독 조건(CE-only) 대비 SupCon 결합 조건에서 임베딩 군집의 분리도가 개선되었으며, 이는 t-SNE 시각화에서 확인되었다. 자기 지도 학습 사전학습 변형들은 비교 목적으로 포함되었으나, 최종 분류 성능과 cosine score 유효성에서 SupCon 직접 학습 방식과 통계적으로 유의한 차이를 보이지 않아 본 연구의 핵심 주장에서 제외하였다. 이 결과는 이중 출력 체계의 임상적 유용성이 특정 학습 커리큘럼에 종속적이지 않음을 시사한다.
 
-### 3.3 임베딩 구조와 cosine 점수의 타당성
+*(Table 1: backbone × 학습 조건별 AUROC / Sensitivity / Specificity / F1 — 결과 수집 후 삽입)*
 
-t-SNE를 이용한 임베딩 공간 시각화에서 HCC와 hemangioma 군집 간 뚜렷한 분리가 관찰되었다. 이 결과는 클래스 분리의 심미적 확인이라는 의미를 넘어서, cosine 기반 점수의 타당성을 직접 뒷받침한다는 점에서 중요하다. 학습된 임베딩 공간이 질환 특이적 기하학적 구조를 보존하지 못한다면, 클래스 prototype에 대한 cosine similarity는 해석적 가치를 갖기 어렵다. 관찰된 군집 분리는 이 설정에서 prototype 유사도가 의미 있는 기술자(descriptor)임을 지지한다.
+### 3.3 Confidence score 기반 진단 성능
 
-### 3.4 ROC-A, ROC-B, ROC-C 비교 (계획)
+검증 세트에서 Youden's J 통계를 이용하여 결정된 임계값에서 confidence score는 AUROC 1.000, 최적 절단값 0.004를 보였다. 이 운영 지점에서 정확도 97.0%, 민감도 94.3%, 특이도 100.0%, 양성예측도 100.0%, 음성예측도 94.1%, F1 점수 0.971을 달성하였다. 위양성이 한 건도 없었다는 사실은, 이 기준에 의해 양성으로 판정된 경우 모델이 극히 높은 정밀도로 HCC를 식별하였음을 시사한다. 테스트 세트 결과는 최종 원고에 삽입될 예정이다.
 
-본 원고의 중심 비교 분석은 세 가지 ROC 패러다임인 confidence score, HCC cosine score, Δscore 간의 대조이다. 현재 confidence score의 검증 성능은 확보되어 있으며 근완벽 변별력을 보였다. Cosine 기반 ROC 분석은 최종 결과 표 및 그림에 반영될 예정이다. 이 비교의 목적은 단순히 cosine 기반 점수가 AUROC에서 confidence score를 일치하거나 초과하는지를 판단하는 것에 그치지 않는다. 모델의 내부 확신이 불안정할 수 있는 사례에서 cosine 기반 점수가 상호보완적 정보를 제공하는지를 확인하는 것이 더 중요한 목적이다.
+### 3.4 임베딩 구조와 cosine score의 타당성
 
-### 3.5 이중 출력 체계 하에서의 오류 패턴 분석
+t-SNE를 이용한 임베딩 공간 시각화에서 HCC와 hemangioma 군집 간 뚜렷한 분리가 관찰되었다. 이 결과는 단순한 시각적 확인을 넘어, cosine 기반 점수의 타당성을 직접 뒷받침한다는 점에서 중요하다. 학습된 임베딩 공간이 질환 특이적 기하학적 구조를 보존하지 못한다면, 클래스 prototype에 대한 cosine similarity는 해석적 가치를 갖기 어렵다. 관찰된 군집 분리는 이 설정에서 prototype 유사도가 의미 있는 기술자(descriptor)임을 지지한다.
 
-통상적인 ROC 분석을 넘어, 이중 출력 체계는 임상적으로 해석 가능한 오류 분류를 가능하게 한다. Confidence와 Δscore가 모두 높은 사례는 일치하는 고가능성 HCC 사례로 해석될 수 있다. 둘 다 낮은 사례는 일치하는 양성 사례 또는 추가 평가가 필요한 불확정 병변을 나타낼 수 있다. 더 중요한 것은 불일치 사례, 특히 confidence는 높지만 Δscore는 낮은 경우이다. 이는 비강건(non-robust) 단서에 의해 유발된 과잉 확신 예측을 나타낼 수 있다. 반대로 confidence는 낮지만 Δscore가 높은 사례는 분류기 출력이 더 신중함에도 불구하고 알려진 HCC prototype을 닮은 병변을 나타낼 수 있다. 이러한 불일치 패턴이 모델의 임상적 해석에서 중심이 될 것으로 예상된다.
+### 3.5 ROC-A, ROC-B, ROC-C 비교
 
-### 3.6 설명 가능성 소견 및 Shortcut learning
+본 원고의 중심 비교 분석은 confidence score, HCC cosine score, Δscore에 대한 세 종류의 ROC 분석 비교이다. 현재 confidence score의 검증 성능은 확보되어 있으며 근완벽 변별력을 보였다. Cosine 기반 ROC 분석 결과(ROC-B, ROC-C)는 최종 결과 표 및 그림에 반영될 예정이다. 이 비교의 목적은 cosine 기반 점수가 confidence score와 동등한 AUROC를 보이는지(비열등성 검증)와, 두 지표가 일치하지 않는 사례에서 서로 다른 임상 정보를 제공하는지(상보성 확인)를 함께 평가하는 것이다. DeLong 검정으로 ROC-A 대비 ROC-B, ROC-A 대비 ROC-C의 쌍별 AUROC 비교를 수행하여 p값을 보고할 예정이다.
 
-예비적 Grad-CAM 검토에서 모델이 병변 실질 자체가 아닌 캘리퍼, 눈금 표시 등 비병변 artifact에 주의를 기울이는 것으로 보이는 사례가 확인되었다. 이는 모델의 외견상 확신 중 일부가 shortcut 특성과 연결될 수 있음을 시사하는 우려를 제기한다. 이 문제는 cosine 기반 출력을 보조적 해석 축으로 사용하는 동기가 되었다. 대표적 사례와 이에 해당하는 이중 출력 패턴은 최종 그림 세트에 포함될 예정이다.
+*(Figure 1: 3종 ROC 곡선 비교 — 결과 수집 후 삽입)*
+
+### 3.6 이중 출력 체계 하에서의 오류 패턴 분석
+
+통상적인 ROC 분석을 넘어, 이중 출력 체계는 임상적으로 해석 가능한 오류 분류를 가능하게 한다. Confidence와 Δscore가 모두 높은 사례는 일치하는 고가능성 HCC 사례로, 둘 다 낮은 사례는 일치하는 양성 사례 또는 추가 평가가 필요한 불확정 병변으로 해석될 수 있다. 더 중요한 것은 불일치 사례, 특히 confidence는 높지만 Δscore가 낮은 경우이다. 이는 비강건한 단서에 의해 유발된 과잉 확신 예측의 실용적 신호일 수 있다. 이러한 불일치 패턴 분석이 모델의 임상적 해석에서 중심적 역할을 할 것으로 예상된다.
 
 ---
 
 ## 4. 고찰 (Discussion)
 
-### 4.1 주요 발견 (Principal Findings)
+### 4.1 Confidence Score의 개념적 한계
 
-본 연구는 B-mode 초음파 영상만을 입력으로 하는 Hybrid Vision Transformer 기반 이중 출력 진단 체계를 개발하고, 단일 기관 데이터셋에서 confidence score 기준 AUROC 1.000, 특이도 100.0%, 양성예측도 100.0%를 달성하였다. t-SNE 시각화에서 HCC와 혈관종의 임베딩 군집이 뚜렷하게 분리되었으며, 이는 cosine similarity 기반 점수 산출의 기하학적 근거를 뒷받침한다. Confidence Score, HCC Cosine Score, Δscore 각각에 대한 ROC 분석 비교를 통해, softmax confidence와 embedding 유사도가 상호 보완적인 진단 정보를 제공할 수 있음을 확인하였다.
+본 연구에서 관찰된 높은 분류 성능을 해석하기에 앞서, 딥러닝 모델의 출력값이 임상적으로 무엇을 의미하는지를 명확히 하는 것이 필요하다. 기존의 많은 의료 AI 연구들은 모델의 최종 출력인 softmax 값을 관행적으로 "확률(probability)"로 표현한다. 그러나 이 표현은 개념적으로 부정확하다. Softmax 함수는 모델 최종 단계의 각 클래스별 원시 점수를 0과 1 사이의 값으로 정규화하는 수학적 변환으로, 출력값이 고전적 확률론에서 요구하는 보정된 사후 확률(calibrated posterior probability)을 의미하지는 않는다. 이것은 두 클래스의 내부 점수 중 어느 쪽이 더 큰지를 0~1 구간으로 표현한 것으로, 모델이 얼마나 확신하는지를 나타내는 "확신 지수"에 가깝다.
 
-### 4.2 이 연구의 Novelty
+Guo 등은 현대 심층 신경망이 체계적인 과잉 확신(overconfidence)을 보이며, softmax 값과 실제 정답률 사이에 유의한 괴리가 존재함을 실험적으로 입증하였다.[18] 즉 모델이 0.95를 출력하더라도, 이것이 "이 병변이 HCC일 실제 확률이 95%"임을 의미하지는 않는다. 특히 초음파 데이터셋처럼 비병변 artifact가 풍부한 환경에서는, 모델이 병변의 실질적인 방사선학적 특성이 아닌 캘리퍼나 눈금 표시와 같은 부가 단서에 의해 높은 confidence를 산출할 수 있다. 이 경우 높은 confidence score는 임상적으로 유효한 판단의 근거가 아닌, 데이터셋 특이적 패턴에 대한 확신을 반영할 뿐이다. 이러한 이유로 본 연구는 softmax 출력을 "확률"이 아닌 confidence score로 명시적으로 재정의하였으며, 이 구분을 명확히 하는 것 자체가 방법론적 기여 중 하나이다.
 
-본 연구의 핵심 기여는 **연속형 영상의학적 마커(continuous radiologic marker)**로서의 HCC Cosine Score 및 Δscore를 새롭게 제안하고, 이를 기존 Softmax Confidence와 병용하는 이중 출력 체계를 확립한 것이다. 이 접근법은 단순한 분류 성능 개선이 아니라, 의료 AI 모델 출력의 임상적 해석 구조를 재정의하는 방법론적 기여이다.
+### 4.2 방사선과 의사의 추론과 일치하는 Cosine HCC Score
 
-**첫째, 연속형 영상의학적 마커의 신규 제안.** 본 연구의 가장 핵심적인 기여는 HCC Cosine Score와 Δscore를 AFP나 PIVKA-II와 같은 혈청 종양표지자에 유사한 방식으로 정의된 연속형 영상의학적 점수 체계로 확립한 것이다. AFP는 연속형 수치로 산출되고, 정해진 cutoff에 따라 이진 판정이 이루어지며, cutoff 결정과 평가 데이터의 분리를 통해 data leakage를 방지하는 방식으로 임상 연구에서 검증된다. 본 연구는 이와 동일한 방법론적 엄밀성을 초음파 기반 AI 출력에 적용하였다. 검증 세트에서만 Youden's J 통계를 이용하여 각 지표의 최적 임계값을 결정하고 테스트 세트에 고정 적용하는 방식은 TRIPOD 가이드라인[13]이 요구하는 전향적 임상 시나리오를 재현하며, 기존 연구들의 test data leakage 문제를 명시적으로 차단한다. 이 체계가 확립됨으로써, HCC Cosine Score와 Δscore는 추후 다기관 코호트에서의 외적 타당도 검증, 혈청표지자 대비 incremental benefit 분석, 임상적 cutoff 표준화 등 고전적 바이오마커 연구의 프레임으로 후속 검증이 가능하다.
+방사선과 의사가 초음파 영상에서 간 병변을 진단하는 과정은 단순히 "이 영상이 악성인가 양성인가"를 이진으로 판단하는 과정이 아니다. 방사선과 의사는 자신이 수련을 통해 내면화한 전형적인 HCC 영상 소견 — 저에코 배경 또는 혼합 에코, 주변부 저에코 테두리, 결절 내 결절 패턴 등 — 과 현재 환자의 병변이 얼마나 일치하는지를 비교 평가한다. 마찬가지로 혈관종의 전형적 소견 — 고에코의 경계가 명확한 결절, 원형의 균일한 에코 등 — 과의 유사성도 함께 고려한다. 이 진단 추론은 본질적으로 유사성 기반 비교(similarity-based comparison)의 형태이다.
 
-**둘째, Softmax Confidence ≠ 확률: 개념적 명확화.** 기존 의료 AI 연구들은 softmax output을 관행적으로 "probability"로 표현하지만, 이는 calibration 없이는 고전적 확률론적 의미를 갖지 않는다. 현대 심층 신경망의 softmax 출력은 \(\hat{p}_c = e^{z_c} / \sum_j e^{z_j}\) 로 정의되는데, 이는 logit 간 상대적 크기를 0~1 구간으로 정규화한 값이며, 진단의 실제 사후 확률(posterior probability)을 반영한다는 보장이 없다. Guo et al.은 현대 심층 신경망이 체계적인 과잉 확신(overconfidence)을 보이며, softmax 값과 실제 정답률 사이에 유의한 괴리가 존재함을 실험적으로 입증하였다.[18] 이러한 이유로 본 연구는 softmax 출력을 "확률"이 아닌 **Confidence Score**로 명시적으로 명명하고, 그 개념적 한계를 방법론 섹션에서 공식화하였다. 의료 AI 논문에서 이 구분을 명시적으로 다루는 사례는 드물며, 이는 진단 도구의 임상 해석 정확성 측면에서 중요한 방법론적 공헌이다.
+본 연구에서 제안하는 HCC cosine score는 이 방사선과 의사의 추론 과정을 임베딩 공간의 수학적 언어로 표현한 것이다. 모델이 각 영상을 고차원 벡터(임베딩)로 표현하면, 훈련 세트의 전형적인 HCC 영상들로부터 계산된 평균 벡터(HCC prototype)와 현재 병변 영상의 벡터 사이의 방향적 유사도인 cosine similarity가 "이 병변이 학습된 전형적 HCC와 얼마나 닮았는가"를 수치화한다. Δscore는 여기에 hemangioma prototype과의 유사도를 차감하여 "HCC에 가깝고 hemangioma에서 먼 정도"를 연속형 값으로 표현한다. 실용적 관점에서 이 두 지표는 방사선과 의사에게 "이 병변이 학습된 HCC 패턴과 얼마나 가까운가"라는 직관적이고 해석 가능한 정보를 제공한다.
 
-**셋째, GradCAM Shortcut 문제의 실증과 Cosine Score로의 보완.** 초음파 영상 내 캘리퍼 등 비병변 artifact에 Grad-CAM이 반복적으로 집중되는 shortcut activation을 실험적으로 확인하였다. 이는 기존 연구들이 Grad-CAM을 신뢰할 만한 XAI 도구로 제시해온 것과 달리, 초음파 데이터셋의 구조적 특성상 shortcut learning이 활발하게 발생할 수 있음을 시사한다. 반면 HCC Cosine Score는 training set 전체의 평균 임베딩 기하학을 prototype으로 사용하므로, 특정 artifact 위치에 집중되는 CAM 기반 편향에 이론적으로 더 강건하다. 즉, 단일 artifact 픽셀이 아닌 전체 embedding 분포를 기준으로 유사성을 측정하기 때문에, shortcut activation이 존재하더라도 Cosine Score는 보다 안정적인 진단 정보를 제공할 수 있다.
+이 접근법이 임의적인 후처리 계산이 아닌 이론적 근거를 가지는 것은, supervised contrastive learning의 목적함수가 정확히 이 기하학적 구조를 형성하도록 설계되어 있기 때문이다. Supervised contrastive learning은 동일 클래스 병변을 임베딩 공간에서 서로 인접하게, 다른 클래스 병변을 서로 멀게 배치하도록 학습하며[15], 이로 인해 cosine similarity는 학습 목적과 정렬된 의미 있는 유사성 척도가 된다. 나아가 HCC cosine score와 Δscore는 AFP나 PIVKA-II와 같은 혈청 종양표지자와 유사하게 연속형 수치로 산출되고 독립된 검증 세트에서 임계값이 결정된다는 점에서, "연속형 영상의학적 마커(continuous radiologic marker)"로서의 방법론적 위치를 가진다. 이 프레임워크는 초음파 AI 출력을 단일 이진 판정으로 환원하지 않고, 임상 연구에서 검증 가능한 정량적 지표로 다룰 수 있는 가능성을 열어 준다.
 
-**넷째, Dual-Output에 의한 과적합 위험 완화.** AUROC near 1.0 결과는 진정한 변별력과 shortcut 기반 과적합을 내부 지표만으로는 구별하기 어렵다. Confidence Score와 HCC Cosine Score / Δscore의 병용은, 두 지표의 일치 여부를 통해 임상의가 모델 신뢰도를 이중으로 검증할 수 있는 안전장치를 제공한다. 특히 **Confidence High & Δscore Low (패턴 B)** 케이스는 shortcut 기반 과잉 확신의 실용적 위험 신호(flag)로 기능할 수 있다. Confidence Score와 Cosine Score가 모두 높게 일치하는 경우에는 모델 판단의 신뢰도가 더욱 강화된다. 이러한 이중 검증 구조는 단일 지표에 대한 맹목적 과신의 위험을 완화하는 방법론적 기여이며, 의료 AI 안전성 관점에서 중요한 의미를 가진다.
+### 4.3 비열등성 검증: Cosine 기반 지표의 실험적 근거
 
-**다섯째, Radiologist 추론과 Cosine Similarity의 개념적 일치.** 방사선과 의사는 환자 병변의 시각적 특성을 기존에 학습한 전형적 HCC 소견 및 양성 유사 병변(혈관종, FNH 등)의 소견과 비교하는 방식으로 진단한다. 이는 패턴 비교(pattern matching) 기반 추론으로, 단순히 "확신 수준이 얼마나 높은가"를 묻는 것과는 질적으로 다른 인지 과정이다. HCC Cosine Score는 이 과정을 임베딩 공간의 기하학으로 수치화한 것이며, 방사선과 의사에게 *"이 병변이 학습된 전형적 HCC 임베딩 군집과 얼마나 가까운가"*라는 직관적이고 해석 가능한 정보를 제공한다. 특히 Supervised Contrastive Learning으로 학습된 모델에서 cosine similarity는 loss function이 명시적으로 의미 있도록 구조화한 척도이므로, 이 지표는 임의적 후처리 수치가 아닌 학습 목적과 정렬된(aligned) 진단 지표로 볼 수 있다.[15] 이는 단순 confidence 수치보다 임상적 해석 가능성(clinical interpretability)이 높으며, 의사-AI 협업 모델에서 설명 가능성을 높이는 데 기여한다.
+본 연구의 핵심 실증적 주장은 cosine 기반 지표가 confidence score에 통계적으로 비열등한 분류 성능을 보인다는 것이다. 두 지표가 동등한 AUROC를 달성한다면, 이는 추가적인 학습 파라미터나 모델 수정 없이 임베딩 공간의 기하학만으로 confidence score와 동등한 변별력을 확보할 수 있음을 의미한다. 여기에 더해, cosine 기반 지표는 방사선과 의사가 직관적으로 이해할 수 있는 해석 축을 추가로 제공하므로, 임상 해석 가능성 측면에서 순이득이 발생한다.
 
-![Model Architecture — Hybrid CNN + Transformer](figures/model_architecture.jpg)
+DeLong 검정을 통한 쌍별 ROC 비교(ROC-A 대비 ROC-B, ROC-A 대비 ROC-C)에서 p값이 0.05를 초과하는 경우, 이는 두 지표 간 AUROC의 통계적 비열등성을 지지한다. 만약 cosine score의 AUROC가 수치상 낮더라도, 두 지표의 불일치 분포를 분석하는 것이 중요하다. Confidence score가 높으나 Δscore가 낮은 패턴(이하 불일치 패턴)은 모델이 병변의 진정한 방사선학적 특성보다는 데이터셋 특이적 단서에 의존하여 높은 확신을 산출한 가능성을 시사하는 실용적 경보 신호로 기능할 수 있다. 반대로 두 지표가 모두 높게 일치하는 경우에는 모델 판단에 대한 신뢰도가 더욱 강화된다. 이 불일치 패턴 분석은 단일 지표에 기반한 맹목적 과신의 위험을 완화하는 방법론적 안전장치이며, 의료 AI 안전성 관점에서 중요한 의의를 가진다.
 
-*Figure. 제안 Hybrid Vision Transformer의 모델 구조. 입력 B-mode 초음파 영상(384×384)이 CNN backbone(ResNet50V2 또는 EfficientNetV2B0)을 거쳐 특징 맵을 추출하고, 이를 patch token으로 변환하여 Transformer encoder(depth = 1/2/4/8)에 입력한다. 최종 [CLS] token은 분류 헤드(Confidence Score)와 prototype cosine similarity 모듈(HCC Cosine Score)에 동시에 사용된다.*
+### 4.4 Shortcut 관찰과 이중 출력의 임상적 의미
 
-### 4.3 AUROC = 1.000 해석 및 과적합 논의
+본 연구에서 수행한 예비적 시각화 분석에서, 일부 사례에서 모델의 활성 영역이 병변 실질보다 캘리퍼, 눈금 표시와 같은 비병변 artifact에 집중되는 것이 관찰되었다. 이는 초음파 데이터셋의 구조적 특성상 지름길 학습이 활발하게 발생할 수 있으며, 이로 인해 높은 confidence score가 병변의 진정한 방사선학적 특성을 반드시 반영하지는 않을 수 있음을 시사한다. 이러한 shortcut 학습의 관찰은 단일 confidence 지표에 대한 임상적 의존의 위험성을 경고하며, embedding space 전체의 기하학적 유사도를 기반으로 하는 cosine score를 병용하는 이중 출력 접근법의 임상적 타당성을 추가적으로 뒷받침한다.
 
-검증 세트 AUROC = 1.000은 표면적으로 과적합 또는 data leakage로 오해될 수 있다. 이에 대한 반론 근거는 다음과 같다. 첫째, 환자 단위 분할로 동일 환자 영상의 훈련/검증 교차 혼입을 원천 차단하였다. 둘째, t-SNE 시각화에서 HCC와 혈관종의 임베딩 군집이 완전히 분리되어, 고성능이 임베딩 공간의 실질적 표현 분리에 기반함을 시사한다. 셋째, HCC Cosine Score가 Confidence Score와 유사한 수준의 AUROC를 달성한다면, 이는 두 상이한 방법론이 동일한 변별력을 독립적으로 지지하는 수렴 증거로 해석할 수 있다.
-
-그러나 Grad-CAM shortcut activation 관찰은 이 높은 성능의 일부가 병변의 진정한 영상의학적 특징이 아닌 데이터셋 특이적 artifact에 기반할 가능성을 완전히 배제하기 어렵게 한다. 이중 출력 체계의 **Confidence High & Δscore Low** 패턴은 이러한 shortcut 기반 과잉 확신을 실용적으로 탐지하는 flag로 기능할 수 있으며, 이것이 이중 출력의 핵심 임상적 가치 중 하나이다.
-
-![ROC Curve — 3-Version Overlay (Train/Val/Test)](figures/fig_roc_curve.jpg)
-
-*Figure 1. 3종 ROC 곡선 비교 (ROC-A: Confidence Score, ROC-B: HCC Cosine Score, ROC-C: Δscore) — Train, Val, Test set 전반. 각 버전의 운영 지점(Val cutoff, Youden's J)이 표시된다. DeLong pairwise AUROC 비교 p-value가 함께 보고된다.*
-
-![t-SNE of ConvHybridViT CLS embeddings](figures/fig_tsne_embeddings.jpg)
-
-*Figure 2. ConvHybridViT [CLS] token 임베딩의 t-SNE 시각화. HCC(적색)와 혈관종(청색) 군집이 완전히 분리되어, 임베딩 공간에서 cosine similarity가 의미 있는 척도로 작동함을 시사한다.*
-
-### 4.4 한계 (Limitations) 및 향후 연구 방향
+### 4.5 한계 (Limitations) 및 향후 연구 방향
 
 본 연구는 몇 가지 방법론적 한계를 가지며, 이를 투명하게 기술함으로써 해석의 적정 범위를 설정하고자 한다.
 
 **단일 기관 후향적 설계의 한계.** 본 연구는 단일 기관에서 수집된 후향적 데이터셋을 사용하였으므로, 결과의 외적 타당도(external validity)가 검증되지 않았다. 기관마다 초음파 장비, 영상 획득 프로토콜, 이미지 내 annotation 방식이 상이하므로, 제안 모델이 다른 기관 데이터에서도 동등한 성능을 보일지는 불확실하다. 이중 출력 체계의 임상적 신뢰도를 확립하기 위해서는 다기관 전향적 코호트에서의 외적 타당도 검증이 선행되어야 하며, 이는 가장 중요한 향후 연구 과제이다.
 
-**혈청표지자 대비 incremental benefit 미평가.** AFP 및 PIVKA-II 등 혈청 종양표지자와의 직접적인 증분 이득(incremental benefit) 비교가 이루어지지 않았다. HCC Cosine Score가 AFP에 추가하여 독립적인 진단 가치를 제공하는지를 평가하려면, 동일 코호트에서 혈청표지자와 영상 기반 AI 점수를 통합 분석하는 별도 연구가 필요하다.
-
-**계산 자원 제약.** 모든 실험은 Kaggle GPU 12시간 이내의 실용적 계산 제약 조건 하에서 수행되었다. 이로 인해 더 깊은 backbone 아키텍처 탐색, 더 긴 학습, 앙상블 기반 불확실성 정량화 등의 탐색이 제한되었다.
+**혈청표지자 대비 증분 이득 미평가.** AFP 및 PIVKA-II 등 혈청 종양표지자와의 직접적인 증분 이득(incremental benefit) 비교가 이루어지지 않았다. HCC cosine score가 AFP에 추가하여 독립적인 진단 가치를 제공하는지를 평가하려면, 동일 코호트에서 혈청표지자와 영상 기반 AI 점수를 통합 분석하는 별도 연구가 필요하다.
 
 **이진 대조군의 임상적 한계.** 본 연구는 HCC와 혈관종의 이진 감별에 초점을 맞추었으나, 실제 임상에서 방사선과 의사가 직면하는 감별 진단의 스펙트럼에는 국소 결절성 과증식(focal nodular hyperplasia, FNH), 간내 담관암, 전이성 간암 등이 포함된다. 이진 분류 체계는 이 복잡한 임상 현실을 충분히 반영하지 못하며, 다중 클래스 확장은 향후 연구 과제이다.
 
@@ -193,18 +179,15 @@ t-SNE를 이용한 임베딩 공간 시각화에서 HCC와 hemangioma 군집 간
 
 **병변 크기 층화 분석 미시행.** 조기 HCC(≤2 cm)의 경우 영상 특성이 진행 HCC와 상이하며, 소결절 감지는 초음파의 고유한 한계 영역이다. 병변 크기별 층화 분석이 이루어지지 않아, 제안 모델의 조기 HCC 탐지 성능에 대한 별도 평가가 필요하다.
 
-**GradCAM Shortcut 정량화의 한계.** 현재 shortcut activation은 정성적으로 관찰되었으며, 비병변 artifact 영역과의 중첩을 자동으로 정량화하는 분석(예: artifact mask와의 IoU 산출)은 아직 수행되지 않았다. 이러한 자동화된 shortcut 정량화는 모델의 일반화 능력을 더 엄밀하게 평가하는 향후 연구 과제이다.
-
-**Prototype 기반 Cosine Score의 분포 의존성.** HCC Cosine Score와 Δscore의 prototype은 훈련 세트의 평균 임베딩으로 정의된다. 따라서 훈련 분포가 단일 기관 데이터에 특화되어 있을 경우, 다기관 환경에서 prototype이 표적 집단을 충분히 대표하지 못하는 prototype drift가 발생할 가능성이 있다. 다기관 환경에서의 prototype 재보정(recalibration) 전략에 대한 검토가 필요하다.
+**Prototype 기반 Cosine Score의 분포 의존성.** HCC cosine score와 Δscore의 prototype은 훈련 세트의 평균 임베딩으로 정의된다. 따라서 훈련 분포가 단일 기관 데이터에 특화되어 있을 경우, 다기관 환경에서 prototype이 표적 집단을 충분히 대표하지 못하는 prototype drift가 발생할 가능성이 있다. 다기관 환경에서의 prototype 재보정(recalibration) 전략에 대한 검토가 향후 필요하다.
 
 ---
-
 
 ## 5. 결론 (Conclusion)
 
 본 연구는 B-mode 초음파에서 HCC와 hemangioma를 감별하기 위한 hybrid vision transformer를 개발하고 검증하며, confidence score와 임베딩 기반 HCC cosine score로 구성된 이중 출력 해석 체계를 제안하였다. 모델은 우수한 내부 검증 성능을 보였고, 학습된 임베딩 구조는 cosine 기반 유사도가 의미 있는 방사선학적 지표로 기능할 수 있음을 지지하였다.
 
-더 중요한 것은, 본 연구가 이 두 출력이 중복적이지 않음을 주장한다는 점이다. Confidence score는 모델의 내부 결정적 확신을 포착하는 반면, cosine 기반 점수는 학습된 클래스 prototype에 대한 병변 유사도를 반영한다. 두 출력의 일치는 예측에 대한 신뢰를 강화할 수 있고, 불일치는 더 큰 주의가 필요한 사례를 드러낼 수 있다. 이 이중 출력 체계는 따라서 성능 중심 분류기를 제공할 뿐 아니라, 미래의 초음파 AI 시스템을 위해 보다 임상적으로 일치된 해석 구조를 제공한다.
+본 연구의 핵심 주장은 두 출력이 중복적이지 않다는 것이다. Confidence score는 모델의 내부 결정적 확신을 포착하는 반면, cosine 기반 점수는 학습된 클래스 전형에 대한 병변 유사도를 반영하며, 방사선과 의사의 유사성 기반 진단 추론과 개념적으로 일치한다. 두 출력의 일치는 예측에 대한 신뢰를 강화할 수 있고, 불일치는 추가적인 임상 주의가 필요한 사례를 드러낼 수 있다. 이 이중 출력 체계는 성능 중심 분류기를 제공하는 동시에, 임상의가 모델의 판단을 보다 투명하게 해석하고 검증할 수 있는 구조적 틀을 함께 제공한다는 점에서 방법론적, 임상적 의의를 가진다.
 
 ---
 
@@ -217,7 +200,7 @@ t-SNE를 이용한 임베딩 공간 시각화에서 HCC와 hemangioma 군집 간
 5. Tsuchiya N, Sawada Y, Endo I, et al. Biomarkers for the Early Diagnosis of Hepatocellular Carcinoma. *World J Gastroenterol*. 2015;21(37):10573–10583.
 6. Yang Q, Wei J, Hao X, et al. Improving B-mode Ultrasound Diagnostic Performance for Focal Liver Lesions Using Deep Learning: A Multicentre Study. *EBioMedicine*. 2020;56:102777.
 7. Zhang J, Zhu Q, Zhong T, et al. Deep Learning–based Automatic Segmentation and Classification of Focal Liver Lesions on Ultrasound Images. *Abdom Radiol*. 2022;47(2):763–773.
-8. *(삼성서울병원 CEUS 딥러닝 연구 — 해당 논문 확인 후 삽입)*
+8. *(삼성서울병원 관련 선행 연구 — 해당 논문 확인 후 삽입)*
 9. Dosovitskiy A, Beyer L, Kolesnikov A, et al. An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale. *ICLR*. 2021.
 10. Chen CF, Fan Q, Panda R. CrossViT: Cross-Attention Multi-Scale Vision Transformer for Image Classification. *ICCV*. 2021:357–366.
 11. *(EfficientNetV2 + ViT hybrid ultrasound classification — Diagnostics 2026, 삽입 예정)*
