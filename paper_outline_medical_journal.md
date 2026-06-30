@@ -1,6 +1,6 @@
 # 논문 초고 개요 — 의학 저널 투고용
 
-> **작성 상태**: 개정판 (rev. 2026-06-30-B — NNCLR 2단계 학습 구조 정정, SSL 추가 학습 비용 대비 효용 논증 추가)
+> **작성 상태**: 개정판 (rev. 2026-07-01 — intraclass heterogeneity 논거 추가 (§1.2, §1.3, §4.6), ref [28]–[32] 추가)
 > **목표 저널**: PubMed 등재, SCIE Q1–Q2
 > *(예: Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
@@ -48,11 +48,23 @@ B-mode 초음파는 현재 이용 가능한 감시 도구 중 가장 접근성�
 
 ### 1.2 기존 AI 접근의 한계
 
-최근 초음파 간 국소 병변 분류에서 딥러닝 모델이 유망한 성능을 보인 연구들이 보고되었다.[6][7] 그러나 이들은 공통적으로 **단일 softmax 출력**을 최종 진단 지표로 사용하며, softmax 값이 보정 없이 실제 질환 확률을 직접 반영하지 않는다는 한계가 잘 알려져 있다.[18] 더 근본적으로, 이 단일 스칼라 출력은 임상의가 병변을 실제로 판단하는 방식과 대응하지 않는다. 임상의는 "HCC일 확률"을 산출하는 것이 아니라, 현재 병변이 전형적인 HCC 소견을 얼마나 닮았는가, 그리고 주요 감별진단(혈관종)에 비해 어느 쪽에 더 가까운가를 평가하는 **유사성 기반 추론**을 수행한다. 초음파 영상에 포함된 캘리퍼·눈금·텍스트 오버레이 등 비병변 부가 단서가 모델 학습에 개입하는 shortcut learning 상황에서는,[12][19][20] 높은 softmax 출력이 영상의학적으로 타당한 소견이 아닌 비병변 단서에 대한 확신을 반영할 수 있으며, 단일 출력 체계에서는 이를 탐지할 방법이 없다.
+#### 1.2.1 클래스 내 이질성(Intraclass Heterogeneity)의 문제
+
+HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 하나는 두 클래스 모두 **전형적(typical) 소견과 비전형적(atypical) 소견이 넓은 스펙트럼에 걸쳐 공존**한다는 점이다. HCC는 전통적으로 간경변 배경에서 hypoechoic 또는 heterogeneous 결절로 나타나나, 전체의 10–15%는 atypical 소견을 보여 고분화 HCC(well-differentiated HCC)가 고에코성 hemangioma 패턴을 모사하는 경우가 보고된다.[28] Hemangioma 역시 전형적으로는 고에코성·경계 명확한 균질 종괴로 관찰되나, atypical hemangioma는 저에코성 테두리, 이질적 에코 구조, 경계 불분명 등 악성 종양을 mimicking하는 소견을 나타낸다.[29][30] AFP 상승을 동반한 atypical hemangioma가 HCC와의 감별에 실패한 증례도 문헌에 보고되어 있다.[29] B-mode 초음파만으로 HCC와 hemangioma를 감별하는 임상적 어려움은 이처럼 두 클래스 내부의 표현형 다양성에서 기인한다.
+
+임상 판독에서 초음파 의사는 단순히 "이 병변은 HCC인가, 아닌가"라는 이진 결정을 내리지 않는다. 실제로는 "이 병변이 전형적 HCC의 소견을 얼마나 닮았는가", "혈관종 중에서도 atypical 패턴에 가까운가, 전형 패턴에 가까운가"를 평가하는 **연속적 유사성 기반 추론(similarity-based reasoning)**을 수행한다. LI-RADS 체계가 LR-3(중등도 위험), LR-4(높은 위험), LR-5(전형적 HCC 소견) 등 연속적 위험 계층으로 구성된 것은 이 임상적 현실을 반영한다.[31] 그러나 기존 딥러닝 분류 모델은 이 스펙트럼을 단일 이진 출력으로 압축하여 클래스 내부의 표현형 이질성을 출력에 반영하지 않는다.
+
+#### 1.2.2 단일 Softmax 출력의 구조적 한계
+
+최근 초음파 간 국소 병변 분류에서 딥러닝 모델이 유망한 성능을 보인 연구들이 보고되었다.[6][7] 그러나 이들은 공통적으로 **단일 softmax 출력**을 최종 진단 지표로 사용한다. 이 접근은 두 가지 구조적 한계를 내포한다. 첫째, softmax 값이 보정 없이 실제 질환 확률을 반영하지 않으며,[18] 출력값이 모델의 결정 강도를 나타낼 뿐 병변이 전형적 HCC cluster의 중심부에 위치하는지 경계부에 위치하는지에 관한 정보를 제공하지 않는다. 둘째, atypical HCC와 전형 HCC가 동일한 출력 범위 내에서 처리되므로, 추가 검사를 요하는 비전형 병변을 자동으로 식별하는 임상 triage 기능이 부재하다. 기존 AI 연구가 전형적 소견의 병변에서 90% 이상의 정확도를 보고하면서도 atypical 케이스에 대한 검증이 충분하지 않다는 점은 이 한계의 직접적 결과이다.[32]
+
+임베딩 공간의 클러스터 구조를 활용하면 이 문제를 보완할 수 있다. 병변 임베딩과 클래스 prototype 간의 cosine 거리는 해당 병변이 전형적 HCC cluster의 핵심부(core)에 있는지 주변부(periphery)에 있는지를 연속값으로 나타낸다. 이는 softmax 분류 경계를 넘지 않는 범위 내에서도 비전형성의 정도를 정량화하며, 임상의의 유사성 기반 추론과 직접 대응하는 구조이다. 아울러, 초음파 영상에 포함된 캘리퍼·눈금·텍스트 오버레이 등 비병변 부가 단서가 shortcut learning으로 모델에 개입하는 상황에서,[12][19][20] 단일 출력 체계는 높은 softmax 값이 소견 기반인지 비병변 단서 기반인지를 구분하는 방법을 제공하지 않는다. 이중 출력의 불일치 패턴은 이 구조적 비정렬성을 탐지하는 추가적 안전 신호로 기능할 수 있다.
 
 ### 1.3 본 연구의 목적과 접근
 
-본 연구는 두 가지 목적으로 설계되었다. 첫째, B-mode 초음파에서 HCC와 hemangioma를 감별하기 위한 hybrid vision transformer를 개발하고 검증한다. 둘째, 단일 출력 분류 체계를 넘어 confidence score와 임베딩 기반 HCC cosine score·Δscore로 구성된 이중 출력 체계를 제안하고, 이 두 출력이 각각 독립적인 임상 해석 정보를 제공할 수 있는지 평가한다. **본 연구의 핵심 기여는 분류 성능 자체보다, 임상의의 유사성 기반 추론을 수치화한 새로운 연속형 영상표지자 후보를 B-mode 초음파에서 도출하는 체계를 제안한 데 있다.**
+본 연구는 세 가지 목적으로 설계되었다. 첫째, B-mode 초음파에서 HCC와 hemangioma를 감별하기 위한 EfficientNetV2B0 기반 hybrid vision transformer를 개발하고 검증한다. 둘째, 단일 softmax 출력 체계를 넘어, SupCon 학습으로 구조화된 임베딩 공간에서 HCC cosine score와 Δscore를 도출하는 이중 출력 체계를 제안하고, 이 표지자들이 confidence score와 독립적인 임상 해석 정보를 제공하는지 평가한다. 셋째, HCC와 hemangioma 두 클래스 내부의 이질성을 반영하지 못하는 기존 이진 분류 모델의 한계를 보완하는 수단으로서, **임베딩 공간의 클러스터 구조가 병변의 비전형성(atypicality)을 연속형으로 정량화하는 기반**이 될 수 있는지를 ablation을 통해 실험적으로 검증한다.
+
+**본 연구의 핵심 기여는 분류 성능 자체보다**, 임상의가 전형 HCC 소견과의 유사 정도를 연속적으로 평가하는 추론 과정을 수치화한 새로운 영상표지자 후보(HCC cosine score, Δscore)를 B-mode 초음파에서 도출하는 학습·분석 체계를 제안한 데 있다. 아울러, 동일 파이프라인 내에서 두 출력의 불일치가 비전형적 또는 shortcut 기반 판단 가능성을 경고하는 임상 안전 신호로 활용될 수 있음을 실험적으로 실증한다.
 
 ---
 
@@ -289,17 +301,19 @@ CE+SupCon은 CE-only와 동등한 분류 AUROC를 유지하면서(EfficientNetV2
 
 ### 4.6 본 연구의 Novelty
 
-본 연구의 신규성은 네 가지 차원에서 정의된다.
+본 연구의 신규성은 여섯 가지 차원에서 정의된다.
 
-**① 출력 해석론의 전환.** Softmax 출력을 확률이 아닌 결정 강도(confidence score)로 재정의하고, 이와 별도로 임베딩 기반 유사성 표지자를 함께 제안한 연구는 초음파 간 병변 분류 영역에서 보고된 바 없다.
+**① 클래스 내 이질성에 대응하는 연속형 표지자 제안.** HCC와 hemangioma는 각각 전형적 소견과 비전형적 소견이 넓은 스펙트럼에 걸쳐 공존한다.[28][29][30] 전체 HCC의 10–15%는 atypical 소견을 보이며,[28] atypical hemangioma는 악성 종양을 mimicking하여 단순 B-mode 초음파에서의 감별이 현저히 어렵다.[29][30] 그럼에도 기존 딥러닝 분류 모델은 이 intraclass heterogeneity를 단일 이진 출력으로 압축하여 전형 병변과 비전형 병변을 동등하게 처리한다. 기존 AI 문헌은 전형적 소견 병변에서의 높은 정확도를 보고하나 atypical case에 대한 검증은 불충분하다는 점이 한계로 지적된다.[32] 본 연구가 제안하는 HCC cosine score는 병변 임베딩과 HCC prototype 간의 거리를 연속값으로 정량화하여, 분류 경계를 넘지 않는 범위에서도 해당 병변이 전형 HCC cluster의 핵심부에 있는지 주변부에 있는지를 반영한다. 이는 임상의가 LI-RADS 체계에서 수행하는 위험 계층화 추론[31]과 구조적으로 대응하며, 단일 이진 출력으로는 표현 불가능한 비전형성의 정도를 영상표지자로 제공한다.
 
-**② 유사성 기반 추론의 정량화.** 임상의의 prototype 비교 추론을 수치화하는 연속형 표지자(HCC cosine score, Δscore)를 SupCon 기반 임베딩에서 직접 도출하였다. 기존 prototype 기반 모델들[23][24]과 달리 추가적인 아키텍처 변경 없이 기존 분류 모델에 적용 가능하다.
+**② 출력 해석론의 전환.** Softmax 출력을 확률이 아닌 결정 강도(confidence score)로 재정의하고, 이와 별도로 임베딩 기반 유사성 표지자를 함께 제안한 연구는 초음파 간 병변 분류 영역에서 보고된 바 없다.
 
-**③ SupCon의 필수성 실험적 입증.** CE-only 대비 SupCon이 cosine 기반 표지자의 임베딩 정렬 타당성(cutoff 음수→양수 이동)을 확보함을 ablation으로 정량적으로 입증하였다. 이는 유사성 기반 표지자 도출을 위한 학습 전략 설계 원칙을 제시한다.
+**③ 유사성 기반 추론의 정량화.** 임상의의 prototype 비교 추론을 수치화하는 연속형 표지자(HCC cosine score, Δscore)를 SupCon 기반 임베딩에서 직접 도출하였다. 기존 prototype 기반 모델들[23][24]과 달리 추가적인 아키텍처 변경 없이 기존 분류 모델에 적용 가능하다.
 
-**④ 불일치 패턴의 안전 신호 기능.** 이중 출력의 불일치 패턴이 단일 confidence 지표로는 탐지 불가능한 임베딩 공간의 비정렬성을 드러내는 구조적 안전 신호로 기능함을 NNCLR 2단계 학습 ablation이 직접 실증하였다. 특히 NNCLR 2단계 조건에서 confidence AUROC 0.999를 유지하면서 cosine score AUROC가 0.068까지 붕괴하는 극단적 불일치는, 단일 출력 체계로는 탐지 불가능한 임베딩 비정렬성이 실제로 발생함을 보인다.
+**④ SupCon의 필수성 실험적 입증.** CE-only 대비 SupCon이 cosine 기반 표지자의 임베딩 정렬 타당성(cutoff 음수→양수 이동)을 확보함을 ablation으로 정량적으로 입증하였다. 이는 유사성 기반 표지자 도출을 위한 학습 전략 설계 원칙을 제시한다.
 
-**⑤ 소규모 의료 영상에서 SSL 사전학습의 한계 실증.** CE+SupCon 단독 대비 NNCLR SSL 사전학습 → CE+SupCon 미세조정의 2단계 파이프라인이 분류 성능과 cosine 기반 표지자 품질 모두에서 열등한 결과를 보였다. 이는 충분한 레이블 데이터가 존재하는 소규모 의료 영상 데이터셋에서 SSL 사전학습이 CE+SupCon 단독의 지도 학습 기반 클래스 구조화를 능가하지 못하며, 추가적인 계산 비용이 임상 배포 맥락에서 정당화되지 않음을 시사하는 실험적 근거이다.
+**⑤ 불일치 패턴의 안전 신호 기능.** 이중 출력의 불일치 패턴이 단일 confidence 지표로는 탐지 불가능한 임베딩 공간의 비정렬성을 드러내는 구조적 안전 신호로 기능함을 NNCLR 2단계 학습 ablation이 직접 실증하였다. 특히 NNCLR 2단계 조건에서 confidence AUROC 0.999를 유지하면서 cosine score AUROC가 0.068까지 붕괴하는 극단적 불일치는, 단일 출력 체계로는 탐지 불가능한 임베딩 비정렬성이 실제로 발생함을 보인다.
+
+**⑥ 소규모 의료 영상에서 SSL 사전학습의 한계 실증.** CE+SupCon 단독 대비 NNCLR SSL 사전학습 → CE+SupCon 미세조정의 2단계 파이프라인이 분류 성능과 cosine 기반 표지자 품질 모두에서 열등한 결과를 보였다. 이는 충분한 레이블 데이터가 존재하는 소규모 의료 영상 데이터셋에서 SSL 사전학습이 CE+SupCon 단독의 지도 학습 기반 클래스 구조화를 능가하지 못하며, 추가적인 계산 비용이 임상 배포 맥락에서 정당화되지 않음을 시사하는 실험적 근거이다.
 
 ### 4.7 연구의 한계
 
@@ -344,3 +358,8 @@ CE+SupCon은 CE-only와 동등한 분류 AUROC를 유지하면서(EfficientNetV2
 25. (예비)
 26. (예비)
 27. Du X, et al. [Multi-center prospective validation TBD].* 2025.
+28. Kim H, et al. Imaging diagnosis of various hepatocellular carcinoma subtypes and mimickers: how to maximize diagnostic performance. *Liver Cancer.* 2023;12(2):103–118. https://doi.org/10.1159/000528780
+29. Chou CT, et al. Atypical hemangioma mimicking mixed hepatocellular cholangiocarcinoma: case report and literature review. *Medicine (Baltimore).* 2017;96(50):e9069. https://doi.org/10.1097/MD.0000000000009069
+30. Sirli R, et al. Contrast enhanced ultrasound for the diagnosis of liver hemangiomas. *Med Ultrason.* 2015;17(4):444–448. https://doi.org/10.11152/mu.2013.2066.174.hsr
+31. American College of Radiology. CT/MRI LI-RADS v2018: Diagnostic Categories and Technical Requirements. *ACR.* 2018. Available from: https://www.acr.org/Clinical-Resources/Reporting-and-Data-Systems/LI-RADS
+32. Kim IY, et al. Imaging diagnosis of various hepatocellular carcinoma subtypes and mimickers. *Liver Cancer.* 2023;12:103–118. [AI high accuracy for typical; atypical validation gap acknowledged]
