@@ -1,6 +1,6 @@
 # 논문 초고 개요 — 의학 저널 투고용
 
-> **작성 상태**: 임상적 의의 중심 재작성 (rev. 2026-06-30 — 투고용 문체 정비, TODO 연동)
+> **작성 상태**: 임상적 의의 중심 재작성 (rev. 2026-06-30 — Table 2 수치 기입)
 > **목표 저널 등급**: PubMed 등재, SCIE Q1–Q2
 > *(예: Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
@@ -123,20 +123,22 @@ SupCon의 핵심 역할은 cosine 기반 표지자의 타당성을 확보하는 
 
 #### Table 2. Ablation: Backbone × Training Mode — Diagnostic Performance on Validation Set
 
-| # | Backbone | Training Mode | AUROC | Sensitivity (%) | Specificity (%) | F1 Score | Cutoff (Youden's J) |
-|---|----------|--------------|-------|-----------------|-----------------|----------|---------------------|
-| 1 | ResNet50V2 | CE Only | ___ | ___ | ___ | ___ | ___ |
-| 2 | EfficientNetV2B0 | CE Only | ___ | ___ | ___ | ___ | ___ |
-| 3 | ResNet50V2 | CE + SupCon | ___ | ___ | ___ | ___ | ___ |
-| 4 | EfficientNetV2B0 | CE + SupCon | **1.000** | **94.3** | **100.0** | **0.971** | **0.004** |
-| 5 | ResNet50V2 | VICReg (SSL) | ___ | ___ | ___ | ___ | — |
-| 6 | EfficientNetV2B0 | VICReg (SSL) | ___ | ___ | ___ | ___ | — |
-| 7 | ResNet50V2 | NNCLR (SSL) | ___ | ___ | ___ | ___ | — |
-| 8 | EfficientNetV2B0 | NNCLR (SSL) | ___ | ___ | ___ | ___ | — |
+| # | Backbone | Training Mode | AUROC | Sensitivity (%) | Specificity (%) | PPV (%) | NPV (%) | F1 Score | Acc (%) |
+|---|----------|--------------|-------|-----------------|-----------------|---------|---------|----------|---------|
+| 1 | ResNet50V2 | CE Only | 0.9892 | 92.78 | 100.00 | 100.00 | 92.67 | 0.9625 | 96.23 |
+| 2 | EfficientNetV2B0 | CE Only | 0.9964 | 95.67 | 100.00 | 100.00 | 95.47 | 0.9779 | 97.74 |
+| 3 | ResNet50V2 | CE + SupCon | 0.9946 | 94.58 | 100.00 | 100.00 | 94.40 | 0.9722 | 97.17 |
+| **4** | **EfficientNetV2B0** | **CE + SupCon** | **0.9946** | **95.67** | **100.00** | **100.00** | **95.47** | **0.9779** | **97.74** |
+| 5 | ResNet50V2 | VICReg (SSL) | — | — | — | — | — | — | — |
+| 6 | EfficientNetV2B0 | VICReg (SSL) | 0.9910 | 87.73 | 100.00 | 100.00 | 88.15 | 0.9346 | 93.58 |
+| 7 | ResNet50V2 | NNCLR (SSL) | 0.9874 | 89.17 | 100.00 | 100.00 | 89.40 | 0.9427 | 94.34 |
+| 8 | EfficientNetV2B0 | NNCLR (SSL) | — | — | — | — | — | — | — |
 
-*CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; SSL = Self-Supervised Learning (fine-tuned head). AUROC 95% CI via DeLong method. Cutoff by Youden's J on validation set only.*
+*CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; SSL = Self-Supervised Learning (fine-tuned head).
+All metrics on validation set (n=530). AUROC 95% CI via DeLong method. Cutoff by Youden's J on validation set only.
+Bold: primary model selected for subsequent analyses. — : run not available.*
 
-> 📝 **[TODO: Table 2]** #1, 2, 3, 5, 6, 7, 8 실험 수치 기입
+> 📝 **[TODO: Table 2]** #5 (ResNet VICReg), #8 (EfficientNet NNCLR) 실험 수치 미기입 — 해당 wandb json 파일 확보 후 기입
 
 ### 3.3 주력 모델 성능 (EfficientNetV2B0 + CE + SupCon)
 
@@ -144,21 +146,21 @@ SupCon의 핵심 역할은 cosine 기반 표지자의 타당성을 확보하는 
 
 | Metric | Validation Set | Test Set |
 |--------|---------------|----------|
-| AUROC (95% CI) | 1.000 (–) | ___ (___ – ___) |
-| Optimal Cutoff (Youden's J) | 0.004 | — *(Val cutoff 고정 적용)* |
-| Accuracy (%) | 97.0 | ___ |
-| Sensitivity (%) | 94.3 | ___ |
-| Specificity (%) | 100.0 | ___ |
-| PPV (%) | 100.0 | ___ |
-| NPV (%) | 94.1 | ___ |
-| F1 Score | 0.971 | ___ |
-| TP / FP / FN / TN | 261 / 0 / 16 / 253 | ___ / ___ / ___ / ___ |
+| AUROC (95% CI) | 0.9946 (–) | ___ (___ – ___) |
+| Optimal Cutoff (Youden's J) | — | — *(Val cutoff 고정 적용)* |
+| Accuracy (%) | 97.74 | ___ |
+| Sensitivity (%) | 95.67 | ___ |
+| Specificity (%) | 100.00 | ___ |
+| PPV (%) | 100.00 | ___ |
+| NPV (%) | 95.47 | ___ |
+| F1 Score | 0.9779 | ___ |
+| TP / FP / FN / TN | 265 / 0 / 12 / 253 | ___ / ___ / ___ / ___ |
 
 *95% CI for test set metrics: bootstrap n=1,000.*
 
 > 📝 **[TODO: Test 결과]** 테스트 세트 전체 수치 기입
 
-검증 세트에서 임계값 0.004에서 AUROC 1.000, 정확도 97.0%, 민감도 94.3%, 특이도 100.0%, 양성예측도 100.0%, 음성예측도 94.1%, F1 점수 0.971을 달성하였다. 위양성이 한 건도 없었다는 사실은, 이 기준에 의해 HCC로 판정된 경우 모델이 극히 높은 정밀도로 감별하였음을 시사한다.
+검증 세트에서 AUROC 0.9946, 정확도 97.74%, 민감도 95.67%, 특이도 100.0%, 양성예측도 100.0%, 음성예측도 95.47%, F1 점수 0.9779를 달성하였다. 위양성이 한 건도 없었다는 사실은, 이 기준에 의해 HCC로 판정된 경우 모델이 극히 높은 정밀도로 감별하였음을 시사한다.
 
 ### 3.4 임베딩 구조와 cosine 기반 표지자의 타당성
 
@@ -172,7 +174,7 @@ t-SNE를 이용한 임베딩 공간 시각화에서 HCC와 hemangioma 군집 간
 
 | Output | Score Type | AUROC | 95% CI | DeLong p-value vs ROC-A |
 |--------|-----------|-------|--------|-------------------------|
-| ROC-A | Confidence Score (softmax) | **1.000** | — | — (reference) |
+| ROC-A | Confidence Score (softmax) | **0.9946** | — | — (reference) |
 | ROC-B | HCC Cosine Score | ___ | ___ – ___ | ___ |
 | ROC-C | Δscore (HCC cosine − Hem cosine) | ___ | ___ – ___ | ___ |
 
