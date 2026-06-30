@@ -8,8 +8,7 @@
 
 ## 제목 (안)
 
-**B-mode 복부 초음파 영상에서 새로운 이중 출력 영상표지자의 개발 및 검증:
-HCC Cosine Score와 Confidence Score의 상호보완적 임상적 의의**
+**B-mode 복부 초음파 영상에서 새로운 이중 출력 영상표지자의 개발 및 검증:\nHCC Cosine Score와 Confidence Score의 상호보완적 임상적 의의**
 
 *영문 병기:*
 **Development and Validation of a Novel Dual-Output Imaging Marker for Quantifying HCC-Likeness on B-mode Abdominal Ultrasound: Complementary Clinical Roles of HCC Cosine Score and Confidence Score**
@@ -24,7 +23,7 @@ B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심
 
 ### 방법 (Methods)
 
-삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장)을 이용한 단일 기관 후향적 연구이다. 환자 단위 분리를 적용하여 훈련(1,858장)/검증(530장)/테스트(268장) 세트를 구분하였다. Hybrid vision transformer(EfficientNetV2B0 + transformer encoder)를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합으로 학습하고, 두 가지 출력을 정의하였다. 첫째, softmax 출력을 결정 강도(decision strength)를 나타내는 **confidence score**로 명명하였다. 둘째, 학습된 임베딩과 HCC 전형 벡터(prototype) 간 cosine similarity를 **HCC cosine score**, hemangioma와의 상대적 마진을 **Δscore**로 정의하였다. 임계값은 검증 세트에서만 결정(Youden's J)하여 테스트 세트에 고정 적용하였다.
+삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장)[14]을 이용한 단일 기관 후향적 연구이다. 환자 단위 분리를 적용하여 훈련(1,858장)/검증(530장)/테스트(268장) 세트를 구분하였다. Hybrid vision transformer(EfficientNetV2B0 + transformer encoder)를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합으로 학습하고, 두 가지 출력을 정의하였다. 첫째, softmax 출력을 결정 강도(decision strength)를 나타내는 **confidence score**로 명명하였다. 둘째, 학습된 임베딩과 HCC 전형 벡터(prototype) 간 cosine similarity를 **HCC cosine score**, hemangioma와의 상대적 마진을 **Δscore**로 정의하였다. 임계값은 검증 세트에서만 결정(Youden's J)하여 테스트 세트에 고정 적용하였다.
 
 ### 결과 (Results)
 
@@ -68,7 +67,7 @@ B-mode 초음파는 현재 이용 가능한 감시 도구 중 가장 접근성�
 
 ### 2.2 데이터셋 및 연구 대상
 
-본 연구에서는 삼성서울병원 간 초음파 데이터셋(Samsung Medical Center–Liver Ultrasound Dataset, SMC-LUD)을 사용하였다. SMC-LUD는 2015년부터 2024년까지 수집된 간 국소 병변의 B-mode 초음파 영상으로 구성된 공개 데이터셋으로, 병리학적으로 확인된 HCC 영상 2,716장과 영상 기준으로 진단된 혈관종(hemangioma) 영상 2,669장을 포함하여 총 1,021명 환자의 5,385장 흑백 영상으로 이루어져 있다.[14] 모든 영상은 384 × 384 픽셀의 흑백 부동소수점 배열로 표준화되었다.
+본 연구에서는 삼성서울병원 간 초음파 데이터셋(Samsung Medical Center–Liver Ultrasound Dataset, SMC-LUD)을 사용하였다.[14] SMC-LUD는 2015년부터 2024년까지 수집된 간 국소 병변의 B-mode 초음파 영상으로 구성된 공개 데이터셋으로, 병리학적으로 확인된 HCC 영상 2,716장과 영상 기준으로 진단된 혈관종(hemangioma) 영상 2,669장을 포함하여 총 1,021명 환자의 5,385장 흑백 영상으로 이루어져 있다.[14] 모든 영상은 384 × 384 픽셀의 흑백 부동소수점 배열로 표준화되었다.
 
 동일 환자의 영상이 개발 단계와 평가 단계 사이에 교차 오염되지 않도록 환자 단위 분리를 적용하였다. 최종 데이터는 훈련 세트 1,858장, 검증 세트 530장, 테스트 세트 268장으로 구분하였다. HCC와 hemangioma의 클래스 비율은 세트 간에 균형 있게 유지되었으며, HCC가 전체의 약 52%, hemangioma가 약 48%를 차지하였다.
 
@@ -114,7 +113,7 @@ SupCon의 핵심 역할은 cosine 기반 표지자의 타당성을 확보하는 
 
 ### 3.1 데이터셋 구성
 
-분석 데이터셋은 훈련 세트 1,858장, 검증 세트 530장, 테스트 세트 268장으로 구성되었다. HCC와 hemangioma의 비율은 세트 간에 안정적으로 유지되었으며, HCC가 근소하게 많았다.
+분석 데이터셋은 SMC-LUD[14]로부터 훈련 세트 1,858장, 검증 세트 530장, 테스트 세트 268장으로 구성되었다. HCC와 hemangioma의 비율은 세트 간에 안정적으로 유지되었으며, HCC가 근소하게 많았다.
 
 > 📝 **[TODO: 인구통계표]** 환자 인구통계학적 정보 및 병변 수준 요약 Table 1 완성 (연령, 성별, 간경변 유무, 병변 크기 등)
 
@@ -204,7 +203,7 @@ Confidence와 Δscore의 불일치, 특히 confidence는 높지만 Δscore가 �
 
 ### 4.1 임상적 미충족 수요와 본 연구의 위치
 
-초음파 기반 간 국소 병변 딥러닝 분류 연구는 2020년을 전후하여 본격적으로 성장하였다. Yang 등(2020, *EBioMedicine*)은 13개 기관 2,143명 데이터에서 AUROC 0.924를 달성하였고, 이는 15년 경력 임상의 236명의 성능을 유의하게 상회하였다.[6] 이후 다기관 전향 연구(Du 등, 2025, *eClinicalMedicine*)까지 이어진 이 분야의 발전에도 불구하고, 기존 연구들의 공통적 구조적 특징은 **단일 softmax 출력(또는 그 후처리 조합)**을 최종 진단 지표로 사용한다는 점이다. 어느 연구도 모델이 학습한 임베딩 공간의 기하학적 구조, 즉 병변이 전형적인 HCC 표현의 중심과 얼마나 가까운지를 독립적인 진단 표지자로 제시하지 않았다. 본 연구는 이 간극을 메운다.
+초음파 기반 간 국소 병변 딥러닝 분류 연구는 2020년을 전후하여 본격적으로 성장하였다. Yang 등(2020, *EBioMedicine*)은 13개 기관 2,143명 데이터에서 AUROC 0.924를 달성하였고, 이는 15년 경력 임상의 236명의 성능을 유의하게 상회하였다.[6] 이후 다기관 전향 연구(Du 등, 2025, *eClinicalMedicine*)까지 이어진 이 분야의 발전에도 불구하고, 기존 연구들의 공통적 구조적 특징은 **단일 softmax 출력(또는 그 후처리 조합)**을 최종 진단 지표로 사용한다는 점이다.[6][27] 어느 연구도 모델이 학습한 임베딩 공간의 기하학적 구조, 즉 병변이 전형적인 HCC 표현의 중심과 얼마나 가까운지를 독립적인 진단 표지자로 제시하지 않았다. 본 연구는 이 간극을 메운다.
 
 임상적으로도 해결되지 않은 필요가 존재한다. Tzartzeva 등(2018)의 메타분석에서 초음파 단독 HCC 감지 민감도는 47%에 불과하였으며, AFP 병용 시에도 63% 수준에 머물렀다.[4] 이 한계의 일부는 초음파 자체의 해상도가 아니라, 판독 과정에서 병변의 suspiciousness를 연속형으로 표현하는 보조 지표의 부재에서 기인한다. B-mode 영상 한 장에서 임상의의 유사성 기반 추론을 반영하는 정량적 영상표지자가 제공된다면, 추가 검사 의뢰, 재검 간격 조정, 전문의 판독 의뢰와 같은 실제 의사결정을 지원하는 보조 도구로 기능할 수 있다.
 
@@ -238,7 +237,7 @@ Cosine score를 의미 있는 표지자로 삼으려면, 임베딩 공간 자체
 
 ### 4.7 한계 및 향후 연구 방향
 
-**단일 기관 후향적 설계.** Yang 등(2020)이 13개 기관, Du 등(2025)이 다기관 전향 검증을 수행한 것과 달리, 본 연구는 단일 기관 데이터(SMC-LUD)에 기반한다. 기관별 초음파 장비, 영상 획득 프로토콜, annotation 방식의 차이로 인해 외적 타당도는 검증되지 않았으며, 이중 출력 체계의 임상적 신뢰도 확립을 위해서는 다기관 전향 코호트에서의 외부 검증이 필수적이다.
+**단일 기관 후향적 설계.** Yang 등(2020)이 13개 기관, Du 등(2025)이 다기관 전향 검증을 수행한 것과 달리, 본 연구는 단일 기관 데이터(SMC-LUD)[14]에 기반한다. 기관별 초음파 장비, 영상 획득 프로토콜, annotation 방식의 차이로 인해 외적 타당도는 검증되지 않았으며, 이중 출력 체계의 임상적 신뢰도 확립을 위해서는 다기관 전향 코호트에서의 외부 검증이 필수적이다.
 
 **혈청표지자 대비 증분 이득 미평가.** AFP 및 PIVKA-II와의 직접적인 증분 이득 비교가 이루어지지 않았다. HCC cosine score가 AFP에 추가하여 독립적인 진단 가치를 제공하는지 평가하려면 별도 연구가 필요하다.
 
@@ -330,7 +329,7 @@ Cosine score를 의미 있는 표지자로 삼으려면, 임베딩 공간 자체
 11. *(EfficientNetV2 + ViT hybrid ultrasound classification — Diagnostics 2026, 삽입 예정)*
 12. Selvaraju RR, Cogswell M, Das A, et al. Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization. *ICCV*. 2017:618–626.
 13. Collins GS, Reitsma JB, Altman DG, Moons KGM. Transparent Reporting of a Multivariable Prediction Model for Individual Prognosis or Diagnosis (TRIPOD). *BMJ*. 2015;350:g7594.
-14. *(SMC-LUD: Samsung Medical Center Liver Ultrasound Dataset. Sci Data, Nature Portfolio, 2026 — DOI 삽입 예정)*
+14. Tak J, Ko RE, Kwon RD, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. *Sci Data*. 2026;13:649. https://doi.org/10.1038/s41597-026-07023-7
 15. Khosla P, Tian Y, Wang X, et al. Supervised Contrastive Learning. *NeurIPS*. 2020;33:18661–18673.
 16. DeLong ER, DeLong DM, Clarke-Pearson DL. Comparing the Areas under Two or More Correlated Receiver Operating Characteristic Curves: A Nonparametric Approach. *Biometrics*. 1988;44(3):837–845.
 17. Vickers AJ, Elkin EB. Decision Curve Analysis: A Novel Method for Evaluating Prediction Models. *Med Decis Making*. 2006;26(6):565–574.
