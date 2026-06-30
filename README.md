@@ -246,68 +246,25 @@ GitHub: [kimhs950627](https://github.com/kimhs950627)
 
 ---
 
-## 📋 TODO — 결과 수치 기입 목록 (paper_outline_medical_journal.md)
+## 📋 TODO — 논문 수치 및 행정 정보 기입 목록 (paper_outline_medical_journal.md 연동)
+=============================================================================
+논문 초고 파일의 `> 📝 **[TODO: ...]**` 태그와 연동되는 체크리스트입니다.
 
-> **작성일**: 2026-06-30  
-> 아래 항목들은 `paper_outline_medical_journal.md` 내 결과 표에 채워 넣어야 할 수치들이다.  
-> 실험 완료 후 순서대로 확인하고 ✅ 표시할 것.
+### 행정 및 데이터 정보
+- [ ] **[TODO: IRB]** IRB 승인번호 확인 및 기입 (2.1절)
+- [ ] **[TODO: 메타데이터]** 연령, 성별, 간경변 유무, 병변 크기 등 임상 메타데이터 요약 표 작성 (2.2절)
+- [ ] **[TODO: 인구통계표]** 환자 인구통계학적 정보 및 병변 수준 요약 Table 1 완성 (3.1절)
 
-### [Table 1] Ablation — Backbone × Training Mode (Val set)
+### 실험 결과 수치 기입
+- [ ] **[TODO: Table 2]** Ablation 표 (ResNet/EfficientNet + CE/SupCon/SSL) 8개 실험 수치 빈칸 채우기
+- [ ] **[TODO: Test 결과]** Table 3의 Test Set AUROC, Sens, Spec, PPV, NPV, F1 등 기입
+- [ ] **[TODO: ROC 비교]** Table 4 (ROC-B, ROC-C) 계산 및 쌍별 DeLong p-value 수치 기입
+- [ ] **[TODO: 불일치 분석]** Table 5의 Dual-Output 4분면 케이스 N 수 기입
+- [ ] **[TODO: Appendix B]** cfg 확정 후 하이퍼파라미터(Batch, LR, Epoch 등) 표 완성
 
-각 실험 번호(#1~8)에 대해 다음 수치를 채울 것:
+### 그림(Figure) 삽입
+- [ ] **[TODO: 3종 ROC]** ROC-A, ROC-B, ROC-C 겹쳐 그린 Figure 1 삽입
+- [ ] **[TODO: t-SNE / DCA]** (옵션) t-SNE 군집화 그림 및 의사결정 곡선(DCA) 그림 삽입 여부 결정
 
-- [ ] **#1** ResNet50V2 / CE Only → AUROC, Sens, Spec, F1, Cutoff
-- [ ] **#2** EfficientNetV2B0 / CE Only → AUROC, Sens, Spec, F1, Cutoff
-- [ ] **#3** ResNet50V2 / CE+SupCon → AUROC, Sens, Spec, F1, Cutoff
-- [x] **#4** EfficientNetV2B0 / CE+SupCon → **기입 완료** (AUROC 1.000, Sens 94.3%, Spec 100.0%, F1 0.971, Cutoff 0.004)
-- [ ] **#5** ResNet50V2 / VICReg (SSL) → AUROC (미실행 → 실행 후 기입)
-- [ ] **#6** EfficientNetV2B0 / VICReg (SSL) → AUROC (linear probe)
-- [ ] **#7** ResNet50V2 / NNCLR (SSL) → AUROC (linear probe)
-- [ ] **#8** EfficientNetV2B0 / NNCLR (SSL) → AUROC (linear probe)
-
-### [Table 2] Primary Model — Confidence Score (Test set)
-
-> 기준 모델: EfficientNetV2B0 + CE + SupCon (W&B run: `znkaz53c`)
-
-- [ ] Test set AUROC + 95% CI (DeLong)
-- [ ] Test set Accuracy, Sensitivity, Specificity
-- [ ] Test set PPV, NPV, F1
-- [ ] Test set Confusion matrix: TP / FP / FN / TN
-
-### [Table 3] Three-Way ROC Comparison — Dual Output (Val set)
-
-> Cosine score 계산 필요 (prototype 구성 → inference → ROC 분석)
-
-- [ ] **ROC-B**: HCC Cosine Score → AUROC + 95% CI + DeLong p-value vs ROC-A
-- [ ] **ROC-C**: Δscore (HCC cos − Hem cos) → AUROC + 95% CI + DeLong p-value vs ROC-A
-- [ ] ROC-A vs ROC-B pairwise DeLong test
-- [ ] ROC-A vs ROC-C pairwise DeLong test
-
-### [Table 4] Dual-Output Discordance Analysis (Val set)
-
-> Confidence score cutoff (0.004) + Δscore cutoff (Youden's J, Val set) 적용 후:
-
-- [ ] Concordant High (둘 다 high): N = ___
-- [ ] Discordant (Conf high / Δscore low): N = ___
-- [ ] Discordant (Conf low / Δscore high): N = ___
-- [ ] Concordant Low (둘 다 low): N = ___
-
-### [Appendix B] Hyperparameter 설정
-
-- [ ] Stage 1 (SSL): batch size, LR, epochs, Transformer depth, embedding dim
-- [ ] Stage 1: SupCon τ (해당 없음) / VICReg λ·μ·ν (기본값 25/25/1 확인)
-- [ ] Stage 1: NNCLR queue size
-- [ ] Stage 2: batch size, epochs, Transformer depth, embedding dim, SupCon τ
-- [ ] cfg 파일 확정 후 Appendix B 전체 기입
-
-### 기타 (선택 사항)
-
-- [ ] t-SNE 시각화 figure → paper_outline Figure 1 위치에 삽입
-- [ ] Decision Curve Analysis (DCA) 결과 → 추가 Figure
-- [ ] 임상 메타데이터 (연령, 성별, 병변 크기) 가용 시 Table 1 보완
-- [ ] IRB 승인번호 확인 후 2.1절 삽입
-- [ ] 참고문헌 [8], [11], [14] DOI 확정 후 삽입
-
-
-*Last updated: 2026-06-30*
-
+### 참고문헌
+- [ ] **[TODO: 참고문헌]** [8], [14], [16], [17] 등 미확정 서지정보(DOI) 최종 업데이트
