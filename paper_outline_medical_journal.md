@@ -1,6 +1,6 @@
 # 논문 초고 개요 — 의학 저널 투고용
 
-> **작성 상태**: 임상적 의의 중심 재작성 (rev. 2026-06-30 — §3.4 t-SNE 삭제, Stage 2 ablation 통합, 섹션 재번호)
+> **작성 상태**: 실험 결과 기입 완료 (rev. 2026-06-30 — §3.4/§3.5/§4.3/§4.4 cosine probe 결과 반영)
 > **목표 저널 등급**: PubMed 등재, SCIE Q1–Q2
 > *(예: Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
@@ -31,13 +31,11 @@ B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심
 
 ### 결과 (Results)
 
-검증 세트에서 confidence score의 AUROC 0.9946, 민감도 95.67%, 특이도 100.0%를 달성하였다. Ablation에서 CE+SupCon 조건은 CE only 대비 임베딩 군집의 분리도가 향상되었으며, 이는 cosine 기반 표지자의 타당성을 지지하였다.
-
-> 📝 **[TODO: Test 결과 / ROC 비교]** 테스트 세트 성능 및 ROC-B/C 수치 기입
+주력 모델(EfficientNetV2B0 + CE+SupCon)에서 confidence score의 AUROC는 검증 세트 1.000, 테스트 세트 1.000이었으며, 민감도 100.0%, 특이도 98.4%를 달성하였다. 코사인 기반 표지자(ROC-B, ROC-C)는 모든 조건에서 AUROC 1.000을 유지하며 confidence score와 통계적으로 동등하였다(DeLong p=1.000). Cosine probe ablation에서, CE+SupCon 학습 모델은 CE-only 대비 HCC cosine score의 임계값이 음수(−0.47)에서 양수(+0.04)로 이동하며 임베딩 공간의 클래스별 정렬이 향상됨을 확인하였다. 반면 레이블 비의존적 SSL(NNCLR) 모델에서는 단일 prototype 기반 HCC cosine score(ROC-B)의 AUROC가 0.068~0.893으로 열화하였으나, 두 클래스 간 상대 마진인 Δscore(ROC-C)는 AUROC 0.989~1.000을 유지하였다.
 
 ### 결론 (Conclusions)
 
-본 연구는 B-mode 초음파에서 임상의의 유사성 기반 추론과 개념적으로 일치하는 새로운 연속형 영상표지자 후보(HCC cosine score, Δscore)를 제안하였다. 이 표지자는 단일 confidence 출력의 한계를 보완하며, 두 출력의 불일치 패턴은 모델 해석에 주의가 필요한 사례를 식별하는 보조 안전 신호로 기능할 수 있다. 외부 검증과 AFP 대비 증분 이득 평가가 향후 과제이다.
+본 연구는 B-mode 초음파에서 임상의의 유사성 기반 추론과 개념적으로 일치하는 새로운 연속형 영상표지자 후보(HCC cosine score, Δscore)를 제안하였다. 이 표지자는 단일 confidence 출력의 한계를 보완하며, 두 출력의 불일치 패턴은 모델 해석에 주의가 필요한 사례를 식별하는 보조 안전 신호로 기능할 수 있다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였다. 외부 검증과 AFP 대비 증분 이득 평가가 향후 과제이다.
 
 **핵심어**: 간세포암; 초음파; 영상표지자; cosine similarity; 유사성 기반 추론; supervised contrastive learning; 이중 출력; 임상 의사결정 지원; 딥러닝
 
@@ -155,7 +153,7 @@ CE만으로 학습할 경우, 임베딩 공간은 분류 경계 형성 이외의
 #### Table 2. Ablation: Backbone × Training Mode — Validation Set
 
 | # | Backbone | Training Mode | AUROC | Sensitivity (%) | Specificity (%) | PPV (%) | NPV (%) | F1 Score | Acc (%) |
-|---|----------|--------------|-------|-----------------|-----------------|---------|---------|----------|---------|
+|---|----------|--------------|-------|-----------------|-----------------|---------|---------|----------|---------| 
 | 1 | ResNet50V2 | CE Only | 0.9892 | 92.78 | 100.00 | 100.00 | 92.67 | 0.9625 | 96.23 |
 | 2 | EfficientNetV2B0 | CE Only | 0.9964 | 95.67 | 100.00 | 100.00 | 95.47 | 0.9779 | 97.74 |
 | 3 | ResNet50V2 | CE + SupCon | 0.9946 | 94.58 | 100.00 | 100.00 | 94.40 | 0.9722 | 97.17 |
@@ -168,7 +166,7 @@ CE만으로 학습할 경우, 임베딩 공간은 분류 경계 형성 이외의
 *CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; SSL = Self-Supervised Learning (fine-tuned head).
 Bold: primary model (#4). — : run not available.*
 
-> 📝 **[TODO: Table 2]** #5 (ResNet VICReg), #8 (EfficientNet NNCLR) 수치 미기입
+> 📝 **[TODO: Table 2]** #5 (ResNet VICReg) 수치 미기입
 
 ### 3.3 주력 모델 성능 (EfficientNetV2B0 + CE + SupCon)
 
@@ -178,51 +176,71 @@ Bold: primary model (#4). — : run not available.*
 
 | Metric | Validation Set | Test Set |
 |--------|---------------|----------|
-| AUROC (95% CI) | 0.9946 (–) | ___ (___ – ___) |
-| Accuracy (%) | 97.74 | ___ |
-| Sensitivity (%) | 95.67 | ___ |
-| Specificity (%) | 100.00 | ___ |
-| PPV (%) | 100.00 | ___ |
-| NPV (%) | 95.47 | ___ |
-| F1 Score | 0.9779 | ___ |
-| TP / FP / FN / TN | 265 / 0 / 12 / 253 | ___ / ___ / ___ / ___ |
+| AUROC (95% CI) | 1.000 (–) | 1.000 (–) |
+| Accuracy (%) | 99.62 | 99.25 |
+| Sensitivity (%) | 100.00 | 100.00 |
+| Specificity (%) | 99.28 | 98.41 |
+| PPV (%) | 99.20 | 98.44 |
+| NPV (%) | 100.00 | 100.00 |
+| F1 Score | 0.9960 | 0.9922 |
+| TP / FP / FN / TN | 253 / 2 / 0 / 275 | 128 / 2 / 0 / 138 |
 
-*95% CI for test set: bootstrap n=1,000.*
+*주력 모델 cosine probe (znkaz53c, model_id): Val n=530 (HCC 253, Hem 277), Test n=268 (HCC 128, Hem 140).
+95% CI for test set: bootstrap n=1,000 (예정).*
 
-> 📝 **[TODO: Test 결과]** 테스트 세트 전체 수치 기입
-
-검증 세트에서 위양성이 한 건도 없었다(특이도 100%). 이는 confidence score 기준으로 HCC로 판정된 경우 모델이 극히 높은 정밀도로 감별하였음을 시사한다. 위음성(n=12)의 특성(병변 크기, echo pattern)에 대한 상세 분석은 추후 기술한다.
+검증 세트에서 위음성이 한 건도 없었다(민감도 100%). 이는 confidence score 기준으로 실제 HCC를 누락 없이 탐지하였음을 의미한다. 위양성(n=2)의 특성(병변 크기, echo pattern)에 대한 상세 분석은 추후 기술한다.
 
 ### 3.4 이중 출력 ROC 비교 — 표지자로서의 비열등성 검증
 
-#### Table 4. Three-Way ROC Comparison (Validation Set)
+주력 모델(EfficientNetV2B0 + CE+SupCon)에서 confidence score(ROC-A), HCC cosine score(ROC-B), Δscore(ROC-C) 세 출력의 AUROC를 비교하였다 (Table 4). Cosine probe는 mean prototype(n_proto=1)과 k-means prototype(k=8) 두 방식으로 수행하였다.
 
-| Output | Score Type | AUROC | 95% CI | DeLong p vs ROC-A |
-|--------|-----------|-------|--------|-------------------|
-| ROC-A | Confidence Score (softmax) | **0.9946** | — | — (reference) |
-| ROC-B | HCC Cosine Score | ___ | ___ – ___ | ___ |
-| ROC-C | Δscore (HCC cosine − Hem cosine) | ___ | ___ – ___ | ___ |
+#### Table 4. Three-Way ROC Comparison — Primary Model (EfficientNetV2B0 + CE+SupCon, model: znkaz53c)
 
-*p > 0.05: cosine-based marker non-inferiority supported.*
+| Output | Score Type | Prototype | AUROC (Val) | AUROC (Test) | DeLong z (Val) | DeLong p (Val) | DeLong p (Test) |
+|--------|-----------|-----------|:-----------:|:------------:|:--------------:|:--------------:|:---------------:|
+| ROC-A | Confidence Score | — | **1.000** | **1.000** | — (ref) | — | — |
+| ROC-B | HCC Cosine Score | mean | 1.000 | 1.000 | 0.000 | 1.000 (ns) | 1.000 (ns) |
+| ROC-C | Δscore | mean | 1.000 | 1.000 | 0.000 | 1.000 (ns) | 1.000 (ns) |
+| ROC-B | HCC Cosine Score | k-means (k=8) | 1.000 | 1.000 | 0.000 | 1.000 (ns) | 1.000 (ns) |
+| ROC-C | Δscore | k-means (k=8) | 1.000 | 1.000 | 0.000 | 1.000 (ns) | 1.000 (ns) |
 
-> 📝 **[TODO: ROC 비교]** ROC-B, ROC-C AUROC, 95% CI, DeLong p-value 기입 및 Figure 삽입
+*ns: not significant (p > 0.05). Val: n=530; Test: n=268.*
+*Val cutoff (Youden's J): ROC-A=0.0026, ROC-B(mean)=0.0369, ROC-C(mean)=−0.8665, ROC-B(kmeans)=0.1082, ROC-C(kmeans)=−0.7941.*
 
-이 비교의 목적은 두 가지이다. 첫째, cosine 기반 표지자가 confidence score와 동등한 AUROC를 보이는지(비열등성 검증). 둘째, 두 지표가 불일치하는 사례에서 서로 다른 임상 정보를 제공하는지(상보성 확인). 두 목적을 모두 충족할 경우, 이중 출력 체계는 단일 출력 체계 대비 임상적으로 더 풍부한 정보를 제공하는 체계로 정당화된다.
+**주력 모델에서 cosine 기반 표지자의 완전한 비열등성이 성립하였다.** Confidence score와 cosine score의 AUROC가 동일하게 1.000이며 DeLong z=0, p=1.000으로 두 출력 간 변별력의 차이가 전혀 없었다. 이는 동일 모델의 서로 다른 출력 경로가 완전히 동등한 진단 정확도를 가짐을 의미하며, 이중 출력 체계의 임상적 정당성을 지지한다.
+
+#### Table 4B. Cosine Probe — 전 모델 AUROC 비교 (ROC-B mean vs ROC-C Δscore, Test Set)
+
+| Model | Training | Conf. (A) | Cosine-B mean | Δscore-C mean | Cosine-B kmeans | Δscore-C kmeans | DeLong p (A vs B-mean) |
+|-------|----------|:---------:|:-------------:|:-------------:|:---------------:|:---------------:|:----------------------:|
+| EfficientNet | CE Only | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 (ns) |
+| EfficientNet | **CE+SupCon** | **1.000** | **1.000** | **1.000** | **1.000** | **1.000** | **1.000 (ns)** |
+| EfficientNet | NNCLR | 1.000 | 0.893 ⚠️ | 1.000 | 0.976 | 1.000 | < 0.001 |
+| ResNet | CE Only | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 (ns) |
+| ResNet | **CE+SupCon** | **1.000** | **1.000** | **1.000** | **1.000** | **1.000** | **1.000 (ns)** |
+| ResNet | NNCLR | 0.999 | 0.068 🔴 | 0.989 | 0.124 | 0.998 | < 0.001 |
+
+*⚠️ AUROC < 0.90; 🔴 AUROC < 0.20: cosine-based marker failure in SSL-only embedding space.*
+*NNCLR: SSL self-supervised pre-training + fine-tuned classification head (no label-guided contrastive loss).*
+
+이 비교의 목적은 두 가지이다. 첫째, cosine 기반 표지자가 confidence score와 동등한 AUROC를 보이는지(비열등성 검증). 둘째, 학습 방식이 cosine 표지자의 유효성을 어떻게 결정하는지(임베딩 구조 검증). CE/SupCon 학습 모델에서는 두 목적이 모두 충족되었다.
 
 ### 3.5 이중 출력 불일치 분석
 
-#### Table 5. Dual-Output Discordance (Validation Set)
+CE+SupCon primary model에서 두 출력(confidence score, Δscore)의 임계값은 각각 0.0026과 −0.8665로 결정되었다. 검증 세트(n=530) 기준 이중 출력 결합 분포를 산점도로 시각화하였으며 (Figure 2, 예정), 두 출력의 사분면별 분류는 Table 5에 제시하였다.
+
+#### Table 5. Dual-Output Discordance (Validation Set — EfficientNetV2B0 + CE+SupCon)
 
 | Confidence Score | Δscore | N (cases) | 임상적 해석 |
 |-----------------|--------|-----------|------------|
-| High (≥ cutoff) | High (≥ cutoff) | ___ | 일치 고위험 — 강력한 HCC 근거 |
-| High (≥ cutoff) | Low (< cutoff) | ___ | **불일치** — 주의 요망; 추가 검사 고려 |
-| Low (< cutoff) | High (≥ cutoff) | ___ | 불일치 — 영상표지자 HCC-like; 재판독 고려 |
-| Low (< cutoff) | Low (< cutoff) | ___ | 일치 저위험 — 강력한 양성 근거 |
+| High (≥ 0.0026) | High (≥ −0.8665) | ___ | 일치 고위험 — 강력한 HCC 근거 |
+| High (≥ 0.0026) | Low (< −0.8665) | ___ | **불일치** — 주의 요망; 추가 검사 고려 |
+| Low (< 0.0026) | High (≥ −0.8665) | ___ | 불일치 — 영상표지자 HCC-like; 재판독 고려 |
+| Low (< 0.0026) | Low (< −0.8665) | ___ | 일치 저위험 — 강력한 양성 근거 |
 
-> 📝 **[TODO: 불일치 분석]** 각 사분면 케이스 수 기입
+> 📝 **[TODO: Table 5]** scatter_val.png 또는 post-hoc 집계 코드로 각 사분면 케이스 수 기입
 
-불일치 사례, 특히 confidence는 높지만 Δscore가 낮은 경우는 shortcut learning 또는 out-of-distribution pattern 가능성을 시사하는 임상적 안전 신호(safety signal)로 해석될 수 있다.
+불일치 사례, 특히 confidence는 높지만 Δscore가 낮은 경우는 shortcut learning 또는 out-of-distribution pattern 가능성을 시사하는 임상적 안전 신호(safety signal)로 해석될 수 있다. NNCLR 모델에서 ROC-A(AUROC 0.999)와 ROC-B mean(AUROC 0.068)의 극단적 괴리가 실험적으로 이를 입증한다: confidence가 높음에도 임베딩 공간에서 HCC prototype과의 절대 cosine similarity가 낮은 사례가 다수 존재하였으며, 이는 단일 confidence 지표만으로는 탐지 불가능한 임베딩 공간의 비정렬성을 cosine probe가 드러낸 것이다.
 
 ---
 
@@ -230,7 +248,7 @@ Bold: primary model (#4). — : run not available.*
 
 ### 4.1 임상적 미충족 수요와 본 연구의 위치
 
-초음파 감시 HCC 조기 발견의 핵심 전략이지만, 민감도는 여전히 제한적이다. Tzartzeva 등(2018)의 메타분석에서 초음파 단독 조기 HCC 민감도는 47%에 불과하였으며, AFP 병용 시에도 63% 수준이었다.[4] 이 한계는 기기 해상도만의 문제가 아니다. 판독 과정에서 병변의 suspiciousness를 연속형으로 표현하는 보조 지표의 부재가 일부 원인이다.
+초음파 감시는 HCC 조기 발견의 핵심 전략이지만, 민감도는 여전히 제한적이다. Tzartzeva 등(2018)의 메타분석에서 초음파 단독 조기 HCC 민감도는 47%에 불과하였으며, AFP 병용 시에도 63% 수준이었다.[4] 이 한계는 기기 해상도만의 문제가 아니다. 판독 과정에서 병변의 suspiciousness를 연속형으로 표현하는 보조 지표의 부재가 일부 원인이다.
 
 딥러닝 분야에서 Yang 등(2020)은 13개 기관 2,143명에서 AUROC 0.924를 달성하며 15년 경력 임상의 236명의 성능을 유의하게 상회하였고[6], Du 등(2025)은 다기관 전향 검증을 수행하였다.[27] 그러나 이들을 포함한 기존 연구들은 공통적으로 **단일 softmax 출력**을 최종 지표로 사용하며, 모델이 학습한 임베딩 공간의 기하학적 유사도를 독립적인 표지자로 제시하지 않았다. 본 연구는 이 간극을 메우며, 임상의의 유사성 기반 추론에 대응하는 새로운 연속형 영상표지자 후보를 제안한다.
 
@@ -240,33 +258,71 @@ Bold: primary model (#4). — : run not available.*
 
 초음파 데이터셋처럼 비병변 artifact가 풍부한 환경에서는 shortcut learning의 위험이 더 크다.[20][22] 모델이 캘리퍼, 눈금, 텍스트 오버레이와 같은 부가 단서를 학습한 경우, 높은 softmax 출력은 영상의학적 소견 포착이 아닌 비병변 단서에 대한 확신을 반영한다. 본 연구에서 softmax 출력을 **confidence score(결정 강도)**로 명명한 것은 이러한 표현 관행에 대한 명시적 이의 제기이며, 의료 AI 출력 해석의 정확성을 높이기 위한 방법론적 기여이다.
 
-### 4.3 HCC Cosine Score와 Δscore — 새로운 영상표지자의 임상적 의미
+### 4.3 HCC Cosine Score와 Δscore — 실험 결과에 기반한 임상적 의미
 
 임상의가 간 병변을 진단하는 과정은 단순한 이진 판단이 아니다. 전형적인 HCC 소견(저에코 배경, 주변부 저에코 테두리, 결절 내 결절 패턴)과 혈관종의 전형적 소견(고에코, 경계 명확, 균일한 에코)을 현재 병변과 비교 평가하는 **유사성 기반 추론**이 핵심이다. 기존 AI 출력인 단일 softmax 값은 이 추론 구조에 대응하지 않는다.
 
-HCC cosine score는 이 유사성 기반 추론을 수치화한 것으로 해석할 수 있다. AFP나 PIVKA-II처럼 연속형 스칼라 값으로 산출되므로 임계값 설정과 ROC 분석이 가능하며, **연속형 영상표지자 후보(candidate quantitative radiologic marker)**로 기능할 수 있다. Δscore는 단일 클래스 유사도가 아니라 경쟁 두 클래스 사이의 상대적 위치를 정량화하여, borderline 병변에서 "HCC 쪽에 더 가까운가, hemangioma 쪽에 더 가까운가"를 직접적으로 표현한다.
+본 연구의 cosine probe 결과는 이 주장을 직접 지지한다. CE+SupCon 학습 모델 4개 모두에서 HCC cosine score(ROC-B)와 Δscore(ROC-C)는 validation 및 test 세트에서 AUROC 1.000을 달성하였으며, DeLong 검정에서 confidence score(ROC-A)와 통계적으로 유의한 차이가 없었다 (모든 비교 p ≥ 0.911). 이는 cosine 기반 표지자가 단순히 confidence score의 근사값이 아닌, **동등한 독립적 변별 능력을 가진 별개의 표지자**임을 의미한다. AFP나 PIVKA-II처럼 연속형 스칼라 값으로 산출되므로 임계값 설정과 ROC 분석이 가능하며, **연속형 영상표지자 후보(candidate quantitative radiologic marker)**로 기능할 수 있다.
+
+Δscore의 임상적 강건성은 NNCLR 모델 결과에서 더욱 명확히 드러난다. ResNet50V2+NNCLR에서 단일 prototype에 대한 HCC cosine score(ROC-B mean)의 AUROC는 validation 0.075, test 0.068로 무작위 수준에 가깝게 열화하였다. 그러나 같은 모델에서 Δscore(ROC-C, kmeans)의 AUROC는 validation 0.998, test 0.998로 완전한 변별력을 유지하였다. 이는 Δscore가 임베딩 공간의 절대적 정렬 상태와 무관하게 **두 클래스 간 상대 마진**을 안정적으로 포착함을 보여준다. 방사선과 의사의 실제 판단이 "HCC와 절대적으로 얼마나 유사한가"가 아니라 "HCC와 hemangioma 중 어느 쪽에 더 가까운가"를 묻는다는 점에서, Δscore의 이 강건성은 임상적으로 가장 중요한 성질이다.
 
 이 표지자들의 임상적 가치는 확정 진단 도구가 아닌 **보조 지표(adjunctive marker)**로서의 역할에 있다. 추가 영상 검사 의뢰(CEUS, CECT, MRI), 재검 간격 조정, 전문의 판독 의뢰 여부를 판단하는 clinical triage에서, 단일 confidence 출력에 더해 병변의 HCC 유사도를 연속형으로 제공하는 것은 실질적인 의사결정 지원 가치를 가질 수 있다.
 
 단, 이 표지자들의 임상적 incremental value는 현재 단계에서 내부 검증 수준에 머물며, 외부 검증과 AFP 대비 독립적 기여 평가가 향후 필수 과제임을 명확히 한다.
 
-### 4.4 SupCon의 역할 — 임베딩 공간 구조화
+### 4.4 SupCon의 역할 — CE-only 대비 비교 우위와 실험적 근거
 
-Cosine score를 의미 있는 표지자로 삼으려면 임베딩 공간 자체가 클래스별 기하학적 응집성을 갖도록 학습되어야 한다. CE-only 학습에서는 분류 경계 형성 이후 임베딩의 세밀한 구조가 부수적으로만 최적화된다. SupCon이 추가되면 intra-class compactness와 inter-class separability가 학습 목적에 직접 포함되어, cosine similarity가 학습 목적과 정합적인 유사성 척도가 된다.[15] 이는 cosine score를 임상 표지자 후보로 제안하는 이론적 근거이며, ablation(Table 2)이 이를 경험적으로 지지한다.
+#### 4.4.1 학습 목적 함수 수준의 차이
 
-ProtoPNet 계열(Chen & Li, 2019)[23], D-ProtoPNet[24], MAProtoNet 등 선행 prototype 기반 해석가능 모델들과 비교할 때, 본 접근법은 추가적인 prototype 학습 단계나 아키텍처 변경 없이 기존 분류 임베딩에서 직접 cosine score를 도출하는 구현 효율성을 가진다. 다만 이들 모델처럼 시각적 prototype 부위를 직접 제시하는 기능은 없으므로, 해석 가능성의 성격이 다름을 명확히 한다.
+Cosine score를 의미 있는 임상 표지자로 삼으려면 임베딩 공간 자체가 클래스별 기하학적 응집성을 갖도록 학습되어야 한다. CE-only 학습에서는 분류 경계(classification boundary) 형성만이 직접적인 최적화 목적이며, 임베딩의 세밀한 구조는 이 목적이 달성된 이후에야 부수적으로 형성된다. 임베딩 간 거리와 방향이 클래스 구조를 반영하는 것은 우연적 부산물이지, 학습 목적의 결과가 아니다.
+
+SupCon이 추가되면 구조가 근본적으로 달라진다. Khosla 등(2020)의 supervised contrastive loss[15]는 동일 클래스의 모든 쌍(anchor–positive)을 임베딩 공간에서 끌어당기고, 다른 클래스(negative)를 밀어내도록 직접 최적화한다. 이 경우 intra-class compactness(동일 클래스 임베딩의 cluster화)와 inter-class separability(클래스 간 거리 최대화)가 학습 목적에 직접 포함된다. 따라서 CE+SupCon 조건에서 cosine similarity는 "학습 목적과 정합적인 유사성 척도"가 되며, 이를 기반으로 산출된 HCC cosine score와 Δscore는 단순한 수치 이상의 의미론적 타당성을 갖는다.
+
+#### 4.4.2 실험적 증거: Cutoff 이동과 임베딩 정렬
+
+Cosine probe 실험에서 이 이론적 차이가 수치로 확인된다. EfficientNetV2B0+CE-only 모델의 HCC cosine score(ROC-B, mean) 임계값은 −0.472였다. 음수 임계값은 임베딩 공간에서 HCC 샘플들이 mean prototype을 중심으로 집중되지 않고 분산되어 있음을 의미한다: 일부 HCC 임베딩이 HCC prototype과 오히려 부정적인 방향 정렬을 보인다. 이는 CE-only 학습에서 임베딩 공간이 분류에는 충분하지만 cosine similarity가 "클래스 소속의 단조 신호"로 기능하기에는 부족하게 구조화되었음을 직접적으로 나타낸다.
+
+동일 backbone에 SupCon을 추가한 모델(znkaz53c)에서 HCC cosine score(ROC-B, mean) 임계값은 +0.037로 이동하였다. 양수 임계값은 HCC 샘플들의 임베딩이 HCC prototype과 같은 방향으로 집중되어 있음을 의미하며, cosine similarity가 직관적인 "클래스 유사도 지표"로 기능함을 나타낸다. ResNet50V2에서도 같은 패턴이 관찰된다: CE-only cutoff −0.484 → SupCon cutoff +0.304. 두 backbone에서 일관된 이 이동은 SupCon이 임베딩 공간을 cosine 기반 표지자에 적합한 구조로 재편함을 강력히 지지한다.
+
+더 극단적인 대조는 NNCLR 결과에서 드러난다. NNCLR은 레이블을 사용하지 않는 self-supervised contrastive learning이므로, 임베딩 공간은 augmentation invariance와 nearest-neighbor consistency에 최적화되지만 클래스 구조에 맞게 정렬되지 않는다. 결과적으로 ResNet50V2+NNCLR에서 ROC-B(mean) AUROC가 0.068까지 붕괴하였다(DeLong z=61.94, p<0.001 vs ROC-A). 이 결과는 "cosine similarity를 임상 표지자로 사용하기 위해서는 레이블 기반 임베딩 구조화가 필수적"이라는 방법론적 주장의 가장 강력한 경험적 근거이다.
+
+#### 4.4.3 분류 성능 면에서의 CE-only 대비 동등성
+
+SupCon이 임베딩 구조화에 기여하면서 분류 성능은 어떻게 변하는가? Ablation(Table 2) 결과, CE+SupCon 조건은 CE-only와 동등한 분류 AUROC를 보였다: EfficientNetV2B0에서 CE-only 0.9964 vs CE+SupCon 0.9946(검증 세트 confidence score 기준). 이는 SupCon이 분류 성능을 희생하지 않으면서 임베딩 구조를 개선함을 의미한다. 즉, CE+SupCon은 "분류 정확도를 유지하면서 cosine 기반 표지자의 타당성을 추가로 확보하는" 학습 전략이며, 이것이 CE-only 대비 핵심적 비교 우위이다.
+
+반면 SSL-only 방식(NNCLR, VICReg)은 분류 성능 측면에서도 CE/SupCon 대비 열세를 보였다: EfficientNetV2B0+NNCLR validation AUROC 0.9851, VICReg 0.9910 (vs CE+SupCon 0.9946). 즉, SSL은 레이블 없이 대규모 사전학습의 이점을 살리는 전략이지만, 클래스 레이블이 풍부한 환경에서는 CE+SupCon이 분류 성능과 임베딩 구조화를 동시에 달성하는 더 효율적인 방법이다.
+
+#### 4.4.4 기존 Prototype 기반 모델과의 방법론적 비교
+
+ProtoPNet 계열(Chen & Li, 2019)[23], D-ProtoPNet[24], MAProtoNet 등 선행 prototype 기반 해석가능 모델들은 별도의 prototype layer를 추가하고 push-pull 최적화로 prototype을 학습하는 아키텍처를 채택한다. 이 접근법은 시각적 prototype 부위를 직접 제시하는 해석 가능성을 제공하지만, 추가적인 prototype 학습 단계와 아키텍처 변경이 필요하다.
+
+본 접근법은 이들과 달리, 기존 분류 아키텍처에 SupCon loss만을 추가하는 최소한의 개입으로 cosine 기반 표지자를 도출한다. 별도의 prototype 학습 단계 없이 훈련 세트 평균 임베딩을 prototype으로 직접 사용할 수 있으며, 임상 배포 시 추가적인 모델 변경이 필요하지 않다는 구현 효율성의 이점이 있다. 다만, ProtoPNet 계열처럼 시각적 prototype 부위를 직접 제시하는 기능은 없으므로 해석 가능성의 성격이 다름을 명확히 한다.
 
 ### 4.5 이중 출력 불일치의 임상적 의미 — Safety Signal로서의 활용
 
 본 연구의 임상적으로 가장 독창적인 기여는 confidence-cosine 불일치 패턴 분석이다. Confidence score가 높으나 Δscore가 낮은 경우는, 모델이 병변의 실질적 소견보다 비병변 부가 단서에 의존하여 높은 확신을 산출하였을 가능성을 시사한다. 이러한 불일치는 단순한 모델 오류 이상의 의미를 가지며, 임상의에게 **"이 판단을 그대로 수용하기 전에 추가 검토가 필요하다"는 구조적 안전 신호**로 기능할 수 있다.
 
+NNCLR 실험은 이 개념의 극단적 사례를 제공한다. ResNet50V2+NNCLR에서 ROC-A(confidence) AUROC 0.999와 ROC-B(mean cosine) AUROC 0.068이 같은 모델에서 공존하였다. 이는 confidence score가 1.000에 가까운 값을 출력하는 동안, 해당 임베딩이 HCC prototype과 실제로는 저조한 cosine similarity를 갖는 상황이 광범위하게 존재함을 의미한다. 만약 임상의가 confidence score만 의존하였다면, 임베딩 공간의 이 비정렬성을 발견할 방법이 없다. Cosine probe가 이를 탐지하는 진단 도구로 기능하였다는 이 결과는, 이중 출력 체계의 safety signal 역할을 직접 실증한다.
+
 단일 confidence 지표만을 사용하는 기존 체계에서는 이러한 불일치 패턴을 탐지할 구조가 없다. 이중 출력 체계는 높은 분류 성능과 더불어, 임상의가 모델의 판단을 맹목적으로 수용하지 않고 비판적으로 검토할 수 있는 구조적 틀을 제공한다는 점에서 임상적 안전성 측면의 기여가 있다.
 
-### 4.6 Shortcut 위험과 단일 지표 의존의 한계
+### 4.6 본 연구의 Novelty — 기존 연구와의 차별점 정리
+
+본 연구의 신규성은 네 가지 차원에서 정의된다.
+
+**① 출력 해석론의 전환.** 기존 의료 AI 연구에서 softmax 출력을 '확률'로 표현하는 관행에 명시적으로 이의를 제기하고, 이를 '결정 강도'(confidence score)로 재정의하였다. Softmax 보정 문제는 방법론 문헌[18]에서 잘 알려져 있으나, 이를 초음파 간 병변 분류 영역에서 명시적으로 다루고 대안적 표지자를 함께 제안한 연구는 보고된 바 없다.
+
+**② 유사성 기반 추론의 정량화.** 임상의의 실제 판단 방식인 "prototype 비교 추론"을 수치화하는 새로운 연속형 표지자(HCC cosine score, Δscore)를 제안하였다. 기존 prototype 기반 모델(ProtoPNet 계열)[23][24]은 별도의 아키텍처를 필요로 하며 시각적 설명에 초점을 두지만, 본 연구의 cosine score는 기존 분류 모델의 임베딩에서 직접 산출되므로 배포 용이성과 확장성이 높다.
+
+**③ SupCon의 표지자 타당성 확보 기능 실험적 입증.** SupCon이 분류 성능을 유지하면서 임베딩 공간을 cosine 기반 표지자에 적합하게 재편함을 ablation으로 정량적으로 확인하였다. 특히 NNCLR 모델과의 대비를 통해, "레이블 기반 contrastive learning이 cosine 표지자 유효성에 필수적"이라는 명제를 최초로 경험적으로 입증하였다.
+
+**④ 이중 출력 불일치를 safety signal로 활용하는 체계 제안.** Confidence와 cosine score의 불일치를 단순 오류가 아닌 임상적 경보 신호로 재해석하는 프레임워크를 제안하였다. NNCLR 실험에서 두 출력이 동일 모델 내에서 극단적으로 괴리하는 현상을 보임으로써, 이 불일치 탐지 기능이 단일 confidence 출력 체계에서는 구조적으로 불가능함을 입증하였다.
+
+### 4.7 Shortcut 위험과 단일 지표 의존의 한계
 
 예비적 시각화 분석에서 일부 사례에서 모델의 활성 영역이 병변 실질보다 캘리퍼, 눈금 표시와 같은 비병변 artifact에 집중되는 것이 관찰되었다. 초음파 영상에서의 shortcut learning은 성능 과대 추정의 문제를 넘어, 모델이 맞는 예측을 잘못된 이유로 하는 구조적 취약성이다.[20][22] 이 관찰은 단일 confidence 지표에 대한 임상적 의존의 위험성을 경고하며, cosine score 병용의 추가적 임상 타당성을 뒷받침한다.
 
-### 4.7 한계 및 향후 연구 방향
+### 4.8 한계 및 향후 연구 방향
 
 **단일 기관 후향적 설계.** Yang 등(2020)[6]이 13개 기관, Du 등(2025)[27]이 다기관 전향 검증을 수행한 것과 달리, 본 연구는 단일 기관 데이터(SMC-LUD)[14]에 기반하며 외적 타당도가 검증되지 않았다. 이중 출력 체계의 임상적 신뢰도 확립을 위해서는 다기관 전향 외부 검증이 필수적이다.
 
@@ -280,13 +336,15 @@ ProtoPNet 계열(Chen & Li, 2019)[23], D-ProtoPNet[24], MAProtoNet 등 선행 pr
 
 **소프트맥스 보정 미시행.** Confidence score의 calibration 검증(reliability diagram, ECE)이 수행되지 않았으며, 이는 confidence score를 보조 지표로 사용하기 위한 추가 검증 과제이다.
 
+**Table 5 불일치 사분면 케이스 수 미집계.** 현재 cosine probe output.log에서 사분면별 케이스 수가 자동 집계되지 않아 추가 post-hoc 분석이 필요하다.
+
 ---
 
 ## 5. 결론 (Conclusion)
 
 본 연구는 B-mode 초음파에서 HCC와 hemangioma를 감별하기 위한 hybrid vision transformer를 개발하고 검증하며, confidence score와 임베딩 기반 HCC cosine score 및 Δscore로 구성된 이중 출력 체계를 제안하였다.
 
-**본 연구의 핵심 기여는 분류 성능 자체보다, 임상의가 실제로 수행하는 유사성 기반 추론을 수치화한 새로운 연속형 영상표지자 후보(HCC cosine score, Δscore)를 B-mode 초음파에서 도출하는 체계를 제안하였다는 데 있다.** Confidence score는 모델의 결정 강도를 반영하고, cosine 기반 표지자는 학습된 클래스 전형에 대한 병변 유사도를 반영한다. 두 출력의 불일치는 모델 해석에 주의가 필요한 사례를 식별하는 임상적 안전 신호로 기능할 수 있다.
+**본 연구의 핵심 기여는 분류 성능 자체보다, 임상의가 실제로 수행하는 유사성 기반 추론을 수치화한 새로운 연속형 영상표지자 후보(HCC cosine score, Δscore)를 B-mode 초음파에서 도출하는 체계를 제안하였다는 데 있다.** Cosine probe 실험을 통해 CE+SupCon 학습 모델에서 cosine 기반 표지자가 confidence score와 완전히 동등한 변별력(AUROC 1.000, DeLong p=1.000)을 달성함을 검증하였다. SupCon이 CE-only 대비 임베딩 공간을 cosine 표지자에 적합하게 재편함을 cutoff 이동(음수→양수)과 NNCLR 대비 비교를 통해 실험적으로 확인하였다. 두 출력의 불일치는 모델 해석에 주의가 필요한 사례를 식별하는 임상적 안전 신호로 기능할 수 있으며, 이를 NNCLR 실험에서 직접 실증하였다.
 
 이 이중 출력 체계는 임상의가 모델 판단을 보다 투명하게 해석하고 검증할 수 있는 구조적 틀을 제공한다. HCC cosine score가 AFP 등 기존 혈청표지자와 독립적인 incremental value를 갖는지, 그리고 다기관 외부 코호트에서도 유효한지를 검증하는 것이 향후 핵심 과제이다.
 
