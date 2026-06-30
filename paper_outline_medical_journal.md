@@ -142,7 +142,7 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 
 **Figure 1. t-SNE Visualization of Embedding Space — Primary Model (EfficientNetV2B0 + CE+SupCon)**
 
-![Figure 1: t-SNE embedding space](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_images_tsne_1_cb091c29ce8931eb7b03.png)
+![Figure 1: t-SNE embedding space](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_images_tsne_1_cb091c29ce8931eb7b03.png)
 
 *Figure 1. t-SNE 시각화 (EfficientNetV2B0 + CE+SupCon, test set). HCC(orange)와 Hemangioma(blue) 클러스터가 임베딩 공간에서 명확히 분리되며 SupCon에 의한 intra-class compactness가 확인된다.*
 
@@ -165,7 +165,7 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 
 | ROC-A (Confidence) | ROC-B (HCC Cosine) | ROC-C (Δscore) |
 |:-:|:-:|:-:|
-| ![](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_confusion_matrix_Test_roc-a_confidence_1_8e29065b489c9e7c3bc0.png) | ![](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_confusion_matrix_Test_roc-b_hcc_cosine___mean_1_7aa636881e683a74d793.png) | ![](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_confusion_matrix_Test_roc-c_deltascore___mean_1_727a59d98729d4bfd21b.png) |
+| ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_confusion_matrix_Test_roc-a_confidence_1_8e29065b489c9e7c3bc0.png) | ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_confusion_matrix_Test_roc-b_hcc_cosine___mean_1_7aa636881e683a74d793.png) | ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_confusion_matrix_Test_roc-c_deltascore___mean_1_727a59d98729d4bfd21b.png) |
 
 *Figure 2. 주력 모델(EfficientNetV2B0 + CE+SupCon) 테스트 세트 혼동행렬. 세 출력 모두 FN=0(HCC 누락 없음)이며 FP는 각 2건이다.*
 
@@ -179,7 +179,7 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 
 | Validation Set | Test Set |
 |:-:|:-:|
-| ![](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_ROC_val_triple_roc_1_1840848b96fefaedc596.png) | ![](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_ROC_test_triple_roc_1_7574e299f1ae003b3844.png) |
+| ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_ROC_val_triple_roc_1_1840848b96fefaedc596.png) | ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_ROC_test_triple_roc_1_7574e299f1ae003b3844.png) |
 
 *Figure 3. 주력 모델에서 ROC-A(confidence), ROC-B(HCC cosine, mean prototype), ROC-C(Δscore) 세 ROC 곡선이 AUROC 1.000에서 완전히 중첩된다. DeLong 검정에서 세 출력 간 유의한 차이는 관찰되지 않았다(모든 p=1.000).*
 
@@ -218,19 +218,19 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 
 | CE+SupCon (EfficientNet) | NNCLR (ResNet) |
 |:-:|:-:|
-| ![](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_images_test_cosine_distribution_1_4a076bff3f189e434863.png) | ![](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/resnet_nnclr/media_images_cosine_probe_images_test_cosine_distribution_0_22ffeb65531736291c1c.png) |
+| ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_images_test_cosine_distribution_1_4a076bff3f189e434863.png) | ![](cosine_probe_result/resnet_nnclr/media_images_cosine_probe_images_test_cosine_distribution_0_22ffeb65531736291c1c.png) |
 
 *Figure 4. HCC cosine score 분포 비교. CE+SupCon 모델(좌)에서는 HCC(orange)와 Hemangioma(blue)의 분포가 명확히 분리된다. NNCLR 모델(우)에서는 두 클래스의 절대 cosine score 분포가 중첩되어 mean prototype 기반 HCC cosine score가 변별력을 상실함을 보인다.*
 
 **Figure 5. Triple ROC — NNCLR Model (ResNet50V2, Test Set): Confidence vs Cosine Score Divergence**
 
-![](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/resnet_nnclr/media_images_cosine_probe_ROC_test_triple_roc_0_f4c3aed46374ba27dd55.png)
+![](cosine_probe_result/resnet_nnclr/media_images_cosine_probe_ROC_test_triple_roc_0_f4c3aed46374ba27dd55.png)
 
 *Figure 5. ResNet50V2+NNCLR 모델에서 ROC-A(confidence, AUROC 0.999)와 ROC-B(HCC cosine mean, AUROC 0.068)의 극단적 괴리가 관찰된다. 동일 모델에서 confidence score가 완전한 변별력을 유지하는 동안 mean prototype 기반 cosine score는 무작위 수준으로 열화하였다. ROC-C(Δscore)는 AUROC 0.989를 유지하였다.*
 
 **Figure 6. Dual-Output Scatter Plot — NNCLR (ResNet50V2, Test Set)**
 
-![](https://raw.githubusercontent.com/kimhs950627/hcc-vs-hemangioma/main/cosine_probe_result/resnet_nnclr/media_images_cosine_probe_scatter_test_conf_vs_cosine_1_2da002dc5f4cabd0151f.png)
+![](cosine_probe_result/resnet_nnclr/media_images_cosine_probe_scatter_test_conf_vs_cosine_1_2da002dc5f4cabd0151f.png)
 
 *Figure 6. ResNet50V2+NNCLR에서 confidence score(x축)와 HCC cosine score(y축)의 결합 분포. Confidence 고값임에도 cosine score가 낮은 영역(우하 사분면)에 다수 데이터가 분포하여, 단일 confidence 지표만으로는 임베딩 공간의 비정렬성이 탐지되지 않음을 보인다. 이중 출력 체계가 이 안전 신호를 드러낸다.*
 
