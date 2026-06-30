@@ -1,6 +1,6 @@
 # 논문 초고 개요 — 의학 저널 투고용
 
-> **작성 상태**: 개정판 (rev. 2026-07-01 — intraclass heterogeneity 논거 추가 (§1.2, §1.3, §4.6), ref [28]–[32] 추가)
+> **작성 상태**: 개정판 (rev. 2026-07-01 — intraclass heterogeneity 논거 추가 (§1.2, §1.3, §4.6), ref [28]–[32] 추가; §3.5 SupCon 필요성 섹션 개편)
 > **목표 저널**: PubMed 등재, SCIE Q1–Q2
 > *(예: Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
@@ -125,7 +125,7 @@ CE만으로 학습할 경우 임베딩 공간은 분류 경계 형성 이외의 
 
 ### 2.7 통계 분석
 
-모델 변별력은 AUROC로 평가하고 신뢰구간은 DeLong 방법으로 추정하였다.[16] ROC-A(confidence score), ROC-B(HCC cosine score), ROC-C(Δscore) 세 ROC 곡선 간 쌍별 비교는 DeLong 검정으로 수행하였으며, p > 0.05를 cosine 기반 표지자의 비열등성(non-inferiority) 지지로 해석하였다. 임계값 의존적 지표로는 민감도·특이도·PPV·NPV·F1·혼동행렬이 포함되었다. 테스트 세트 지표의 신뢰구간은 1,000회 부트스트랩 재표본으로 추정하였다(예정). Confidence score와 Δscore의 결합 분포를 이중 출력 산점도로 시각화하였다. 임상 순편익 평가를 위한 의사결정 곡선 분석(DCA)도 수행하였다.[17]
+모델 변별력은 AUROC로 평가하고 신뢰구간은 DeLong 방법으로 추정하였다.[16] ROC-A(confidence score), ROC-B(HCC cosine score), ROC-C(Δscore) 세 ROC 곡선 간 쌍별 비교는 DeLong 검정으로 수행하였으며, p > 0.05를 cosine 기반 표지자의 비열등성(non-inferiority) 지지로 해석하였다. 임계값 의존적 지표로는 민감도·특이도·PPV·NPV·F1·혼동행렬이 포함되었다. 테스트 세트 지표의 신뢰구간은 1,000회 부트스트랩 재표본으로 추정하였다(예정). Confidence score와 Δscore의 결합 분포를 이중 출력 산점도로 시각화하였다. SupCon 유무에 따른 true HCC cases의 HCC cosine score 및 Δscore 분포 차이는 독립표본 t-검정으로 비교하였다. 임상 순편익 평가를 위한 의사결정 곡선 분석(DCA)도 수행하였다.[17]
 
 ---
 
@@ -215,7 +215,7 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 
 주력 모델에서 cosine 기반 표지자의 완전한 비열등성이 성립하였다. Confidence score와 cosine score의 AUROC가 동일하게 1.000이며 DeLong z=0으로 두 출력 간 변별력의 차이가 전혀 없었다.
 
-#### Table 4B. Cosine Probe — 전 모델 AUROC 비교 (Test Set)
+#### Table 4B. 전 모델 AUROC 비교 (Test Set)
 
 | Model | Training | Conf. (A) | Cosine-B mean | Δscore-C mean | Δscore-C kmeans | DeLong p (A vs B-mean) |
 |-------|----------|:---------:|:-------------:|:-------------:|:---------------:|:----------------------:|
@@ -226,9 +226,29 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 | **ResNet** | **CE+SupCon** | **1.000** | **1.000** | **1.000** | **1.000** | **1.000 (ns)** |
 | ResNet | NNCLR | 0.999 | 0.068 | 0.989 | 0.998 | < 0.001 |
 
-*NNCLR: 2단계 학습 — 1단계: NNCLR label-free SSL 사전학습; 2단계: CE+SupCon 미세조정. 2단계에서 레이블 기반 contrastive loss가 적용되나, SSL 사전학습으로 형성된 임베딩 공간의 초기 구조가 클래스 비의존적으로 편향되어 cosine 표지자의 정렬이 저해된 것으로 해석된다.*
+*NNCLR: 2단계 학습 — 1단계: NNCLR label-free SSL 사전학습; 2단계: CE+SupCon 미세조정. CE+SupCon 조건(bold)에서만 모든 출력의 AUROC가 일관되게 1.000을 유지하였으며 DeLong 검정에서 confidence score와 cosine 기반 표지자 간 통계적 차이가 없었다. NNCLR 조건에서 mean prototype 기반 HCC cosine score의 현저한 열화는 SSL 사전학습이 형성한 클래스 비의존적 임베딩 구조가 CE+SupCon 미세조정 이후에도 완전히 재편되지 않음을 반영한다.*
 
-### 3.5 이중 출력 불일치 분석
+### 3.5 SupCon 학습의 필요성: True HCC Cases에서의 Score 분포 비교
+
+CE 단독 학습과 CE+SupCon 학습 간 cosine 기반 표지자의 분포 차이를 정량적으로 비교하기 위해, 검증 세트와 테스트 세트를 합산한 true HCC cases(n=381)를 대상으로 HCC cosine score 및 Δscore의 분포를 backbone별로 분석하였다(Figure 7, Figure 8).
+
+SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC cases HCC cosine score 중앙값은 0.857이었으나, CE+SupCon 조건에서 0.927로 유의하게 상승하였다(독립표본 t-검정, p < 0.001, ***). ResNet50V2에서도 동일한 방향의 변화가 관찰되었다(CE only: 0.843 → CE+SupCon: 0.918, p < 0.001). Δscore에서도 동일한 패턴이 확인되었다. CE only 조건에서 EfficientNetV2B0의 Δscore 중앙값은 −0.132로 음수를 기록하여, 일부 true HCC cases의 임베딩이 HCC prototype보다 hemangioma prototype에 더 가깝게 위치함을 보였다. CE+SupCon 조건에서 이 값은 +0.061로 부호가 전환되었으며(p < 0.001, ***), ResNet50V2 역시 −0.174에서 −0.097로 상승하였다(p < 0.001).
+
+이 결과는 SupCon이 분류 성능 이외에 임베딩 공간의 클래스별 정렬 구조를 직접적으로 개선함을 실험적으로 입증한다. CE only 조건에서 임베딩은 분류 경계를 넘지 않더라도 prototype 중심에서 이탈한 위치에 분산될 수 있으며, 이 경우 cosine similarity는 클래스 구성원임을 반영하는 타당한 척도로 기능하지 않는다. SupCon 학습은 동일 클래스 임베딩 간의 인력(pull)과 이종 클래스 임베딩 간의 척력(push)을 명시적 학습 목적으로 구성함으로써[15], HCC 표본의 임베딩이 HCC prototype 방향으로 정렬되도록 임베딩 공간을 재편한다. True HCC cases의 HCC cosine score 및 Δscore가 CE+SupCon 조건에서 일관되게 상승하고 군 간 차이가 모두 p < 0.001로 통계적으로 유의한 것은, cosine 기반 표지자가 임상적으로 의미 있는 유사성 척도로 기능하기 위해 SupCon이 필수적 학습 전략임을 뒷받침한다.
+
+**Figure 7. HCC Cosine Score Distribution in True HCC Cases by Training Mode (Val + Test)**
+
+![Figure 7: HCC cosine score distribution](cosine_probe_result/hcc_cosine_annot_distrib.png)
+
+*Figure 7. True HCC cases(Val+Test 합산, n=381)에서 HCC cosine score의 violin+boxplot 분포. CE+SupCon 조건이 CE only 대비 유의하게 높은 HCC cosine score를 보이며(EfficientNetV2B0: p < 0.001; ResNet50V2: p < 0.001), 이는 SupCon 학습이 HCC 임베딩을 HCC prototype 방향으로 정렬함을 확인한다. 최솟값 annotation은 군 내 하한치를 표시한다.*
+
+**Figure 8. Δscore Distribution in True HCC Cases by Training Mode (Val + Test)**
+
+![Figure 8: Delta cosine score distribution](cosine_probe_result/delta_cosine_annot_distrib.png)
+
+*Figure 8. True HCC cases에서 Δscore(HCC cosine − Hemangioma cosine)의 분포 비교. CE only 조건에서 중앙값 음수를 보이던 Δscore가 CE+SupCon 조건에서 양수로 전환되며(EfficientNetV2B0: −0.132 → +0.061, p < 0.001), true HCC cases의 임베딩이 hemangioma prototype보다 HCC prototype에 더 가깝게 정렬됨을 시사한다. 점선(Δ=0)은 두 prototype 간 등거리 기준선이다.*
+
+### 3.6 이중 출력 불일치 분석
 
 주력 모델에서 confidence score와 Δscore의 임계값은 각각 0.0026과 −0.8665로 결정되었다. Figure 4에 cosine score 분포를, Figure 5에 NNCLR 모델의 세 출력 ROC 비교를 제시하여 학습 방식에 따른 임베딩 공간 구조의 차이를 시각화하였다.
 
@@ -309,7 +329,7 @@ CE+SupCon은 CE-only와 동등한 분류 AUROC를 유지하면서(EfficientNetV2
 
 **③ 유사성 기반 추론의 정량화.** 임상의의 prototype 비교 추론을 수치화하는 연속형 표지자(HCC cosine score, Δscore)를 SupCon 기반 임베딩에서 직접 도출하였다. 기존 prototype 기반 모델들[23][24]과 달리 추가적인 아키텍처 변경 없이 기존 분류 모델에 적용 가능하다.
 
-**④ SupCon의 필수성 실험적 입증.** CE-only 대비 SupCon이 cosine 기반 표지자의 임베딩 정렬 타당성(cutoff 음수→양수 이동)을 확보함을 ablation으로 정량적으로 입증하였다. 이는 유사성 기반 표지자 도출을 위한 학습 전략 설계 원칙을 제시한다.
+**④ SupCon의 필수성 실험적 입증.** CE-only 대비 SupCon이 cosine 기반 표지자의 임베딩 정렬 타당성(cutoff 음수→양수 이동, true HCC cases score 유의 상승)을 확보함을 ablation으로 정량적으로 입증하였다. 이는 유사성 기반 표지자 도출을 위한 학습 전략 설계 원칙을 제시한다.
 
 **⑤ 불일치 패턴의 안전 신호 기능.** 이중 출력의 불일치 패턴이 단일 confidence 지표로는 탐지 불가능한 임베딩 공간의 비정렬성을 드러내는 구조적 안전 신호로 기능함을 NNCLR 2단계 학습 ablation이 직접 실증하였다. 특히 NNCLR 2단계 조건에서 confidence AUROC 0.999를 유지하면서 cosine score AUROC가 0.068까지 붕괴하는 극단적 불일치는, 단일 출력 체계로는 탐지 불가능한 임베딩 비정렬성이 실제로 발생함을 보인다.
 
@@ -317,13 +337,13 @@ CE+SupCon은 CE-only와 동등한 분류 AUROC를 유지하면서(EfficientNetV2
 
 ### 4.7 연구의 한계
 
-본 연구의 한계는 다음과 같다. 첫째, 단일 기관 공개 데이터셋을 사용하였으므로 외부 검증이 필요하다. 둘째, NNCLR 2단계 학습의 열등한 성능이 소규모 데이터셋의 특성인지, NNCLR 하이퍼파라미터의 최적화 부족에 기인하는지 구분하기 어렵다. SSL 사전학습의 epochs, augmentation policy, 데이터 규모에 따른 민감도 분석이 추후 필요하다. 둘째, 인구통계학적 세부 데이터(병변 크기·간경변 유무·AFP 수치)가 분석에 포함되지 않았다. 셋째, HCC cosine score와 Δscore의 AFP 대비 독립적 기여 및 병용 시 증분 이득을 평가하지 못하였다. 넷째, 테스트 세트 지표에 대한 부트스트랩 신뢰구간이 아직 산출되지 않았다. 다섯째, 모델의 판단 근거를 영상에서 시각화하는 Grad-CAM 등 부가 분석이 포함되지 않았다.
+본 연구의 한계는 다음과 같다. 첫째, 단일 기관 공개 데이터셋을 사용하였으므로 외부 검증이 필요하다. 둘째, NNCLR 2단계 학습의 열등한 성능이 소규모 데이터셋의 특성인지, NNCLR 하이퍼파라미터의 최적화 부족에 기인하는지 구분하기 어렵다. SSL 사전학습의 epochs, augmentation policy, 데이터 규모에 따른 민감도 분석이 추후 필요하다. 셋째, 인구통계학적 세부 데이터(병변 크기·간경변 유무·AFP 수치)가 분석에 포함되지 않았다. 넷째, HCC cosine score와 Δscore의 AFP 대비 독립적 기여 및 병용 시 증분 이득을 평가하지 못하였다. 다섯째, 테스트 세트 지표에 대한 부트스트랩 신뢰구간이 아직 산출되지 않았다. 여섯째, 모델의 판단 근거를 영상에서 시각화하는 Grad-CAM 등 부가 분석이 포함되지 않았다.
 
 ---
 
 ## 5. 결론 (Conclusion)
 
-본 연구는 B-mode 복부 초음파 영상에서 HCC를 hemangioma와 감별하는 hybrid vision transformer를 개발하고, 단일 softmax 출력 체계를 넘어 confidence score와 HCC cosine score·Δscore로 구성된 이중 출력 영상표지자 체계를 제안하였다. 주력 모델(EfficientNetV2B0 + CE+SupCon)은 검증·테스트 세트에서 AUROC 1.000, 민감도 100.0%, 특이도 98.4%를 달성하였으며, cosine 기반 표지자는 confidence score와 통계적으로 동등한 변별력을 보였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였으며, 이중 출력 불일치 패턴이 임베딩 공간의 비정렬성을 탐지하는 구조적 안전 신호로 기능함을 NNCLR 2단계 학습 ablation이 직접 실증하였다. 나아가, SSL 사전학습 → CE+SupCon 미세조정의 2단계 파이프라인은 CE+SupCon 단독 대비 분류 성능과 cosine 기반 표지자 품질 모두에서 이점을 제공하지 못하였으며, 소규모 레이블 의료 영상 환경에서 SSL 사전학습의 계산 비용 대비 효용이 제한적임을 시사한다. 외부 검증, AFP 대비 독립적 기여 평가, 및 SSL 하이퍼파라미터 민감도 분석이 향후 과제이다.
+본 연구는 B-mode 복부 초음파 영상에서 HCC를 hemangioma와 감별하는 hybrid vision transformer를 개발하고, 단일 softmax 출력 체계를 넘어 confidence score와 HCC cosine score·Δscore로 구성된 이중 출력 영상표지자 체계를 제안하였다. 주력 모델(EfficientNetV2B0 + CE+SupCon)은 검증·테스트 세트에서 AUROC 1.000, 민감도 100.0%, 특이도 98.4%를 달성하였으며, cosine 기반 표지자는 confidence score와 통계적으로 동등한 변별력을 보였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였으며, true HCC cases에서 HCC cosine score 및 Δscore가 CE+SupCon 조건에서 CE only 대비 유의하게 상승함을(모든 비교 p < 0.001) 실험적으로 실증하였다. 이중 출력 불일치 패턴이 임베딩 공간의 비정렬성을 탐지하는 구조적 안전 신호로 기능함을 NNCLR 2단계 학습 ablation이 직접 실증하였으며, SSL 사전학습 → CE+SupCon 미세조정의 2단계 파이프라인은 CE+SupCon 단독 대비 분류 성능과 cosine 기반 표지자 품질 모두에서 이점을 제공하지 못하였다. 외부 검증, AFP 대비 독립적 기여 평가, 및 SSL 하이퍼파라미터 민감도 분석이 향후 과제이다.
 
 ---
 
