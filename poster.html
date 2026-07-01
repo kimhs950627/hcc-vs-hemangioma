@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Academic Poster</title>
+    <style>
+        @page {
+            size: 90cm 180cm;
+            margin: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            width: 90cm;
+            height: 180cm;
+            background-color: #f8f9fa;
+            color: #333;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+        .poster-container {
+            width: 86cm;
+            height: 174cm;
+            margin: 2cm auto;
+            background-color: white;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            padding: 3cm;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 3cm;
+            border-bottom: 0.5cm solid #0056b3;
+            padding-bottom: 2cm;
+        }
+        .header h1 {
+            font-size: 110pt;
+            color: #002d5a;
+            margin: 0 0 1cm 0;
+            line-height: 1.2;
+        }
+        .header h2 {
+            font-size: 60pt;
+            color: #555;
+            margin: 0;
+        }
+        .header h3 {
+            font-size: 50pt;
+            color: #777;
+            margin: 0.5cm 0 0 0;
+            font-weight: normal;
+        }
+        .content {
+            display: flex;
+            gap: 4cm;
+            flex-grow: 1;
+        }
+        .column {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 3cm;
+        }
+        .section {
+            background-color: #ffffff;
+        }
+        .section-title {
+            font-size: 75pt;
+            color: #0056b3;
+            border-bottom: 0.3cm solid #0056b3;
+            padding-bottom: 0.5cm;
+            margin-bottom: 1.5cm;
+            margin-top: 0;
+        }
+        .section-content {
+            font-size: 45pt;
+            line-height: 1.6;
+        }
+        .section-content p {
+            margin-bottom: 1cm;
+        }
+        .section-content ul {
+            margin-left: 2cm;
+            margin-bottom: 1.5cm;
+        }
+        .section-content li {
+            margin-bottom: 0.8cm;
+        }
+        .highlight {
+            font-weight: bold;
+            color: #0056b3;
+        }
+        .figure {
+            text-align: center;
+            margin: 2cm 0;
+        }
+        .figure img {
+            max-width: 100%;
+            height: auto;
+            border: 0.1cm solid #ddd;
+            box-shadow: 0 0.5cm 1cm rgba(0,0,0,0.1);
+        }
+        .figure-caption {
+            font-size: 38pt;
+            color: #555;
+            margin-top: 1cm;
+            font-style: italic;
+        }
+        .flex-row {
+            display: flex;
+            gap: 2cm;
+            justify-content: space-between;
+        }
+        .flex-row .figure {
+            flex: 1;
+            margin: 0;
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 40pt;
+            margin: 2cm 0;
+        }
+        .table th, .table td {
+            border: 0.1cm solid #ddd;
+            padding: 0.8cm;
+            text-align: center;
+        }
+        .table th {
+            background-color: #0056b3;
+            color: white;
+        }
+        .conclusion-box {
+            background-color: #e9ecef;
+            padding: 2cm;
+            border-left: 1cm solid #0056b3;
+            font-size: 50pt;
+            font-weight: bold;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="poster-container">
+        <div class="header">
+            <h1>A Dual-Output Deep Learning System for HCC vs Hemangioma Classification on B-mode Ultrasound</h1>
+            <h2>Moving Beyond Single Softmax for Similarity-Based Reasoning</h2>
+            <h3>[Author Name Placeholder]<sup>1</sup>, [Author Name Placeholder]<sup>2</sup></h3>
+            <h3><sup>1</sup>Affiliation Placeholder 1, <sup>2</sup>Affiliation Placeholder 2</h3>
+        </div>
+
+        <div class="content">
+            <!-- Left Column -->
+            <div class="column">
+                
+                <div class="section">
+                    <h2 class="section-title">1. Background & Objective</h2>
+                    <div class="section-content">
+                        <p>초음파 감시는 간세포암(HCC) 조기 발견의 핵심 전략이나 <strong>단독 민감도는 47%로 제한적</strong>이다. 특히 기존 딥러닝 분류 모델은 클래스 내부의 스펙트럼(typical vs atypical)을 이분법적인 단일 Softmax(확률)로 압축하여, 임상의의 <strong>'유사성 기반 추론'</strong>을 충분히 반영하지 못하는 구조적 한계가 있다.</p>
+                        <p>본 연구의 목표는 동일한 모델에서 <span class="highlight">모델의 확신도(Confidence Score)</span>와 <span class="highlight">임베딩 공간의 기하학적 유사도(Cosine Score)</span>를 동시에 산출하는 <strong>이중 출력 시스템(Dual-Output System)</strong>을 제안하고 그 보완적 임상 효용을 검증하는 데 있다.</p>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2 class="section-title">2. Materials & Methods</h2>
+                    <div class="section-content">
+                        <ul>
+                            <li><strong>Dataset:</strong> SMC-LUD (Samsung Medical Center-Liver Ultrasound Dataset). 총 744명, 2,656장(Clean 서브셋) 초음파 이미지 사용.</li>
+                            <li><strong>Model Architecture:</strong> EfficientNetV2B0 기반 Hybrid Vision Transformer. </li>
+                            <li><strong>Training Strategy:</strong> Cross-Entropy(CE)와 <strong>Supervised Contrastive Learning (SupCon)</strong>을 결합하여 클래스 내 응집도(Intra-class compactness)를 강화.</li>
+                            <li><strong>Dual-Output Markers:</strong>
+                                <ul>
+                                    <li><strong>Confidence Score:</strong> Softmax 기반 결정 강도</li>
+                                    <li><strong>HCC Cosine Score:</strong> 병변 임베딩과 HCC Prototype 간의 코사인 거리 (전형성에 대한 연속적 정량화)</li>
+                                    <li><strong>Δscore:</strong> HCC 코사인 점수와 혈관종 코사인 점수의 차이 (비교형 척도)</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2 class="section-title">3. Results: Performance & Embedding</h2>
+                    <div class="section-content">
+                        <p>주력 모델(EfficientNetV2B0 + CE+SupCon)은 검증/테스트 세트에서 <strong>AUROC 1.000, 테스트 정확도 99.63%</strong>의 탁월한 변별력을 보였다.</p>
+                        
+                        <div class="figure">
+                            <img src="cosine_probe_result/effnet_supcon/tsne.png" alt="t-SNE Visualization">
+                            <div class="figure-caption">Figure 1. t-SNE 시각화. HCC(주황색)와 혈관종(파란색) 클러스터가 임베딩 공간에서 명확히 분리되며, SupCon에 의한 클래스 내 응집성을 확인한다.</div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Column -->
+            <div class="column">
+                
+                <div class="section">
+                    <h2 class="section-title">4. Clinical Utility of Cosine Markers</h2>
+                    <div class="section-content">
+                        <p>Cosine 기반 표지자는 Confidence score와 <strong>통계적으로 동등한 AUROC 1.000 (DeLong p=1.000)</strong>을 달성하여 독립적인 진단 지표로서 비열등성을 보였다.</p>
+                        
+                        <div class="figure">
+                            <img src="cosine_probe_result/hcc_cosine_annot_distrib.png" alt="HCC Cosine Distribution Boxplot">
+                            <div class="figure-caption">Figure 2. Boxplot Comparison of HCC Cosine Scores</div>
+                        </div>
+                        <p style="margin-top: 1cm; font-size: 38pt; font-style: italic;">* CE-only 학습 대비 CE+SupCon 학습에서 HCC 표본들이 Prototype 방향(양수)으로 명확히 응집됨을 확인.</p>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2 class="section-title">5. Ambiguous Cases Analysis</h2>
+                    <div class="section-content">
+                        <p>단일 Softmax 출력의 한계를 분석하기 위해 결정 경계 부근에서 판정이 <strong>애매한 구간 (Confidence 0.4~0.6)</strong>의 케이스를 추출하였다.</p>
+                        <ul>
+                            <li><strong>현상:</strong> 기존 단일 분류 모델은 해당 구간에서 높은 비율의 위음성(False Negative)을 기록함.</li>
+                            <li><strong>결과:</strong> 본 연구의 이중 출력 모델에서는 Confidence가 망설임을 보인 5건의 HCC 케이스에 대해 <span class="highlight">Cosine Score 및 Δscore 기반 판단을 적용하자 5건 모두 실제 라벨(HCC)로 정확히 분류</span>해 내었다.</li>
+                        </ul>
+                        <p>이는 Confidence score가 명확한 결론을 내리지 못하는 비전형적(atypical) 케이스에 대해 임베딩 공간의 기하학적 유사도가 안정적인 <strong>보완적 진단 근거(Salvage Marker)</strong>를 제공함을 확인시켜 준다.</p>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2 class="section-title">6. Conclusion</h2>
+                    <div class="section-content">
+                        <div class="conclusion-box">
+                            본 연구의 "이중 출력 시스템"은 기존 단일 확률 출력을 넘어 연속적인 기하학적 유사도를 함께 정량화함으로써, 임상의의 직관적인 비교 추론 과정을 모델에 성공적으로 반영하였다. Cosine 기반 표지자는 오분류를 효과적으로 방어하는 임상적 보완재(Adjunctive marker)로서 간 국소 병변 초음파 진단 성능을 높일 수 있다.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section" style="margin-top: 2cm;">
+                    <h2 class="section-title" style="font-size: 40pt; border-bottom: 0.1cm solid #0056b3; padding-bottom: 0.2cm; margin-bottom: 0.5cm;">References</h2>
+                    <div class="section-content" style="font-size: 26pt; line-height: 1.4;">
+                        <ol style="margin-left: 1cm; padding-left: 0; margin-bottom: 0;">
+                            <li style="margin-bottom: 0.3cm;">Tzartzeva K, et al. Surveillance Imaging and Alpha Fetoprotein for Early Detection of Hepatocellular Carcinoma in Patients With Cirrhosis: A Meta-analysis. <i>Gastroenterology.</i> 2018.</li>
+                            <li style="margin-bottom: 0.3cm;">Tak J, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. <i>Sci Data.</i> 2026.</li>
+                            <li style="margin-bottom: 0;">Khosla P, et al. Supervised Contrastive Learning. <i>NeurIPS.</i> 2020.</li>
+                        </ol>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</body>
+</html>
