@@ -1,0 +1,7 @@
+comparison,auroc_a,auroc_b,z_stat,p_value,se
+A vs B-mean,1.0,1.0,0.0,1.0,0.0
+A vs C-mean,1.0,1.0,0.0,1.0,0.0
+A vs B-kmeans,1.0,1.0,0.0,1.0,0.0
+A vs C-kmeans,1.0,1.0,0.0,1.0,0.0
+B-mean vs B-kmeans,1.0,1.0,0.0,1.0,0.0
+C-mean vs C-kmeans,1.0,1.0,0.0,1.0,0.0

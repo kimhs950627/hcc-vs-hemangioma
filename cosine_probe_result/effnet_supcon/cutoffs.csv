@@ -1,0 +1,6 @@
+roc,cutoff
+ROC-A (Confidence),0.0010883796494454145
+ROC-B (HCC Cosine / mean),-0.004843093454837799
+ROC-C (ΔScore / mean),-0.9584707617759705
+ROC-B (HCC Cosine / kmeans),0.02882268652319908
+ROC-C (ΔScore / kmeans),-0.926454484462738
