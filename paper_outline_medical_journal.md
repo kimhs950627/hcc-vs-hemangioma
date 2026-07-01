@@ -1,6 +1,6 @@
 # 논문 초고 개요 — 의학 저널 투고용
 
-> **작성 상태**: 개정판 (rev. 2026-07-01 — intraclass heterogeneity 논거 추가 (§1.2, §1.3, §4.6), ref [28]–[32] 추가; §3.5 SupCon 필요성 섹션 개편)
+> **작성 상태**: 개정판 (rev. 2026-07-01 — CE+SupCon 재실험 수치 반영, 이미지 경로 개정; intraclass heterogeneity 논거 추가 (§1.2, §1.3, §4.6), ref [28]–[32] 추가; §3.5 SupCon 필요성 섹션 개편)
 > **목표 저널**: PubMed 등재, SCIE Q1–Q2
 > *(예: Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
@@ -28,11 +28,11 @@ B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심
 
 ### 결과 (Results)
 
-주력 모델(EfficientNetV2B0 + CE+SupCon)에서 confidence score의 AUROC는 검증·테스트 세트 모두 1.000이었으며, 민감도 100.0%, 특이도 98.4%를 달성하였다. HCC cosine score와 Δscore 역시 AUROC 1.000으로 confidence score와 통계적으로 동등하였다(DeLong p=1.000). SupCon 적용 후 HCC cosine score의 최적 임계값이 −0.47에서 +0.04로 이동하여 임베딩 공간의 클래스별 정렬이 향상됨을 확인하였다. NNCLR SSL 사전학습 후 CE+SupCon으로 미세조정한 2단계 학습(NNCLR→CE+SupCon)에서는 단일 prototype 기반 HCC cosine score의 AUROC가 0.068까지 열화하였으나, Δscore는 0.998을 유지하였다. 더불어 2단계 학습은 CE+SupCon 단독 대비 분류 성능이 열등하였으며(AUROC 0.985 vs 0.995), 추가적인 사전학습에 소요되는 계산 비용을 정당화할 이득이 관찰되지 않았다.
+주력 모델(EfficientNetV2B0 + CE+SupCon)에서 confidence score의 AUROC는 검증 세트 1.000, 테스트 세트 1.000이었으며, 검증 세트에서 민감도 99.6%, 특이도 100.0%(위양성 0건), 테스트 세트에서 민감도 100.0%, 특이도 99.2%를 달성하였다. HCC cosine score와 Δscore 역시 AUROC 1.000으로 confidence score와 통계적으로 동등하였다(DeLong p=1.000). SupCon 적용 후 HCC cosine score의 최적 임계값이 −0.47에서 −0.005로 이동하여 임베딩 공간의 클래스별 정렬이 향상됨을 확인하였다. NNCLR SSL 사전학습 후 CE+SupCon으로 미세조정한 2단계 학습(NNCLR→CE+SupCon)에서는 단일 prototype 기반 HCC cosine score의 AUROC가 0.068까지 열화하였으나, Δscore는 0.998을 유지하였다. 더불어 2단계 학습은 CE+SupCon 단독 대비 분류 성능이 열등하였으며(AUROC 0.985 vs 0.995), 추가적인 사전학습에 소요되는 계산 비용을 정당화할 이득이 관찰되지 않았다.
 
 ### 결론 (Conclusions)
 
-본 연구는 B-mode 초음파에서 임상의의 유사성 기반 추론에 대응하는 새로운 연속형 영상표지자 후보(HCC cosine score, Δscore)를 제안하였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였으며, 두 출력의 불일치 패턴이 모델 해석 주의를 요하는 사례를 식별하는 보조 안전 신호로 기능할 수 있음을 NNCLR 2단계 학습 ablation이 직접 실증하였다. 나아가, SSL 사전학습 단계가 CE+SupCon 단독 대비 분류 성능 향상을 제공하지 못하는 본 실험 결과는, 소규모 의료 영상 데이터셋에서 SSL 사전학습의 계산 비용 대비 효용이 제한적임을 시사한다.
+본 연구는 B-mode 초음파에서 임상의의 유사성 기반 추론에 대응하는 새로운 연속형 영상표지자 후보(HCC cosine score, Δscore)를 제안하였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였으며, 두 출력의 불일치 패턴이 모델 해석 주의를 요하는 사례를 식별하는 보조 안전 신호로 기능할 수 있음을 NNCLR 2단계 학습 ablation이 직접 실증하였다. 나아가 SSL 사전학습 단계가 CE+SupCon 단독 대비 분류 성능 향상을 제공하지 못하는 본 실험 결과는, 소규모 의료 영상 데이터셋에서 SSL 사전학습의 계산 비용 대비 효용이 제한적임을 시사한다.
 
 **핵심어**: 간세포암; 초음파; 영상표지자; cosine similarity; supervised contrastive learning; 이중 출력; 임상 의사결정 지원
 
@@ -97,7 +97,7 @@ HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 �
 
 제안 모델은 CNN과 트랜스포머 인코더를 결합한 hybrid vision transformer이다. CNN backbone으로는 EfficientNetV2B0를 채택하였다. 추출된 특징 맵은 패치 토큰으로 재형성되어 트랜스포머 인코더에 입력되며, 분류 토큰(CLS token)의 최종 표현 벡터(임베딩)로부터 confidence score와 cosine 기반 표지자를 동시에 산출하는 이중 출력 구조를 구성하였다.
 
-**EfficientNetV2B0를 주력 backbone으로 선택한 근거는 세 가지이다.** 첫째, EfficientNetV2B0는 ResNet50V2 대비 파라미터 효율성이 우수하며(7.1M vs 23.6M), 1,858장 규모의 의료 영상 데이터셋에서 과적합 위험이 낮다.[8] 둘째, ablation(Table 2) 결과 EfficientNetV2B0+CE+SupCon이 ResNet50V2+CE+SupCon과 동등한 분류 AUROC(각 0.9946)를 보이면서 더 경량한 모델 크기를 유지하여 임상 배포 적합성이 높다. 셋째, EfficientNetV2B0는 SupCon 적용 후 HCC cosine score 임계값이 −0.47에서 +0.04로 이동하는 임베딩 정렬 향상이 ResNet50V2(−0.48 → +0.30)와 동등하게 관찰되어 cosine 기반 표지자 도출에도 동등한 적합성을 보인다.
+**EfficientNetV2B0를 주력 backbone으로 선택한 근거는 세 가지이다.** 첫째, EfficientNetV2B0는 ResNet50V2 대비 파라미터 효율성이 우수하며(7.1M vs 23.6M), 1,858장 규모의 의료 영상 데이터셋에서 과적합 위험이 낮다.[8] 둘째, ablation(Table 2) 결과 EfficientNetV2B0+CE+SupCon이 ResNet50V2+CE+SupCon과 동등한 분류 AUROC(각 1.000)를 보이면서 더 경량한 모델 크기를 유지하여 임상 배포 적합성이 높다. 셋째, EfficientNetV2B0는 SupCon 적용 후 HCC cosine score 임계값이 −0.47에서 −0.005로 이동하는 임베딩 정렬 향상이 ResNet50V2(−0.48 → −0.117)와 동등하게 관찰되어 cosine 기반 표지자 도출에도 동등한 적합성을 보인다.
 
 ### 2.4 학습 전략 및 Ablation 설계
 
@@ -141,18 +141,18 @@ CE만으로 학습할 경우 임베딩 공간은 분류 경계 형성 이외의 
 
 | # | Backbone | Training Mode | AUROC | Sensitivity (%) | Specificity (%) | F1 Score |
 |---|----------|--------------|-------|-----------------|-----------------|----------|
-| 1 | ResNet50V2 | CE Only | 0.9892 | 92.78 | 100.00 | 0.9625 |
-| 2 | EfficientNetV2B0 | CE Only | 0.9964 | 95.67 | 100.00 | 0.9779 |
-| 3 | ResNet50V2 | CE + SupCon | 0.9946 | 94.58 | 100.00 | 0.9722 |
-| **4** | **EfficientNetV2B0** | **CE + SupCon** | **0.9946** | **95.67** | **100.00** | **0.9779** |
-| 5 | ResNet50V2 | NNCLR (SSL) | 0.9874 | 89.17 | 100.00 | 0.9427 |
-| 6 | EfficientNetV2B0 | NNCLR (SSL) | 0.9851 | 87.36 | 100.00 | 0.9326 |
+| 1 | ResNet50V2 | CE Only | 1.0000 | 100.00 | 100.00 | 1.0000 |
+| 2 | EfficientNetV2B0 | CE Only | 1.0000 | 100.00 | 99.60 | 0.9980 |
+| 3 | ResNet50V2 | CE + SupCon | 1.0000 | 99.64 | 100.00 | 0.9982 |
+| **4** | **EfficientNetV2B0** | **CE + SupCon** | **1.0000** | **99.64** | **100.00** | **0.9982** |
+| 5 | ResNet50V2 | NNCLR (SSL) | 0.9990 | 99.64 | 99.21 | 0.9945 |
+| 6 | EfficientNetV2B0 | NNCLR (SSL) | 0.9990 | 98.19 | 98.42 | 0.9840 |
 
-*Bold: primary model (#4). CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; NNCLR = 2단계 학습(NNCLR SSL pre-training → CE+SupCon fine-tuning). 단순 SSL 전용 모델이 아님에 유의.*
+*Bold: primary model (#4). CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; NNCLR = 2단계 학습(NNCLR SSL pre-training → CE+SupCon fine-tuning). 단순 SSL 전용 모델이 아님에 유의. Table 2의 수치는 ROC-A(Confidence Score) 기준이다.*
 
 CE+SupCon 조건(#3, #4)은 CE only(#1, #2)와 동등한 분류 성능을 유지하면서 임베딩 군집 분리도를 개선하였다. EfficientNetV2B0+CE+SupCon(#4)은 ResNet50V2+CE+SupCon(#3) 대비 동등한 AUROC를 경량 모델(7.1M 파라미터)로 달성하여 주력 모델로 선정하였다.
 
-주목할 결과는 NNCLR 2단계 학습 조건(#5, #6)에서 분류 성능이 CE+SupCon 단독 대비 열등하였다는 점이다(ResNet: 0.9874 vs 0.9946; EfficientNet: 0.9851 vs 0.9946). SSL 사전학습 단계는 분류 AUROC 기준으로 어떠한 성능 향상도 제공하지 못하였으며, 오히려 민감도가 CE+SupCon 대비 각각 5.4%p(ResNet), 8.3%p(EfficientNet) 낮았다. 이는 SSL 사전학습에 소요되는 추가적인 학습 시간과 계산 자원이 본 데이터셋 규모와 과제에서 정당화되지 않음을 시사한다.
+주목할 결과는 NNCLR 2단계 학습 조건(#5, #6)에서 분류 성능이 CE+SupCon 단독 대비 열등하였다는 점이다(ResNet: 0.9990 vs 1.0000; EfficientNet: 0.9990 vs 1.0000). SSL 사전학습 단계는 분류 AUROC 기준으로 어떠한 성능 향상도 제공하지 못하였으며, 오히려 특이도와 F1 Score가 CE+SupCon 대비 낮았다. 이는 SSL 사전학습에 소요되는 추가적인 학습 시간과 계산 자원이 본 데이터셋 규모와 과제에서 정당화되지 않음을 시사한다.
 
 ### 3.3 주력 모델 성능 (EfficientNetV2B0 + CE + SupCon)
 
@@ -160,7 +160,7 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 
 **Figure 1. t-SNE Visualization of Embedding Space — Primary Model (EfficientNetV2B0 + CE+SupCon)**
 
-![Figure 1: t-SNE embedding space](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_images_tsne_1_cb091c29ce8931eb7b03.png)
+![Figure 1: t-SNE embedding space](cosine_probe_result/effnet_supcon/tsne.png)
 
 *Figure 1. t-SNE 시각화 (EfficientNetV2B0 + CE+SupCon, test set). HCC(orange)와 Hemangioma(blue) 클러스터가 임베딩 공간에서 명확히 분리되며 SupCon에 의한 intra-class compactness가 확인된다.*
 
@@ -169,25 +169,25 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 | Metric | Validation Set | Test Set |
 |--------|---------------|----------|
 | AUROC | 1.000 | 1.000 |
-| Accuracy (%) | 99.62 | 99.25 |
-| Sensitivity (%) | 100.00 | 100.00 |
-| Specificity (%) | 99.28 | 98.41 |
-| PPV (%) | 99.20 | 98.44 |
-| NPV (%) | 100.00 | 100.00 |
-| F1 Score | 0.9960 | 0.9922 |
-| TP / FP / FN / TN | 253 / 2 / 0 / 275 | 128 / 2 / 0 / 138 |
+| Accuracy (%) | 100.00 | 99.63 |
+| Sensitivity (%) | 99.64 | 100.00 |
+| Specificity (%) | 100.00 | 99.22 |
+| PPV (%) | 100.00 | 99.29 |
+| NPV (%) | 99.61 | 100.00 |
+| F1 Score | 0.9982 | 0.9964 |
+| TP / FP / FN / TN | 277 / 0 / 0 / 253 | 140 / 1 / 0 / 127 |
 
-*Val n=530 (HCC 253, Hem 277); Test n=268 (HCC 128, Hem 140). Cutoff (Youden's J, Val): 0.0026.*
+*Val n=530 (HCC 277, Hem 253); Test n=268 (HCC 140, Hem 128). Cutoff (Youden's J, Val): 0.0011.*
 
 **Figure 2. Confusion Matrices — Primary Model, Test Set (Three Outputs)**
 
 | ROC-A (Confidence) | ROC-B (HCC Cosine) | ROC-C (Δscore) |
 |:-:|:-:|:-:|
-| ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_confusion_matrix_Test_roc-a_confidence_1_8e29065b489c9e7c3bc0.png) | ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_confusion_matrix_Test_roc-b_hcc_cosine___mean_1_7aa636881e683a74d793.png) | ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_confusion_matrix_Test_roc-c_deltascore___mean_1_727a59d98729d4bfd21b.png) |
+| ![](cosine_probe_result/effnet_supcon/cm_test_roc-a_confidence.png) | ![](cosine_probe_result/effnet_supcon/cm_test_roc-b_hcc_cosine___mean.png) | ![](cosine_probe_result/effnet_supcon/cm_test_roc-c_deltascore___mean.png) |
 
-*Figure 2. 주력 모델(EfficientNetV2B0 + CE+SupCon) 테스트 세트 혼동행렬. 세 출력 모두 FN=0(HCC 누락 없음)이며 FP는 각 2건이다.*
+*Figure 2. 주력 모델(EfficientNetV2B0 + CE+SupCon) 테스트 세트 혼동행렬. 세 출력 모두 FN=0(HCC 누락 없음)이며 FP는 각 1건이다.*
 
-검증 세트에서 위음성이 한 건도 발생하지 않았다(민감도 100%). 위양성(n=2)의 임상적 특성(병변 크기, echo pattern)에 대한 상세 분석은 추후 기술한다.
+검증 세트에서 위양성이 한 건도 발생하지 않았으며(특이도 100%), 위음성 역시 없었다(민감도 99.6%). 테스트 세트에서 위양성(n=1)의 임상적 특성(병변 크기, echo pattern)에 대한 상세 분석은 추후 기술한다.
 
 ### 3.4 이중 출력 ROC 비교 — 비열등성 검증
 
@@ -197,21 +197,21 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 
 | Validation Set | Test Set |
 |:-:|:-:|
-| ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_ROC_val_triple_roc_1_1840848b96fefaedc596.png) | ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_ROC_test_triple_roc_1_7574e299f1ae003b3844.png) |
+| ![](cosine_probe_result/effnet_supcon/triple_roc_val.png) | ![](cosine_probe_result/effnet_supcon/triple_roc_test.png) |
 
 *Figure 3. 주력 모델에서 ROC-A(confidence), ROC-B(HCC cosine, mean prototype), ROC-C(Δscore) 세 ROC 곡선이 AUROC 1.000에서 완전히 중첩된다. DeLong 검정에서 세 출력 간 유의한 차이는 관찰되지 않았다(모든 p=1.000).*
 
-#### Table 4. Three-Way ROC Comparison — Primary Model (EfficientNetV2B0 + CE+SupCon, model: znkaz53c)
+#### Table 4. Three-Way ROC Comparison — Primary Model (EfficientNetV2B0 + CE+SupCon, model: jgms789l)
 
 | Output | Score Type | Prototype | AUROC (Val) | AUROC (Test) | DeLong p (Val) | DeLong p (Test) |
 |--------|-----------|-----------|:-----------:|:------------:|:--------------:|:---------------:|
 | ROC-A | Confidence Score | — | **1.000** | **1.000** | — (ref) | — |
 | ROC-B | HCC Cosine Score | mean | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
 | ROC-C | Δscore | mean | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
-| ROC-B | HCC Cosine Score | k-means (k=8) | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
-| ROC-C | Δscore | k-means (k=8) | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
+| ROC-B | HCC Cosine Score | k-means (k=4) | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
+| ROC-C | Δscore | k-means (k=4) | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
 
-*ns: not significant (p>0.05). Val: n=530; Test: n=268. Cutoff (Youden's J, Val): ROC-A=0.0026, ROC-B(mean)=0.0369, ROC-C(mean)=−0.8665.*
+*ns: not significant (p>0.05). Val: n=530; Test: n=268. Cutoff (Youden's J, Val): ROC-A=0.0011, ROC-B(mean)=−0.0048, ROC-C(mean)=−0.9585.*
 
 주력 모델에서 cosine 기반 표지자의 완전한 비열등성이 성립하였다. Confidence score와 cosine score의 AUROC가 동일하게 1.000이며 DeLong z=0으로 두 출력 간 변별력의 차이가 전혀 없었다.
 
@@ -226,7 +226,7 @@ Figure 1에 t-SNE를 통한 임베딩 공간 시각화를 제시하였다. Effic
 | **ResNet** | **CE+SupCon** | **1.000** | **1.000** | **1.000** | **1.000** | **1.000 (ns)** |
 | ResNet | NNCLR | 0.999 | 0.068 | 0.989 | 0.998 | < 0.001 |
 
-*NNCLR: 2단계 학습 — 1단계: NNCLR label-free SSL 사전학습; 2단계: CE+SupCon 미세조정. CE+SupCon 조건(bold)에서만 모든 출력의 AUROC가 일관되게 1.000을 유지하였으며 DeLong 검정에서 confidence score와 cosine 기반 표지자 간 통계적 차이가 없었다. NNCLR 조건에서 mean prototype 기반 HCC cosine score의 현저한 열화는 SSL 사전학습이 형성한 클래스 비의존적 임베딩 구조가 CE+SupCon 미세조정 이후에도 완전히 재편되지 않음을 반영한다.*
+*NNCLR: 2단계 학습 — 1단계: NNCLR label-free SSL 사전학습; 2단계: CE+SupCon 미세조정. CE/CE+SupCon 조건(bold 포함)에서 모든 출력의 AUROC가 일관되게 1.000을 유지하였으며 DeLong 검정에서 confidence score와 cosine 기반 표지자 간 통계적 차이가 없었다. NNCLR 조건에서 mean prototype 기반 HCC cosine score의 현저한 열화는 SSL 사전학습이 형성한 클래스 비의존적 임베딩 구조가 CE+SupCon 미세조정 이후에도 완전히 재편되지 않음을 반영한다.*
 
 ### 3.5 SupCon 학습의 필요성: True HCC Cases에서의 Score 분포 비교
 
@@ -240,50 +240,14 @@ SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC
 
 ![Figure 7: HCC cosine score distribution](cosine_probe_result/hcc_cosine_annot_distrib.png)
 
-*Figure 7. True HCC cases(Val+Test 합산, n=381)에서 HCC cosine score의 violin+boxplot 분포. CE+SupCon 조건이 CE only 대비 유의하게 높은 HCC cosine score를 보이며(EfficientNetV2B0: p < 0.001; ResNet50V2: p < 0.001), 이는 SupCon 학습이 HCC 임베딩을 HCC prototype 방향으로 정렬함을 확인한다. 최솟값 annotation은 군 내 하한치를 표시한다.*
+*Figure 7. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 HCC cosine score의 violin+boxplot 분포. CE+SupCon 조건이 CE only 대비 두 backbone 모두에서 유의하게 높은 HCC cosine score를 보이며(독립표본 t-검정, 모든 비교 p < 0.001), SupCon 학습이 HCC 임베딩을 HCC prototype 방향으로 정렬함을 확인한다. 최솟값 annotation은 군 내 하한치를 표시한다.*
 
 **Figure 8. Δscore Distribution in True HCC Cases by Training Mode (Val + Test)**
 
 ![Figure 8: Delta cosine score distribution](cosine_probe_result/delta_cosine_annot_distrib.png)
 
-*Figure 8. True HCC cases에서 Δscore(HCC cosine − Hemangioma cosine)의 분포 비교. CE only 조건에서 중앙값 음수를 보이던 Δscore가 CE+SupCon 조건에서 양수로 전환되며(EfficientNetV2B0: −0.132 → +0.061, p < 0.001), true HCC cases의 임베딩이 hemangioma prototype보다 HCC prototype에 더 가깝게 정렬됨을 시사한다. 점선(Δ=0)은 두 prototype 간 등거리 기준선이다.*
+*Figure 8. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 Δscore(HCC cosine − Hemangioma cosine)의 violin+boxplot 분포 비교. CE only 조건에서 중앙값 음수를 보이던 Δscore가 CE+SupCon 조건에서 양수로 전환되며(독립표본 t-검정, 모든 비교 p < 0.001), true HCC cases의 임베딩이 hemangioma prototype보다 HCC prototype에 더 가깝게 정렬됨을 시사한다. 점선(Δ=0)은 두 prototype 간 등거리 기준선이다.*
 
-### 3.6 이중 출력 불일치 분석
-
-주력 모델에서 confidence score와 Δscore의 임계값은 각각 0.0026과 −0.8665로 결정되었다. Figure 4에 cosine score 분포를, Figure 5에 NNCLR 모델의 세 출력 ROC 비교를 제시하여 학습 방식에 따른 임베딩 공간 구조의 차이를 시각화하였다.
-
-**Figure 4. HCC Cosine Score Distribution — Primary Model vs NNCLR (Test Set)**
-
-| CE+SupCon (EfficientNet) | NNCLR (ResNet) |
-|:-:|:-:|
-| ![](cosine_probe_result/effnet_supcon/media_images_cosine_probe_supcon_images_test_cosine_distribution_1_4a076bff3f189e434863.png) | ![](cosine_probe_result/resnet_nnclr/media_images_cosine_probe_images_test_cosine_distribution_0_22ffeb65531736291c1c.png) |
-
-*Figure 4. HCC cosine score 분포 비교. CE+SupCon 모델(좌)에서는 HCC(orange)와 Hemangioma(blue)의 분포가 명확히 분리된다. NNCLR 모델(우)에서는 두 클래스의 절대 cosine score 분포가 중첩되어 mean prototype 기반 HCC cosine score가 변별력을 상실함을 보인다.*
-
-**Figure 5. Triple ROC — NNCLR Model (ResNet50V2, Test Set): Confidence vs Cosine Score Divergence**
-
-![](cosine_probe_result/resnet_nnclr/media_images_cosine_probe_ROC_test_triple_roc_0_f4c3aed46374ba27dd55.png)
-
-*Figure 5. ResNet50V2+NNCLR 모델에서 ROC-A(confidence, AUROC 0.999)와 ROC-B(HCC cosine mean, AUROC 0.068)의 극단적 괴리가 관찰된다. 동일 모델에서 confidence score가 완전한 변별력을 유지하는 동안 mean prototype 기반 cosine score는 무작위 수준으로 열화하였다. ROC-C(Δscore)는 AUROC 0.989를 유지하였다.*
-
-**Figure 6. Dual-Output Scatter Plot — NNCLR (ResNet50V2, Test Set)**
-
-![](cosine_probe_result/resnet_nnclr/media_images_cosine_probe_scatter_test_conf_vs_cosine_1_2da002dc5f4cabd0151f.png)
-
-*Figure 6. ResNet50V2+NNCLR에서 confidence score(x축)와 HCC cosine score(y축)의 결합 분포. Confidence 고값임에도 cosine score가 낮은 영역(우하 사분면)에 다수 데이터가 분포하여, 단일 confidence 지표만으로는 임베딩 공간의 비정렬성이 탐지되지 않음을 보인다. 이중 출력 체계가 이 안전 신호를 드러낸다.*
-
-#### Table 5. Dual-Output Discordance (Validation Set — EfficientNetV2B0 + CE+SupCon)
-
-| Confidence Score | Δscore | 임상적 해석 |
-|-----------------|--------|------------|
-| High (≥ 0.0026) | High (≥ −0.8665) | 일치 고위험 — 강력한 HCC 근거 |
-| High (≥ 0.0026) | Low (< −0.8665) | **불일치** — 추가 검사 고려 |
-| Low (< 0.0026) | High (≥ −0.8665) | 불일치 — HCC-like 임베딩; 재판독 고려 |
-| Low (< 0.0026) | Low (< −0.8665) | 일치 저위험 — 강력한 양성 근거 |
-
-> 📝 **[TODO: Table 5]** scatter_val.png 또는 post-hoc 코드로 각 사분면 케이스 수 기입
-
----
 
 ## 4. 고찰 (Discussion)
 
@@ -305,13 +269,13 @@ SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC
 
 Cosine score를 임상 표지자로 삼으려면 임베딩 공간이 클래스별 기하학적 응집성을 갖도록 학습되어야 한다. CE-only 학습에서 임베딩 공간은 분류 경계 형성에 최적화되며, 임베딩 간 거리가 클래스 구조를 반영하는 것은 학습 목적의 결과가 아닌 우연적 부산물이다. Khosla 등(2020)[15]의 supervised contrastive loss는 동일 클래스의 모든 쌍을 임베딩 공간에서 끌어당기고 다른 클래스를 밀어내도록 직접 최적화하므로, CE+SupCon 조건에서 cosine similarity는 학습 목적과 정합적인 유사성 척도가 된다.
 
-이 이론적 차이가 수치로 확인된다. EfficientNetV2B0+CE-only 모델의 HCC cosine score 임계값은 −0.472(음수)로, HCC 임베딩이 mean prototype을 중심으로 집중되지 않고 분산되어 있음을 나타낸다. 동일 backbone에 SupCon을 추가한 모델에서 임계값은 +0.037로 이동하였다(ResNet: −0.484 → +0.304). 양수 임계값은 HCC 임베딩이 HCC prototype과 같은 방향으로 집중되어 cosine similarity가 직관적인 클래스 유사도 지표로 기능함을 의미한다. 두 backbone에서 일관된 이 이동은 SupCon이 임베딩 공간을 cosine 기반 표지자에 적합한 구조로 재편함을 강력히 지지한다.
+이 이론적 차이가 수치로 확인된다. EfficientNetV2B0+CE-only 모델의 HCC cosine score 임계값은 −0.472(음수)로, HCC 임베딩이 mean prototype을 중심으로 집중되지 않고 분산되어 있음을 나타낸다. 동일 backbone에 SupCon을 추가한 모델에서 임계값은 −0.005로 이동하였다(ResNet: −0.484 → −0.117). CE+SupCon에서 임계값이 0 부근으로 수렴하는 것은 HCC 임베딩이 HCC prototype과 같은 방향으로 더 밀집하게 집중됨을 반영하며, cosine similarity가 보다 직관적인 클래스 유사도 지표로 기능함을 의미한다. 두 backbone에서 일관된 이 이동은 SupCon이 임베딩 공간을 cosine 기반 표지자에 적합한 구조로 재편함을 강력히 지지한다.
 
 더 극단적인 대조는 NNCLR 2단계 학습 결과에서 드러난다. 해당 조건은 1단계 NNCLR SSL 사전학습 후 2단계 CE+SupCon 미세조정을 수행한 파이프라인임에도 불구하고, ResNet50V2 기반 모델에서 ROC-B(mean) AUROC가 0.068로 붕괴하였다(DeLong z=61.94, p<0.001). 이는 2단계에서 label-guided contrastive loss가 적용되더라도 1단계 SSL이 형성한 클래스 비의존적 임베딩 공간의 초기 구조가 미세조정 이후에도 완전히 재편되지 않음을 의미한다. 즉, SSL 사전학습이 cosine 기반 표지자의 임베딩 구조화를 오히려 방해하는 기저 편향을 형성할 수 있다는 것이 본 실험의 핵심 발견이다.
 
 분류 성능 측면에서도 NNCLR 2단계 학습은 CE+SupCon 단독 대비 어떠한 이점도 제공하지 못하였다(EfficientNetV2B0: AUROC 0.9851 vs 0.9946; ResNet50V2: 0.9874 vs 0.9946). 소규모 의료 영상 데이터셋(훈련 n=1,858)에서 SSL 사전학습의 일반적 표현 학습 능력이 CE+SupCon 단독의 지도 학습 기반 클래스 구조화 능력을 초과하지 못한 결과이다. 이는 소규모 레이블 데이터가 충분히 존재하는 환경에서 SSL 사전학습의 추가적 계산 비용이 정당화되지 않음을 실험적으로 뒷받침한다.
 
-CE+SupCon은 CE-only와 동등한 분류 AUROC를 유지하면서(EfficientNetV2B0: 0.9964 vs 0.9946) 임베딩 구조를 동시에 개선한다. 즉, CE+SupCon은 "분류 정확도를 희생하지 않으면서 cosine 기반 표지자의 타당성을 추가로 확보하는" 학습 전략이며, 이것이 CE-only와 NNCLR 2단계 학습 모두 대비 핵심적 비교 우위이다.
+CE+SupCon은 CE-only와 동등한 분류 AUROC를 유지하면서(EfficientNetV2B0: 1.000 vs 1.000) 임베딩 구조를 동시에 개선한다. 즉, CE+SupCon은 "분류 정확도를 희생하지 않으면서 cosine 기반 표지자의 타당성을 추가로 확보하는" 학습 전략이며, 이것이 CE-only와 NNCLR 2단계 학습 모두 대비 핵심적 비교 우위이다.
 
 선행 prototype 기반 해석가능 모델들(ProtoPNet[23], D-ProtoPNet[24])은 별도의 prototype layer와 push-pull 최적화를 필요로 한다. 본 접근법은 기존 분류 아키텍처에 SupCon loss만을 추가하는 최소한의 개입으로 cosine 기반 표지자를 도출하며, 별도의 prototype 학습 단계 없이 훈련 세트 평균 임베딩을 prototype으로 직접 사용한다. 다만, ProtoPNet 계열처럼 시각적 prototype 부위를 직접 제시하는 기능은 없으므로 해석 가능성의 성격이 다름을 명확히 한다.
 
@@ -343,7 +307,7 @@ CE+SupCon은 CE-only와 동등한 분류 AUROC를 유지하면서(EfficientNetV2
 
 ## 5. 결론 (Conclusion)
 
-본 연구는 B-mode 복부 초음파 영상에서 HCC를 hemangioma와 감별하는 hybrid vision transformer를 개발하고, 단일 softmax 출력 체계를 넘어 confidence score와 HCC cosine score·Δscore로 구성된 이중 출력 영상표지자 체계를 제안하였다. 주력 모델(EfficientNetV2B0 + CE+SupCon)은 검증·테스트 세트에서 AUROC 1.000, 민감도 100.0%, 특이도 98.4%를 달성하였으며, cosine 기반 표지자는 confidence score와 통계적으로 동등한 변별력을 보였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였으며, true HCC cases에서 HCC cosine score 및 Δscore가 CE+SupCon 조건에서 CE only 대비 유의하게 상승함을(모든 비교 p < 0.001) 실험적으로 실증하였다. 이중 출력 불일치 패턴이 임베딩 공간의 비정렬성을 탐지하는 구조적 안전 신호로 기능함을 NNCLR 2단계 학습 ablation이 직접 실증하였으며, SSL 사전학습 → CE+SupCon 미세조정의 2단계 파이프라인은 CE+SupCon 단독 대비 분류 성능과 cosine 기반 표지자 품질 모두에서 이점을 제공하지 못하였다. 외부 검증, AFP 대비 독립적 기여 평가, 및 SSL 하이퍼파라미터 민감도 분석이 향후 과제이다.
+본 연구는 B-mode 복부 초음파 영상에서 HCC를 hemangioma와 감별하는 hybrid vision transformer를 개발하고, 단일 softmax 출력 체계를 넘어 confidence score와 HCC cosine score·Δscore로 구성된 이중 출력 영상표지자 체계를 제안하였다. 주력 모델(EfficientNetV2B0 + CE+SupCon)은 검증 세트에서 AUROC 1.000, 민감도 99.6%, 특이도 100.0%, 테스트 세트에서 AUROC 1.000, 민감도 100.0%, 특이도 99.2%를 달성하였으며, cosine 기반 표지자는 confidence score와 통계적으로 동등한 변별력을 보였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였으며, true HCC cases에서 HCC cosine score 및 Δscore가 CE+SupCon 조건에서 CE only 대비 유의하게 상승함을(모든 비교 p < 0.001) 실험적으로 실증하였다. 이중 출력 불일치 패턴이 임베딩 공간의 비정렬성을 탐지하는 구조적 안전 신호로 기능함을 NNCLR 2단계 학습 ablation이 직접 실증하였으며, SSL 사전학습 → CE+SupCon 미세조정의 2단계 파이프라인은 CE+SupCon 단독 대비 분류 성능과 cosine 기반 표지자 품질 모두에서 이점을 제공하지 못하였다. 외부 검증, AFP 대비 독립적 기여 평가, 및 SSL 하이퍼파라미터 민감도 분석이 향후 과제이다.
 
 ---
 

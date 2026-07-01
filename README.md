@@ -21,8 +21,8 @@
 | - | ----------------------- | ---------------- | ---------------------------------------- | ------ |
 | 1 | Classification Only     | ResNet50V2       | Benchmark-Classification_Only_resnet50v2 | ✅ 완료   |
 | 2 | Classification Only     | EfficientNetV2B0 | Benchmark-Classification_Only            | ✅ 완료   |
-| 3 | Classification + SupCon | ResNet50V2       | ke8bqdcv                                        | ✅ 완료 |
-| 4 | Classification + SupCon | EfficientNetV2B0 | znkaz53c                                        | ✅ 완료 |
+| 3 | Classification + SupCon | ResNet50V2       | jgms789l                                        | ✅ 완료 |
+| 4 | Classification + SupCon | EfficientNetV2B0 | jgms789l                                        | ✅ 완료 |
 | 5 | VICReg (SSL)            | ResNet50V2       | —                                        | 🔲 미실행 |
 | 6 | VICReg (SSL)            | EfficientNetV2B0 | 6bn40bha                                 | ✅ 완료   |
 | 7 | NNCLR (SSL)             | ResNet50V2       | 7p28wnk2                                 | ✅ 완료   |
