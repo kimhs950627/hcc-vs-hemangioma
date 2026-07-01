@@ -1,6 +1,6 @@
 # 논문 초고 개요 — 의학 저널 투고용
 
-> **작성 상태**: 개정판 (rev. 2026-07-01 — CE+SupCon 재실험 수치 반영, 이미지 경로 개정; intraclass heterogeneity 논거 추가 (§1.2, §1.3, §4.6), ref [28]–[32] 추가; §3.5 SupCon 필요성 섹션 개편)
+> **작성 상태**: 개정판 (rev. 2026-07-01 — CE+SupCon 재실험 수치 반영, 이미지 경로 개정; intraclass heterogeneity 논거 추가 (§1.2, §1.3, §4.6); 참고문헌 검증·정리 (허위·중복 레퍼런스 제거, DOI·서지사항 정정); §3.5 SupCon 필요성 섹션 개편)
 > **목표 저널**: PubMed 등재, SCIE Q1–Q2
 > *(예: Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
@@ -20,11 +20,11 @@
 
 ### 연구 배경 (Background)
 
-B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심 도구이나, 조기 병변에 대한 민감도는 47% 수준에 머물며 검사자 의존성이 크다.[4] 기존 딥러닝 분류 모델은 대부분 단일 softmax 출력만을 제공하는데, 이는 임상의가 수행하는 유사성 기반 추론과 직접 대응하지 않으며 보정되지 않은 과잉 확신을 반영할 수 있다.[18]
+B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심 도구이나, 조기 병변에 대한 민감도는 47% 수준에 머물며 검사자 의존성이 크다.[4] 기존 딥러닝 분류 모델은 대부분 단일 softmax 출력만을 제공하는데, 이는 임상의가 수행하는 유사성 기반 추론과 직접 대응하지 않으며 보정되지 않은 과잉 확신을 반영할 수 있다.[16]
 
 ### 방법 (Methods)
 
-삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장)[14]을 이용한 단일 기관 후향적 연구이다. EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합으로 학습하였다. 단일 softmax 출력을 **confidence score**로, 임베딩과 HCC prototype 간 cosine similarity를 **HCC cosine score**, 두 클래스 prototype 간 마진을 **Δscore**로 각각 정의하는 이중 출력 체계를 구성하였다. 임계값은 검증 세트에서만 Youden's J로 결정 후 테스트 세트에 고정 적용하였다.
+삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장)[12]을 이용한 단일 기관 후향적 연구이다. EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합으로 학습하였다. 단일 softmax 출력을 **confidence score**로, 임베딩과 HCC prototype 간 cosine similarity를 **HCC cosine score**, 두 클래스 prototype 간 마진을 **Δscore**로 각각 정의하는 이중 출력 체계를 구성하였다. 임계값은 검증 세트에서만 Youden's J로 결정 후 테스트 세트에 고정 적용하였다.
 
 ### 결과 (Results)
 
@@ -50,13 +50,13 @@ B-mode 초음파는 현재 이용 가능한 감시 도구 중 가장 접근성�
 
 #### 1.2.1 클래스 내 이질성(Intraclass Heterogeneity)의 문제
 
-HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 하나는 두 클래스 모두 **전형적(typical) 소견과 비전형적(atypical) 소견이 넓은 스펙트럼에 걸쳐 공존**한다는 점이다. HCC는 전통적으로 간경변 배경에서 hypoechoic 또는 heterogeneous 결절로 나타나나, 전체의 10–15%는 atypical 소견을 보여 고분화 HCC(well-differentiated HCC)가 고에코성 hemangioma 패턴을 모사하는 경우가 보고된다.[28] Hemangioma 역시 전형적으로는 고에코성·경계 명확한 균질 종괴로 관찰되나, atypical hemangioma는 저에코성 테두리, 이질적 에코 구조, 경계 불분명 등 악성 종양을 mimicking하는 소견을 나타낸다.[29][30] AFP 상승을 동반한 atypical hemangioma가 HCC와의 감별에 실패한 증례도 문헌에 보고되어 있다.[29] B-mode 초음파만으로 HCC와 hemangioma를 감별하는 임상적 어려움은 이처럼 두 클래스 내부의 표현형 다양성에서 기인한다.
+HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 하나는 두 클래스 모두 **전형적(typical) 소견과 비전형적(atypical) 소견이 넓은 스펙트럼에 걸쳐 공존**한다는 점이다. HCC는 전통적으로 간경변 배경에서 hypoechoic 또는 heterogeneous 결절로 나타나나, 전체의 10–15%는 atypical 소견을 보여 고분화 HCC(well-differentiated HCC)가 고에코성 hemangioma 패턴을 모사하는 경우가 보고된다.[21] Hemangioma 역시 전형적으로는 고에코성·경계 명확한 균질 종괴로 관찰되나, atypical hemangioma는 저에코성 테두리, 이질적 에코 구조, 경계 불분명 등 악성 종양을 mimicking하는 소견을 나타낸다.[22][23] AFP 상승을 동반한 atypical hemangioma가 HCC와의 감별에 실패한 증례도 문헌에 보고되어 있다.[22] B-mode 초음파만으로 HCC와 hemangioma를 감별하는 임상적 어려움은 이처럼 두 클래스 내부의 표현형 다양성에서 기인한다.
 
-임상 판독에서 초음파 의사는 단순히 "이 병변은 HCC인가, 아닌가"라는 이진 결정을 내리지 않는다. 실제로는 "이 병변이 전형적 HCC의 소견을 얼마나 닮았는가", "혈관종 중에서도 atypical 패턴에 가까운가, 전형 패턴에 가까운가"를 평가하는 **연속적 유사성 기반 추론(similarity-based reasoning)**을 수행한다. LI-RADS 체계가 LR-3(중등도 위험), LR-4(높은 위험), LR-5(전형적 HCC 소견) 등 연속적 위험 계층으로 구성된 것은 이 임상적 현실을 반영한다.[31] 그러나 기존 딥러닝 분류 모델은 이 스펙트럼을 단일 이진 출력으로 압축하여 클래스 내부의 표현형 이질성을 출력에 반영하지 않는다.
+임상 판독에서 초음파 의사는 단순히 "이 병변은 HCC인가, 아닌가"라는 이진 결정을 내리지 않는다. 실제로는 "이 병변이 전형적 HCC의 소견을 얼마나 닮았는가", "혈관종 중에서도 atypical 패턴에 가까운가, 전형 패턴에 가까운가"를 평가하는 **연속적 유사성 기반 추론(similarity-based reasoning)**을 수행한다. LI-RADS 체계가 LR-3(중등도 위험), LR-4(높은 위험), LR-5(전형적 HCC 소견) 등 연속적 위험 계층으로 구성된 것은 이 임상적 현실을 반영한다.[24] 그러나 기존 딥러닝 분류 모델은 이 스펙트럼을 단일 이진 출력으로 압축하여 클래스 내부의 표현형 이질성을 출력에 반영하지 않는다.
 
 #### 1.2.2 단일 Softmax 출력의 구조적 한계
 
-최근 초음파 간 국소 병변 분류에서 딥러닝 모델이 유망한 성능을 보인 연구들이 보고되었다.[6][7] 그러나 이들은 공통적으로 **단일 softmax 출력**을 최종 진단 지표로 사용한다. 이 접근은 두 가지 구조적 한계를 내포한다. 첫째, softmax 값이 보정 없이 실제 질환 확률을 반영하지 않으며,[18] 출력값이 모델의 결정 강도를 나타낼 뿐 병변이 전형적 HCC cluster의 중심부에 위치하는지 경계부에 위치하는지에 관한 정보를 제공하지 않는다. 둘째, atypical HCC와 전형 HCC가 동일한 출력 범위 내에서 처리되므로, 추가 검사를 요하는 비전형 병변을 자동으로 식별하는 임상 triage 기능이 부재하다. 기존 AI 연구가 전형적 소견의 병변에서 90% 이상의 정확도를 보고하면서도 atypical 케이스에 대한 검증이 충분하지 않다는 점은 이 한계의 직접적 결과이다.[32]
+최근 초음파 간 국소 병변 분류에서 딥러닝 모델이 유망한 성능을 보인 연구들이 보고되었다.[5][6] 그러나 이들은 공통적으로 **단일 softmax 출력**을 최종 진단 지표로 사용한다. 이 접근은 두 가지 구조적 한계를 내포한다. 첫째, softmax 값이 보정 없이 실제 질환 확률을 반영하지 않으며,[16] 출력값이 모델의 결정 강도를 나타낼 뿐 병변이 전형적 HCC cluster의 중심부에 위치하는지 경계부에 위치하는지에 관한 정보를 제공하지 않는다. 둘째, atypical HCC와 전형 HCC가 동일한 출력 범위 내에서 처리되므로, 추가 검사를 요하는 비전형 병변을 자동으로 식별하는 임상 triage 기능이 부재하다. 기존 AI 연구가 전형적 소견의 병변에서 90% 이상의 정확도를 보고하면서도 atypical 케이스에 대한 검증이 충분하지 않다는 점은 이 한계의 직접적 결과이다.[21]
 
 임베딩 공간의 클러스터 구조를 활용하면 이 문제를 보완할 수 있다. 병변 임베딩과 클래스 prototype 간의 cosine 거리는 해당 병변이 전형적 HCC cluster의 핵심부(core)에 있는지 주변부(periphery)에 있는지를 연속값으로 나타낸다. 이는 softmax 분류 경계를 넘지 않는 범위 내에서도 비전형성의 정도를 정량화하며, 임상의의 유사성 기반 추론과 직접 대응하는 구조이다.
 
@@ -72,13 +72,13 @@ HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 �
 
 ### 2.1 연구 설계
 
-본 연구는 삼성서울병원 B-mode 간 초음파 영상 아카이브를 이용한 단일 기관 후향적 관찰 연구이다. TRIPOD 보고 기준에 따라 작성되었으며,[13] 기관생명윤리위원회 승인 하에 수행되었다(동의 면제 적용).
+본 연구는 삼성서울병원 B-mode 간 초음파 영상 아카이브를 이용한 단일 기관 후향적 관찰 연구이다. TRIPOD 보고 기준에 따라 작성되었으며,[11] 기관생명윤리위원회 승인 하에 수행되었다(동의 면제 적용).
 
 > 📝 **[TODO: IRB]** IRB 승인번호 및 동의면제 문구 기입
 
 ### 2.2 데이터셋 및 연구 대상
 
-본 연구에서는 SMC-LUD(Samsung Medical Center–Liver Ultrasound Dataset)를 사용하였다.[14] 동 데이터셋은 2015년부터 2024년까지 수집된 간 국소 병변 B-mode 영상으로, 병리학적으로 확인된 HCC 2,716장과 영상 기준으로 진단된 혈관종 2,669장을 포함하는 총 1,021명 5,385장의 흑백 영상으로 구성된다. 동일 환자 영상의 개발·평가 단계 간 교차 오염을 방지하기 위해 환자 단위 분리를 적용하였으며, 훈련 1,858장·검증 530장·테스트 268장으로 구분하였다. HCC와 hemangioma의 클래스 비율은 세트 간에 균형 있게 유지되었다(각 약 52% vs 48%).
+본 연구에서는 SMC-LUD(Samsung Medical Center–Liver Ultrasound Dataset)를 사용하였다.[12] 동 데이터셋은 2015년부터 2024년까지 수집된 간 국소 병변 B-mode 영상으로, 병리학적으로 확인된 HCC 2,716장과 영상 기준으로 진단된 혈관종 2,669장을 포함하는 총 1,021명 5,385장의 흑백 영상으로 구성된다. 동일 환자 영상의 개발·평가 단계 간 교차 오염을 방지하기 위해 환자 단위 분리를 적용하였으며, 훈련 1,858장·검증 530장·테스트 268장으로 구분하였다. HCC와 hemangioma의 클래스 비율은 세트 간에 균형 있게 유지되었다(각 약 52% vs 48%).
 
 #### Table 1. Patient and Lesion Demographics
 
@@ -89,13 +89,13 @@ HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 �
 | 여성, n (%) | 109 (18.2%) | 247 (58.7%) |
 | 병변 크기 (최대 직경), 중앙값 / Q1 / Q3, cm | 2.90 / 2.10 / 4.50 | — |
 
-*데이터 출처: SMC-LUD 원본 데이터셋 논문[14].*
+*데이터 출처: SMC-LUD 원본 데이터셋 논문[12].*
 
 ### 2.3 모델 구조
 
 제안 모델은 CNN과 트랜스포머 인코더를 결합한 hybrid vision transformer이다. CNN backbone으로는 EfficientNetV2B0를 채택하였다. 추출된 특징 맵은 패치 토큰으로 재형성되어 트랜스포머 인코더에 입력되며, 분류 토큰(CLS token)의 최종 표현 벡터(임베딩)로부터 confidence score와 cosine 기반 표지자를 동시에 산출하는 이중 출력 구조를 구성하였다.
 
-**EfficientNetV2B0를 주력 backbone으로 선택한 근거는 세 가지이다.** 첫째, EfficientNetV2B0는 ResNet50V2 대비 파라미터 효율성이 우수하며(7.1M vs 23.6M), 1,858장 규모의 의료 영상 데이터셋에서 과적합 위험이 낮다.[8] 둘째, ablation(Table 2) 결과 EfficientNetV2B0+CE+SupCon이 ResNet50V2+CE+SupCon과 동등한 분류 AUROC(각 1.000)를 보이면서 더 경량한 모델 크기를 유지하여 임상 배포 적합성이 높다. 셋째, EfficientNetV2B0는 SupCon 적용 후 HCC cosine score 임계값이 −0.47에서 −0.005로 이동하는 임베딩 정렬 향상이 ResNet50V2(−0.48 → −0.117)와 동등하게 관찰되어 cosine 기반 표지자 도출에도 동등한 적합성을 보인다.
+**EfficientNetV2B0를 주력 backbone으로 선택한 근거는 세 가지이다.** 첫째, EfficientNetV2B0는 ResNet50V2 대비 파라미터 효율성이 우수하며(7.1M vs 23.6M), 1,858장 규모의 의료 영상 데이터셋에서 과적합 위험이 낮다.[7] 둘째, ablation(Table 2) 결과 EfficientNetV2B0+CE+SupCon이 ResNet50V2+CE+SupCon과 동등한 분류 AUROC(각 1.000)를 보이면서 더 경량한 모델 크기를 유지하여 임상 배포 적합성이 높다. 셋째, EfficientNetV2B0는 SupCon 적용 후 HCC cosine score 임계값이 −0.47에서 −0.005로 이동하는 임베딩 정렬 향상이 ResNet50V2(−0.48 → −0.117)와 동등하게 관찰되어 cosine 기반 표지자 도출에도 동등한 적합성을 보인다.
 
 ### 2.4 학습 전략 및 Ablation 설계
 
@@ -107,7 +107,7 @@ CE 단독 학습과 CE+SupCon 학습의 차이는 손실 함수 구성에 있다
 
 $$ \mathcal{L}_{SupCon} = \sum_{i} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \frac{\exp(z_i \cdot z_p / \tau)}{\sum_{a \in A(i)} \exp(z_i \cdot z_a / \tau)} $$
 
-여기서 $P(i)$는 표본 $i$와 동일한 클래스에 속하는 양성 표본들의 집합, $A(i)$는 미니배치 내의 전체 표본, $\tau$는 temperature 파라미터이다. 이 수식은 동일 클래스 표본 간의 거리를 가깝게 당기고(pull) 다른 클래스 표본 간의 거리는 밀어내는(push) 명시적 역할을 수행한다.[15] 이를 통해 CE+SupCon 모델은 분류 경계 형성뿐만 아니라 임베딩 공간 자체에 강력한 기하학적 응집성(intra-class compactness)과 분리성(inter-class separability)을 부여하도록 최적화된다.
+여기서 $P(i)$는 표본 $i$와 동일한 클래스에 속하는 양성 표본들의 집합, $A(i)$는 미니배치 내의 전체 표본, $\tau$는 temperature 파라미터이다. 이 수식은 동일 클래스 표본 간의 거리를 가깝게 당기고(pull) 다른 클래스 표본 간의 거리는 밀어내는(push) 명시적 역할을 수행한다.[13] 이를 통해 CE+SupCon 모델은 분류 경계 형성뿐만 아니라 임베딩 공간 자체에 강력한 기하학적 응집성(intra-class compactness)과 분리성(inter-class separability)을 부여하도록 최적화된다.
 
 모든 모델은 384 × 384 흑백 입력, Adam optimizer, cosine annealing + warmup 학습률 스케줄로 학습하였다. 데이터 증강에는 수평·수직 반전, 무작위 자르기·크기 조정, 밝기·대비 변환, Gaussian blur가 포함되었다.
 
@@ -115,7 +115,7 @@ $$ \mathcal{L}_{SupCon} = \sum_{i} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \fra
 
 본 연구의 핵심 기여는 동일한 모델에서 성격이 상이한 두 출력을 명시적으로 구분하고 각각의 임상적 의미를 정의하는 데 있다.
 
-**Confidence Score.** HCC 클래스에 해당하는 softmax 값으로 정의한다. 보정된 사후 확률을 자동으로 의미하지 않으므로,[18] 본 연구에서는 이를 확률이 아닌 **모델의 결정 강도(decision strength)**로 명명한다.
+**Confidence Score.** HCC 클래스에 해당하는 softmax 값으로 정의한다. 보정된 사후 확률을 자동으로 의미하지 않으므로,[16] 본 연구에서는 이를 확률이 아닌 **모델의 결정 강도(decision strength)**로 명명한다.
 
 **HCC Cosine Score.** 학습 완료 후 훈련 세트 HCC 표본들의 평균 임베딩 벡터를 HCC prototype으로 구성한다. 임의의 병변 영상 임베딩과 HCC prototype 간의 cosine similarity를 HCC cosine score로 산출한다. 이 점수는 임상의가 병변을 전형적 HCC 소견과 비교하는 유사성 기반 추론을 수치화한 연속형 영상표지자 후보이다.
 
@@ -127,7 +127,7 @@ $$ \mathcal{L}_{SupCon} = \sum_{i} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \fra
 
 ### 2.7 통계 분석
 
-모델 변별력은 AUROC로 평가하고 신뢰구간은 DeLong 방법으로 추정하였다.[16] ROC-A(confidence score), ROC-B(HCC cosine score), ROC-C(Δscore) 세 ROC 곡선 간 쌍별 비교는 DeLong 검정으로 수행하였으며, p > 0.05를 cosine 기반 표지자의 비열등성(non-inferiority) 지지로 해석하였다. 임계값 의존적 지표로는 민감도·특이도·PPV·NPV·F1·혼동행렬이 포함되었다. Confidence score와 Δscore의 결합 분포를 이중 출력 산점도로 시각화하였다. SupCon 유무에 따른 true HCC cases의 HCC cosine score 및 Δscore 분포 차이는 독립표본 t-검정으로 비교하였다.
+모델 변별력은 AUROC로 평가하고 신뢰구간은 DeLong 방법으로 추정하였다.[14] ROC-A(confidence score), ROC-B(HCC cosine score), ROC-C(Δscore) 세 ROC 곡선 간 쌍별 비교는 DeLong 검정으로 수행하였으며, p > 0.05를 cosine 기반 표지자의 비열등성(non-inferiority) 지지로 해석하였다. 임계값 의존적 지표로는 민감도·특이도·PPV·NPV·F1·혼동행렬이 포함되었다. Confidence score와 Δscore의 결합 분포를 이중 출력 산점도로 시각화하였다. SupCon 유무에 따른 true HCC cases의 HCC cosine score 및 Δscore 분포 차이는 독립표본 t-검정으로 비교하였다.
 
 ---
 
@@ -236,7 +236,7 @@ CE 단독 학습과 CE+SupCon 학습 간 cosine 기반 표지자의 분포 차�
 
 SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC cases HCC cosine score 중앙값은 0.857이었으나, CE+SupCon 조건에서 0.927로 유의하게 상승하였다(독립표본 t-검정, p < 0.001, ***). ResNet50V2에서도 동일한 방향의 변화가 관찰되었다(CE only: 0.843 → CE+SupCon: 0.918, p < 0.001). Δscore에서도 동일한 패턴이 확인되었다. CE only 조건에서 EfficientNetV2B0의 Δscore 중앙값은 −0.132로 음수를 기록하여, 일부 true HCC cases의 임베딩이 HCC prototype보다 hemangioma prototype에 더 가깝게 위치함을 보였다. CE+SupCon 조건에서 이 값은 +0.061로 부호가 전환되었으며(p < 0.001, ***), ResNet50V2 역시 −0.174에서 −0.097로 상승하였다(p < 0.001).
 
-이 결과는 SupCon이 분류 성능 이외에 임베딩 공간의 클래스별 정렬 구조를 직접적으로 개선함을 실험적으로 입증한다. CE only 조건에서 임베딩은 분류 경계를 넘지 않더라도 prototype 중심에서 이탈한 위치에 분산될 수 있으며, 이 경우 cosine similarity는 클래스 구성원임을 반영하는 타당한 척도로 기능하지 않는다. SupCon 학습은 동일 클래스 임베딩 간의 인력(pull)과 이종 클래스 임베딩 간의 척력(push)을 명시적 학습 목적으로 구성함으로써[15], HCC 표본의 임베딩이 HCC prototype 방향으로 정렬되도록 임베딩 공간을 재편한다. True HCC cases의 HCC cosine score 및 Δscore가 CE+SupCon 조건에서 일관되게 상승하고 군 간 차이가 모두 p < 0.001로 통계적으로 유의한 것은, cosine 기반 표지자가 임상적으로 의미 있는 유사성 척도로 기능하기 위해 SupCon이 필수적 학습 전략임을 뒷받침한다.
+이 결과는 SupCon이 분류 성능 이외에 임베딩 공간의 클래스별 정렬 구조를 직접적으로 개선함을 실험적으로 입증한다. CE only 조건에서 임베딩은 분류 경계를 넘지 않더라도 prototype 중심에서 이탈한 위치에 분산될 수 있으며, 이 경우 cosine similarity는 클래스 구성원임을 반영하는 타당한 척도로 기능하지 않는다. SupCon 학습은 동일 클래스 임베딩 간의 인력(pull)과 이종 클래스 임베딩 간의 척력(push)을 명시적 학습 목적으로 구성함으로써[13], HCC 표본의 임베딩이 HCC prototype 방향으로 정렬되도록 임베딩 공간을 재편한다. True HCC cases의 HCC cosine score 및 Δscore가 CE+SupCon 조건에서 일관되게 상승하고 군 간 차이가 모두 p < 0.001로 통계적으로 유의한 것은, cosine 기반 표지자가 임상적으로 의미 있는 유사성 척도로 기능하기 위해 SupCon이 필수적 학습 전략임을 뒷받침한다.
 
 **Figure 7. HCC Cosine Score Distribution in True HCC Cases by Training Mode (Val + Test)**
 
@@ -263,11 +263,11 @@ SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC
 
 ### 4.1 임상적 미충족 수요와 본 연구의 위치
 
-초음파 감시는 HCC 조기 발견의 핵심 전략이나 민감도는 여전히 제한적이다. Tzartzeva 등(2018)의 메타분석에서 초음파 단독 조기 HCC 민감도는 47%에 불과하였으며, AFP 병용 시에도 63% 수준이었다.[4] Yang 등(2020)은 13개 기관 2,143명에서 AUROC 0.924를 달성하며 딥러닝의 잠재력을 보였고,[6] Du 등(2025)은 다기관 전향 검증을 수행하였다.[27] 특히 본 연구의 주력 모델(EfficientNetV2B0 + CE+SupCon)은 테스트 세트 정확도 99.63%를 달성하여, 동일한 SMC-LUD 데이터셋을 발표한 선행 연구[14]에서 제안된 baseline 모델의 분류 정확도(98.88%)를 상회하는 우수한 성능을 입증하였다. 그러나 이들을 포함한 기존 연구들은 단일 softmax 출력을 최종 지표로 사용하며, 임베딩 공간의 기하학적 유사도를 독립적인 표지자로 제시하지 않았다. 본 연구는 이 간극을 메우며, 임상의의 유사성 기반 추론에 대응하는 새로운 연속형 영상표지자 후보를 제안한다.
+초음파 감시는 HCC 조기 발견의 핵심 전략이나 민감도는 여전히 제한적이다. Tzartzeva 등(2018)의 메타분석에서 초음파 단독 조기 HCC 민감도는 47%에 불과하였으며, AFP 병용 시에도 63% 수준이었다.[4] Yang 등(2020)은 13개 기관 2,143명에서 AUROC 0.924를 달성하며 딥러닝의 잠재력을 보였고,[5] Du 등(2025)은 다기관 후향 외부 검증을 수행하였다.[20] 특히 본 연구의 주력 모델(EfficientNetV2B0 + CE+SupCon)은 테스트 세트 정확도 99.63%를 달성하여, 동일한 SMC-LUD 데이터셋을 발표한 선행 연구[12]에서 제안된 baseline 모델의 분류 정확도(98.88%)를 상회하는 우수한 성능을 입증하였다. 그러나 이들을 포함한 기존 연구들은 단일 softmax 출력을 최종 지표로 사용하며, 임베딩 공간의 기하학적 유사도를 독립적인 표지자로 제시하지 않았다. 본 연구는 이 간극을 메우며, 임상의의 유사성 기반 추론에 대응하는 새로운 연속형 영상표지자 후보를 제안한다.
 
 ### 4.2 Confidence Score의 개념적 재정의
 
-의료 AI 분야에서 softmax 출력을 확률로 표현하는 것은 방법론적으로 정당화되지 않는 경우가 많다. 현대 심층 신경망은 과잉 확신을 보이며,[18] 특히 초음파처럼 비병변 artifact가 풍부한 환경에서는 softmax 값과 실제 정답률 사이의 괴리가 크다.[20] 본 연구에서 softmax 출력을 **confidence score(결정 강도)**로 재정의한 것은 이러한 관행에 대한 명시적 이의 제기이며, 모델의 출력을 있는 그대로 해석하기 위한 첫걸음이다.
+의료 AI 분야에서 softmax 출력을 확률로 표현하는 것은 방법론적으로 정당화되지 않는 경우가 많다. 현대 심층 신경망은 과잉 확신을 보이며,[16] 특히 초음파처럼 비병변 artifact가 풍부한 환경에서는 softmax 값과 실제 정답률 사이의 괴리가 크다.[17] 본 연구에서 softmax 출력을 **confidence score(결정 강도)**로 재정의한 것은 이러한 관행에 대한 명시적 이의 제기이며, 모델의 출력을 있는 그대로 해석하기 위한 첫걸음이다.
 
 ### 4.3 유사성 기반 추론의 정량화와 SupCon의 필수성
 
@@ -287,11 +287,11 @@ SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC
 
 본 연구의 신규성은 다섯 가지 차원에서 정의된다.
 
-**① 클래스 내 이질성에 대응하는 연속형 표지자 제안.** HCC와 hemangioma는 각각 전형적 소견과 비전형적 소견이 넓은 스펙트럼에 걸쳐 공존한다.[28][29][30] 전체 HCC의 10–15%는 atypical 소견을 보이며,[28] atypical hemangioma는 악성 종양을 mimicking하여 단순 B-mode 초음파에서의 감별이 현저히 어렵다.[29][30] 그럼에도 기존 딥러닝 분류 모델은 이 intraclass heterogeneity를 단일 이진 출력으로 압축하여 전형 병변과 비전형 병변을 동등하게 처리한다. 기존 AI 문헌은 전형적 소견 병변에서의 높은 정확도를 보고하나 atypical case에 대한 검증은 불충분하다는 점이 한계로 지적된다.[32] 본 연구가 제안하는 HCC cosine score는 병변 임베딩과 HCC prototype 간의 거리를 연속값으로 정량화하여, 분류 경계를 넘지 않는 범위에서도 해당 병변이 전형 HCC cluster의 핵심부에 있는지 주변부에 있는지를 반영한다. 이는 임상의가 LI-RADS 체계에서 수행하는 위험 계층화 추론[31]과 구조적으로 대응하며, 단일 이진 출력으로는 표현 불가능한 비전형성의 정도를 영상표지자로 제공한다.
+**① 클래스 내 이질성에 대응하는 연속형 표지자 제안.** HCC와 hemangioma는 각각 전형적 소견과 비전형적 소견이 넓은 스펙트럼에 걸쳐 공존한다.[21][22][23] 전체 HCC의 10–15%는 atypical 소견을 보이며,[21] atypical hemangioma는 악성 종양을 mimicking하여 단순 B-mode 초음파에서의 감별이 현저히 어렵다.[22][23] 그럼에도 기존 딥러닝 분류 모델은 이 intraclass heterogeneity를 단일 이진 출력으로 압축하여 전형 병변과 비전형 병변을 동등하게 처리한다. 기존 AI 문헌은 전형적 소견 병변에서의 높은 정확도를 보고하나 atypical case에 대한 검증은 불충분하다는 점이 한계로 지적된다.[21] 본 연구가 제안하는 HCC cosine score는 병변 임베딩과 HCC prototype 간의 거리를 연속값으로 정량화하여, 분류 경계를 넘지 않는 범위에서도 해당 병변이 전형 HCC cluster의 핵심부에 있는지 주변부에 있는지를 반영한다. 이는 임상의가 LI-RADS 체계에서 수행하는 위험 계층화 추론[24]과 구조적으로 대응하며, 단일 이진 출력으로는 표현 불가능한 비전형성의 정도를 영상표지자로 제공한다.
 
 **② 출력 해석론의 전환.** Softmax 출력을 확률이 아닌 결정 강도(confidence score)로 재정의하고, 이와 별도로 임베딩 기반 유사성 표지자를 함께 제안한 연구는 초음파 간 병변 분류 영역에서 보고된 바 없다.
 
-**③ 유사성 기반 추론의 정량화.** 임상의의 prototype 비교 추론을 수치화하는 연속형 표지자(HCC cosine score, Δscore)를 SupCon 기반 임베딩에서 직접 도출하였다. 기존 prototype 기반 모델들[23][24]과 달리 추가적인 아키텍처 변경 없이 기존 분류 모델에 적용 가능하다.
+**③ 유사성 기반 추론의 정량화.** 임상의의 prototype 비교 추론을 수치화하는 연속형 표지자(HCC cosine score, Δscore)를 SupCon 기반 임베딩에서 직접 도출하였다. 기존 prototype 기반 모델들[18][19]과 달리 추가적인 아키텍처 변경 없이 기존 분류 모델에 적용 가능하다.
 
 **④ SupCon의 필수성 실험적 입증.** CE-only 대비 SupCon이 cosine 기반 표지자의 임베딩 정렬 타당성(cutoff의 0 부근 수렴, true HCC cases score 유의 상승)을 확보함을 ablation으로 정량적으로 입증하였다. 이는 유사성 기반 표지자 도출을 위한 학습 전략 설계 원칙을 제시한다.
 
@@ -311,37 +311,27 @@ SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC
 
 ## 참고문헌 (References)
 
-> 📝 **[TODO]** 참고문헌 완성 — 번호 매핑 확인 필요
-
-1. Sung H, et al. Global cancer statistics 2020. *CA Cancer J Clin.* 2021;71:209-249.
-2. European Association for the Study of the Liver. EASL clinical practice guidelines: management of hepatocellular carcinoma. *J Hepatol.* 2018;69:182-236.
-3. Korean Liver Cancer Association. 2022 KLCA-NCC Korea practice guidelines for hepatocellular carcinoma. *Gut Liver.* 2023;17:1-27.
-4. Tzartzeva K, et al. Surveillance imaging and alpha fetoprotein for early detection of hepatocellular carcinoma in patients with cirrhosis. *Gastroenterology.* 2018;154:1706-1718.
-5. (예비)
-6. Yang Q, et al. Artificial intelligence in liver ultrasound diagnosis. *[Journal TBD].* 2020.
-7. (예비)
-8. Tan M, Le QV. EfficientNetV2: Smaller models and faster training. *ICML.* 2021.
-9. He K, et al. Deep residual learning for image recognition. *CVPR.* 2016.
-10. Dosovitskiy A, et al. An image is worth 16×16 words. *ICLR.* 2021.
-11. (예비)
-12. Geirhos R, et al. Shortcut learning in deep neural networks. *Nat Mach Intell.* 2020.
-13. Collins GS, et al. Transparent reporting of a multivariable prediction model for individual prognosis or diagnosis (TRIPOD). *BMJ.* 2015.
-14. Tak J, Ko RE, Kwon RD, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. *Sci Data*. 2026;13:649.
-15. Khosla P, et al. Supervised contrastive learning. *NeurIPS.* 2020.
-16. DeLong ER, et al. Comparing the areas under two or more correlated receiver operating characteristic curves. *Biometrics.* 1988.
-17. Vickers AJ, et al. Decision curve analysis: a novel method for evaluating prediction models. *Med Decis Making.* 2006.
-18. Guo C, et al. On calibration of modern neural networks. *ICML.* 2017.
-19. [Shortcut learning in medical AI TBD]
-20. [Ultrasound artifact shortcut TBD]
-21. (예비)
-22. (예비)
-23. Chen C, et al. This looks like that: deep learning for interpretable image recognition (ProtoPNet). *NeurIPS.* 2019.
-24. Li O, et al. Deep learning for case-based reasoning through prototypes (D-ProtoPNet). *AAAI.* 2018.
-25. (예비)
-26. (예비)
-27. Du X, et al. [Multi-center prospective validation TBD].* 2025.
-28. Kim H, et al. Imaging diagnosis of various hepatocellular carcinoma subtypes and mimickers: how to maximize diagnostic performance. *Liver Cancer.* 2023;12(2):103–118. https://doi.org/10.1159/000528780
-29. Chou CT, et al. Atypical hemangioma mimicking mixed hepatocellular cholangiocarcinoma: case report and literature review. *Medicine (Baltimore).* 2017;96(50):e9069. https://doi.org/10.1097/MD.0000000000009069
-30. Sirli R, et al. Contrast enhanced ultrasound for the diagnosis of liver hemangiomas. *Med Ultrason.* 2015;17(4):444–448. https://doi.org/10.11152/mu.2013.2066.174.hsr
-31. American College of Radiology. CT/MRI LI-RADS v2018: Diagnostic Categories and Technical Requirements. *ACR.* 2018. Available from: https://www.acr.org/Clinical-Resources/Reporting-and-Data-Systems/LI-RADS
-32. Kim IY, et al. Imaging diagnosis of various hepatocellular carcinoma subtypes and mimickers. *Liver Cancer.* 2023;12:103–118. [AI high accuracy for typical; atypical validation gap acknowledged]
+1. Sung H, Ferlay J, Siegel RL, et al. Global Cancer Statistics 2020: GLOBOCAN Estimates of Incidence and Mortality Worldwide for 36 Cancers in 185 Countries. *CA Cancer J Clin.* 2021;71(3):209-249. https://doi.org/10.3322/caac.21660
+2. European Association for the Study of the Liver. EASL Clinical Practice Guidelines: Management of hepatocellular carcinoma. *J Hepatol.* 2018;69(1):182-236. https://doi.org/10.1016/j.jhep.2018.03.019
+3. Korean Liver Cancer Association (KLCA) and National Cancer Center (NCC) Korea. 2022 KLCA-NCC Korea practice guidelines for the management of hepatocellular carcinoma. *Clin Mol Hepatol.* 2022;28(4):583-705. https://doi.org/10.3350/cmh.2022.0294
+4. Tzartzeva K, Obi J, Rich NE, et al. Surveillance Imaging and Alpha Fetoprotein for Early Detection of Hepatocellular Carcinoma in Patients With Cirrhosis: A Meta-analysis. *Gastroenterology.* 2018;154(6):1706-1718. https://doi.org/10.1053/j.gastro.2018.01.064
+5. Yang Q, Wei J, Hao X, et al. Improving B-mode ultrasound diagnostic performance for focal liver lesions using deep learning: A multicentre study. *EBioMedicine.* 2020;56:102777. https://doi.org/10.1016/j.ebiom.2020.102777
+6. Han X, Gong B, Guo L, et al. B-mode ultrasound based CAD for liver cancers via multi-view privileged information learning. *Neural Netw.* 2023;164:369-381. https://doi.org/10.1016/j.neunet.2023.03.028
+7. Tan M, Le QV. EfficientNetV2: Smaller Models and Faster Training. In: Proceedings of the 38th International Conference on Machine Learning (ICML). 2021. Available from: https://arxiv.org/abs/2104.00298
+8. He K, Zhang X, Ren S, Sun J. Deep Residual Learning for Image Recognition. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR). 2016:770-778. https://doi.org/10.1109/CVPR.2016.90
+9. Dosovitskiy A, Beyer L, Kolesnikov A, et al. An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale. In: International Conference on Learning Representations (ICLR). 2021. Available from: https://arxiv.org/abs/2010.11929
+10. Geirhos R, Jacobsen JH, Michaelis C, et al. Shortcut Learning in Deep Neural Networks. *Nat Mach Intell.* 2020;2(11):665-673. https://doi.org/10.1038/s42256-020-00257-z
+11. Collins GS, Reitsma JB, Altman DG, Moons KGM. Transparent reporting of a multivariable prediction model for individual prognosis or diagnosis (TRIPOD): the TRIPOD statement. *BMJ.* 2015;350:g7594. https://doi.org/10.1136/bmj.g7594
+12. Tak J, Ko RE, Kwon RD, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. *Sci Data.* 2026;13:649. https://doi.org/10.1038/s41597-026-07023-7
+13. Khosla P, Teterwak P, Wang C, et al. Supervised Contrastive Learning. In: Advances in Neural Information Processing Systems (NeurIPS). 2020. Available from: https://arxiv.org/abs/2004.11362
+14. DeLong ER, DeLong DM, Clarke-Pearson DL. Comparing the Areas under Two or More Correlated Receiver Operating Characteristic Curves: A Nonparametric Approach. *Biometrics.* 1988;44(3):837-845. https://doi.org/10.2307/2531595
+15. Vickers AJ, Elkin EB. Decision Curve Analysis: A Novel Method for Evaluating Prediction Models. *Med Decis Making.* 2006;26(6):565-574. https://doi.org/10.1177/0272989X06295361
+16. Guo C, Pleiss G, Sun Y, Weinberger KQ. On Calibration of Modern Neural Networks. In: Proceedings of the 34th International Conference on Machine Learning (ICML). 2017. Available from: https://arxiv.org/abs/1706.04599
+17. Liu S, Wang Y, Yang X, et al. Deep Learning in Medical Ultrasound Analysis: A Review. *Engineering.* 2019;5(2):261-275. https://doi.org/10.1016/j.eng.2018.11.020
+18. Chen C, Li O, Tao D, Barnett A, Rudin C, Su J. This Looks Like That: Deep Learning for Interpretable Image Recognition. In: Advances in Neural Information Processing Systems (NeurIPS). 2019. Available from: https://arxiv.org/abs/1806.10574
+19. Li O, Liu H, Chen C, Rudin C. Deep Learning for Case-Based Reasoning Through Prototypes: A Neural Network That Explains Its Predictions. In: Proceedings of the AAAI Conference on Artificial Intelligence. 2018;32(1). https://doi.org/10.1609/aaai.v32i1.11771
+20. Du Z, Fan F, Ma J, et al. Development and validation of an ultrasound-based interpretable machine learning model for the classification of ≤3 cm hepatocellular carcinoma: a multicentre retrospective diagnostic study. *eClinicalMedicine.* 2025;81:103098. https://doi.org/10.1016/j.eclinm.2025.103098
+21. Minami Y, Nishida N, Kudo M. Imaging Diagnosis of Various Hepatocellular Carcinoma Subtypes and Its Hypervascular Mimics: Differential Diagnosis Based on Conventional Interpretation and Artificial Intelligence. *Liver Cancer.* 2023;12(2):103-115. https://doi.org/10.1159/000528538
+22. Chou CT, Chen YL, Wu HK, Chen RC. Atypical hemangioma mimicking mixed hepatocellular cholangiocarcinoma. *Medicine (Baltimore).* 2017;96(50):e9192. https://doi.org/10.1097/MD.0000000000009192
+23. Sirli R, Sporea I, Săndulescu DL, et al. Contrast enhanced ultrasound for the diagnosis of liver hemangiomas – results of a Romanian multicentre study. *Med Ultrason.* 2015;17(4):444-450. https://doi.org/10.11152/mu.2013.2066.174.csu
+24. American College of Radiology. CT/MRI LI-RADS v2018: Diagnostic Categories and Technical Requirements. ACR; 2018. Available from: https://www.acr.org/Clinical-Resources/Reporting-and-Data-Systems/LI-RADS
