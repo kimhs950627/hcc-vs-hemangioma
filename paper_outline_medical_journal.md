@@ -113,7 +113,7 @@ $$ \mathcal{L}_{SupCon} = \sum_{i} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \fra
 
 ### 2.5 이중 출력 표지자 정의
 
-본 연구의 핵심 기여는 동일한 모델에서 성격이 상이한 두 출력을 명시적으로 구분하고 각각의 임상적 의미를 정의하는 데 있다.
+본 연구의 핵심 기여는 동일한 모델에서 성격이 상이한 두 출력을 명시적으로 구분하는 이중 출력 시스템(dual-output system)을 제안하고 각각의 임상적 의미를 정의하는 데 있다. 이 이중 출력 시스템은 모델의 확신도를 나타내는 1) Confidence Score 기반 출력과, 임베딩 공간의 기하학적 유사도를 나타내는 2) Cosine Similarity 기반 출력(HCC Cosine Score 및 Δscore)으로 구성된다.
 
 Confidence Score. HCC 클래스에 해당하는 softmax 값으로 정의한다. 보정된 사후 확률을 자동으로 의미하지 않으므로,[16] 본 연구에서는 이를 확률이 아닌 모델의 결정 강도(decision strength)로 명명한다.
 
@@ -135,7 +135,17 @@ HCC Cosine Score. 학습 완료 후 훈련 세트 HCC 표본들의 평균 임베
 
 ### 3.1 데이터셋 구성
 
-분석 데이터셋은 훈련 세트 1,858장, 검증 세트 530장, 테스트 세트 268장으로 구성되었다. HCC와 hemangioma의 비율은 세트 간에 안정적으로 유지되었다. 인구통계학적 세부 정보는 Table 1에 제시하였다.
+분석 데이터셋은 총 1,021명 환자의 5,385장 초음파 이미지로 구성된 SMC-LUD(Samsung Medical Center-Liver Ultrasound Dataset)[12]를 기반으로 한다. 이 중 caliper(측정선)가 포함되지 않은 Clean 이미지 서브셋(744명, 2,656장)을 추출하여 모델 학습 및 평가에 사용하였다(Table 1B). 모델의 과적합을 방지하고 일반화 성능을 명확히 평가하기 위해, 훈련 세트 1,858장, 검증 세트 530장, 테스트 세트 268장으로 환자 단위 분할(patient-level split)을 적용하였다. HCC와 hemangioma의 비율은 세트 간에 균형 있게 유지되었다.
+
+#### Table 1B. Dataset Classes (Clean Subset for Training and Evaluation)
+
+| Diagnosis | No. of Patients | No. of Images | Train | Validation | Test |
+|-----------|----------------:|--------------:|------:|-----------:|-----:|
+| Hemangioma | 323 | 1,267 | 886 | 253 | 128 |
+| HCC | 421 | 1,389 | 972 | 277 | 140 |
+| Total (Clean) | 744 | 2,656 | 1,858 | 530 | 268 |
+
+데이터셋 출처 및 원본 수치: SMC-LUD 논문[12]. 인구통계학적 세부 정보(연령, 성별, 병변 크기 등)는 앞서 방법론의 환자 특성 표에 제시하였다.
 
 ### 3.2 Ablation: 학습 조건별 성능 비교
 
