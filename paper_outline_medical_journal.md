@@ -93,9 +93,9 @@ HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 �
 
 ### 2.3 모델 구조
 
-제안 모델은 CNN과 트랜스포머 인코더를 결합한 hybrid vision transformer이다. CNN backbone으로는 EfficientNetV2B0를 채택하였다. 추출된 특징 맵은 패치 토큰으로 재형성되어 트랜스포머 인코더에 입력되며, 분류 토큰(CLS token)의 최종 표현 벡터(임베딩)로부터 confidence score와 cosine 기반 표지자를 동시에 산출하는 이중 출력 구조를 구성하였다.
+제안 모델은 CNN과 트랜스포머 인코더를 결합한 hybrid vision transformer이다. CNN backbone으로는 EfficientNetV2B0를 채택하였다. 추출된 특징 맵은 패치 토큰으로 재형성되어 트랜스포머 인코더에 입력되며, 분류 토큰(CLS token)[9]의 최종 표현 벡터(임베딩)로부터 confidence score와 cosine 기반 표지자를 동시에 산출하는 이중 출력 구조를 구성하였다.
 
-**EfficientNetV2B0를 주력 backbone으로 선택한 근거는 세 가지이다.** 첫째, EfficientNetV2B0는 ResNet50V2 대비 파라미터 효율성이 우수하며(7.1M vs 23.6M), 1,858장 규모의 의료 영상 데이터셋에서 과적합 위험이 낮다.[7] 둘째, ablation(Table 2) 결과 EfficientNetV2B0+CE+SupCon이 ResNet50V2+CE+SupCon과 동등한 분류 AUROC(각 1.000)를 보이면서 더 경량한 모델 크기를 유지하여 임상 배포 적합성이 높다. 셋째, EfficientNetV2B0는 SupCon 적용 후 HCC cosine score 임계값이 −0.47에서 −0.005로 이동하는 임베딩 정렬 향상이 ResNet50V2(−0.48 → −0.117)와 동등하게 관찰되어 cosine 기반 표지자 도출에도 동등한 적합성을 보인다.
+**EfficientNetV2B0를 주력 backbone으로 선택한 근거는 세 가지이다.** 첫째, EfficientNetV2B0는 ResNet50V2[8] 대비 파라미터 효율성이 우수하며(7.1M vs 23.6M), 1,858장 규모의 의료 영상 데이터셋에서 과적합 위험이 낮다.[7] 둘째, ablation(Table 2) 결과 EfficientNetV2B0+CE+SupCon이 ResNet50V2+CE+SupCon과 동등한 분류 AUROC(각 1.000)를 보이면서 더 경량한 모델 크기를 유지하여 임상 배포 적합성이 높다. 셋째, EfficientNetV2B0는 SupCon 적용 후 HCC cosine score 임계값이 −0.47에서 −0.005로 이동하는 임베딩 정렬 향상이 ResNet50V2(−0.48 → −0.117)와 동등하게 관찰되어 cosine 기반 표지자 도출에도 동등한 적합성을 보인다.
 
 ### 2.4 학습 전략 및 Ablation 설계
 
@@ -109,7 +109,7 @@ $$ \mathcal{L}_{SupCon} = \sum_{i} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \fra
 
 여기서 $P(i)$는 표본 $i$와 동일한 클래스에 속하는 양성 표본들의 집합, $A(i)$는 미니배치 내의 전체 표본, $\tau$는 temperature 파라미터이다. 이 수식은 동일 클래스 표본 간의 거리를 가깝게 당기고(pull) 다른 클래스 표본 간의 거리는 밀어내는(push) 명시적 역할을 수행한다.[13] 이를 통해 CE+SupCon 모델은 분류 경계 형성뿐만 아니라 임베딩 공간 자체에 강력한 기하학적 응집성(intra-class compactness)과 분리성(inter-class separability)을 부여하도록 최적화된다.
 
-모든 모델은 384 × 384 흑백 입력, Adam optimizer, cosine annealing + warmup 학습률 스케줄로 학습하였다. 데이터 증강에는 수평·수직 반전, 무작위 자르기·크기 조정, 밝기·대비 변환, Gaussian blur가 포함되었다.
+모든 모델은 384 × 384 흑백 입력, Adam optimizer, cosine annealing + warmup 학습률 스케줄로 학습하였다. 데이터 증강에는 수평·수직 반전, 무작위 자르기·크기 조정, 밝기·대비 변환, Gaussian blur가 포함되었으며, 이는 모델이 초음파 영상의 단순 단서(shortcut feature)에 과도하게 의존하는 학습을 완화하기 위함이다.[10]
 
 ### 2.5 이중 출력 표지자 정의
 
@@ -299,7 +299,7 @@ SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC
 
 ### 4.7 연구의 한계
 
-본 연구의 한계는 다음과 같다. 첫째, 단일 기관 공개 데이터셋을 사용하였으므로 외부 검증이 필요하다. 둘째, NNCLR 2단계 학습의 열등한 성능이 소규모 데이터셋의 특성인지, NNCLR 하이퍼파라미터의 최적화 부족에 기인하는지 구분하기 어렵다. SSL 사전학습의 epochs, augmentation policy, 데이터 규모에 따른 민감도 분석이 추후 필요하다. 셋째, 인구통계학적 세부 데이터(병변 크기·간경변 유무·AFP 수치)가 분석에 포함되지 않았다. 넷째, HCC cosine score와 Δscore의 AFP 대비 독립적 기여 및 병용 시 증분 이득을 평가하지 못하였다. 다섯째, 테스트 세트 지표에 대한 부트스트랩 신뢰구간이 아직 산출되지 않았다. 여섯째, 모델의 판단 근거를 영상에서 시각화하는 Grad-CAM 등 부가 분석이 포함되지 않았다.
+본 연구의 한계는 다음과 같다. 첫째, 단일 기관 공개 데이터셋을 사용하였으므로 외부 검증이 필요하다. 둘째, NNCLR 2단계 학습의 열등한 성능이 소규모 데이터셋의 특성인지, NNCLR 하이퍼파라미터의 최적화 부족에 기인하는지 구분하기 어렵다. SSL 사전학습의 epochs, augmentation policy, 데이터 규모에 따른 민감도 분석이 추후 필요하다. 셋째, 인구통계학적 세부 데이터(병변 크기·간경변 유무·AFP 수치)가 분석에 포함되지 않았다. 넷째, HCC cosine score와 Δscore의 AFP 대비 독립적 기여 및 병용 시 증분 이득을 평가하지 못하였다. 다섯째, 테스트 세트 지표에 대한 부트스트랩 신뢰구간이 아직 산출되지 않았다. 여섯째, 모델의 판단 근거를 영상에서 시각화하는 Grad-CAM 등 부가 분석이 포함되지 않았다. 일곱째, 각 출력 표지자의 임상적 순편익(net benefit)을 정량화하는 decision curve analysis[15]는 아직 수행되지 않아 추후 보완할 과제이다.
 
 ---
 
