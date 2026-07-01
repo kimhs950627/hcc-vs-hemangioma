@@ -80,18 +80,16 @@ HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 �
 
 본 연구에서는 SMC-LUD(Samsung Medical Center–Liver Ultrasound Dataset)를 사용하였다.[14] 동 데이터셋은 2015년부터 2024년까지 수집된 간 국소 병변 B-mode 영상으로, 병리학적으로 확인된 HCC 2,716장과 영상 기준으로 진단된 혈관종 2,669장을 포함하는 총 1,021명 5,385장의 흑백 영상으로 구성된다. 동일 환자 영상의 개발·평가 단계 간 교차 오염을 방지하기 위해 환자 단위 분리를 적용하였으며, 훈련 1,858장·검증 530장·테스트 268장으로 구분하였다. HCC와 hemangioma의 클래스 비율은 세트 간에 균형 있게 유지되었다(각 약 52% vs 48%).
 
-> 📝 **[TODO: Table 1]** 연령·성별·간경변·병변 크기 등 임상 메타데이터 기입
-
 #### Table 1. Patient and Lesion Demographics
 
-| 항목 | 훈련 세트 (n=___) | 검증 세트 (n=___) | 테스트 세트 (n=___) |
-|------|------------------|------------------|-------------------|
-| 나이, 중앙값 (IQR), 세 | ___ | ___ | ___ |
-| 남성, n (%) | ___ | ___ | ___ |
-| HCC, n (%) | ___ | ___ | ___ |
-| Hemangioma, n (%) | ___ | ___ | ___ |
-| 병변 크기, 중앙값 (IQR), cm | ___ | ___ | ___ |
-| 간경변 동반, n (%) | ___ | ___ | ___ |
+| 항목 | HCC (환자 n=600) | Hemangioma (환자 n=421) |
+|------|------------------|------------------------|
+| 나이, 평균 ± 표준편차 (범위), 세 | 66.65 ± 11.02 (20–90) | 55.50 ± 12.76 (30–90) |
+| 남성, n (%) | 491 (81.8%) | 174 (41.3%) |
+| 여성, n (%) | 109 (18.2%) | 247 (58.7%) |
+| 병변 크기 (최대 직경), 중앙값 / Q1 / Q3, cm | 2.90 / 2.10 / 4.50 | — |
+
+*데이터 출처: SMC-LUD 원본 데이터셋 논문[14].*
 
 ### 2.3 모델 구조
 
@@ -265,7 +263,7 @@ SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC
 
 ### 4.1 임상적 미충족 수요와 본 연구의 위치
 
-초음파 감시는 HCC 조기 발견의 핵심 전략이나 민감도는 여전히 제한적이다. Tzartzeva 등(2018)의 메타분석에서 초음파 단독 조기 HCC 민감도는 47%에 불과하였으며, AFP 병용 시에도 63% 수준이었다.[4] Yang 등(2020)은 13개 기관 2,143명에서 AUROC 0.924를 달성하며 딥러닝의 잠재력을 보였고,[6] Du 등(2025)은 다기관 전향 검증을 수행하였다.[27] 그러나 이들을 포함한 기존 연구들은 단일 softmax 출력을 최종 지표로 사용하며, 임베딩 공간의 기하학적 유사도를 독립적인 표지자로 제시하지 않았다. 본 연구는 이 간극을 메우며, 임상의의 유사성 기반 추론에 대응하는 새로운 연속형 영상표지자 후보를 제안한다.
+초음파 감시는 HCC 조기 발견의 핵심 전략이나 민감도는 여전히 제한적이다. Tzartzeva 등(2018)의 메타분석에서 초음파 단독 조기 HCC 민감도는 47%에 불과하였으며, AFP 병용 시에도 63% 수준이었다.[4] Yang 등(2020)은 13개 기관 2,143명에서 AUROC 0.924를 달성하며 딥러닝의 잠재력을 보였고,[6] Du 등(2025)은 다기관 전향 검증을 수행하였다.[27] 특히 본 연구의 주력 모델(EfficientNetV2B0 + CE+SupCon)은 테스트 세트 정확도 99.63%를 달성하여, 동일한 SMC-LUD 데이터셋을 발표한 선행 연구[14]에서 제안된 baseline 모델의 분류 정확도(98.88%)를 상회하는 우수한 성능을 입증하였다. 그러나 이들을 포함한 기존 연구들은 단일 softmax 출력을 최종 지표로 사용하며, 임베딩 공간의 기하학적 유사도를 독립적인 표지자로 제시하지 않았다. 본 연구는 이 간극을 메우며, 임상의의 유사성 기반 추론에 대응하는 새로운 연속형 영상표지자 후보를 제안한다.
 
 ### 4.2 Confidence Score의 개념적 재정의
 
@@ -328,7 +326,7 @@ SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC
 11. (예비)
 12. Geirhos R, et al. Shortcut learning in deep neural networks. *Nat Mach Intell.* 2020.
 13. Collins GS, et al. Transparent reporting of a multivariable prediction model for individual prognosis or diagnosis (TRIPOD). *BMJ.* 2015.
-14. [SMC-LUD reference TBD]
+14. Tak J, Ko RE, Kwon RD, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. *Sci Data*. 2026;13:649.
 15. Khosla P, et al. Supervised contrastive learning. *NeurIPS.* 2020.
 16. DeLong ER, et al. Comparing the areas under two or more correlated receiver operating characteristic curves. *Biometrics.* 1988.
 17. Vickers AJ, et al. Decision curve analysis: a novel method for evaluating prediction models. *Med Decis Making.* 2006.
