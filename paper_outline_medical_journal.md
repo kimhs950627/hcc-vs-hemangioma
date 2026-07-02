@@ -16,7 +16,7 @@ Development of a Novel Dual-Output Imaging Marker for Quantifying HCC-Likeness o
 
 ---
 
-## 구조화 초록 (Structured Abstract)
+## Abstract
 
 ### 연구 배경 (Background)
 
@@ -72,12 +72,6 @@ HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 �
 
 ### 2.1 연구 설계
 
-본 연구는 삼성서울병원 B-mode 간 초음파 영상 아카이브를 이용한 단일 기관 후향적 관찰 연구이다. TRIPOD 보고 기준에 따라 작성되었으며,[11] 기관생명윤리위원회 승인 하에 수행되었다(동의 면제 적용).
-
-> 📝 [TODO: IRB] IRB 승인번호 및 동의면제 문구 기입
-
-### 2.2 데이터셋 및 연구 대상
-
 본 연구에서는 SMC-LUD(Samsung Medical Center–Liver Ultrasound Dataset)를 사용하였다.[12] 동 데이터셋은 2015년부터 2024년까지 수집된 간 국소 병변 B-mode 영상으로, 병리학적으로 확인된 HCC 2,716장과 영상 기준으로 진단된 혈관종 2,669장을 포함하는 총 1,021명 5,385장의 흑백 영상으로 구성된다. 동일 환자 영상의 개발·평가 단계 간 교차 오염을 방지하기 위해 환자 단위 분리를 적용하였으며, 훈련 1,858장·검증 530장·테스트 268장으로 구분하였다. HCC와 hemangioma의 클래스 비율은 세트 간에 균형 있게 유지되었다(각 약 52% vs 48%).
 
 #### Table 1. Patient and Lesion Demographics
@@ -91,13 +85,13 @@ HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 �
 
 *데이터 출처: SMC-LUD 원본 데이터셋 논문[12].*
 
-### 2.3 모델 구조
+### 2.2 모델 구조
 
 제안 모델은 CNN과 트랜스포머 인코더를 결합한 hybrid vision transformer이다. CNN backbone으로는 EfficientNetV2B0를 채택하였다. 추출된 특징 맵은 패치 토큰으로 재형성되어 트랜스포머 인코더에 입력되며, 분류 토큰(CLS token)[9]의 최종 표현 벡터(임베딩)로부터 confidence score와 cosine 기반 표지자를 동시에 산출하는 이중 출력 구조를 구성하였다.
 
 EfficientNetV2B0를 주력 backbone으로 선택한 근거는 세 가지이다. 첫째, EfficientNetV2B0는 ResNet50V2[8] 대비 파라미터 효율성이 우수하며(7.1M vs 23.6M), 1,858장 규모의 의료 영상 데이터셋에서 과적합 위험이 낮다.[7] 둘째, ablation(Table 2) 결과 EfficientNetV2B0+CE+SupCon이 ResNet50V2+CE+SupCon과 동등한 분류 AUROC(각 1.000)를 보이면서 더 경량한 모델 크기를 유지하여 임상 배포 적합성이 높다. 셋째, EfficientNetV2B0는 SupCon 적용 후 HCC cosine score 임계값이 −0.47에서 −0.005로 이동하는 임베딩 정렬 향상이 ResNet50V2(−0.48 → −0.117)와 동등하게 관찰되어 cosine 기반 표지자 도출에도 동등한 적합성을 보인다.
 
-### 2.4 학습 전략 및 Ablation 설계
+### 2.3 학습 전략 및 Ablation 설계
 
 총 6개 조합을 비교하였다(Table 2): backbone(EfficientNetV2B0 / ResNet50V2) × 학습 방식(CE only / CE+SupCon / NNCLR 2단계). 이 ablation의 목적은 단순한 성능 비교가 아니라, SupCon 결합이 cosine 기반 표지자의 임상적 타당성을 확보하는 데 필요한 임베딩 구조를 형성하는지, 그리고 SSL 사전학습 단계의 추가가 CE+SupCon 단독 대비 실질적 이득을 제공하는지를 함께 검증하는 것이다.
 
@@ -111,21 +105,22 @@ $$ \mathcal{L}_{SupCon} = \sum_{i} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \fra
 
 모든 모델은 384 × 384 흑백 입력, Adam optimizer, cosine annealing + warmup 학습률 스케줄로 학습하였다. 데이터 증강에는 수평·수직 반전, 무작위 자르기·크기 조정, 밝기·대비 변환, Gaussian blur가 포함되었으며, 이는 모델이 초음파 영상의 단순 단서(shortcut feature)에 과도하게 의존하는 학습을 완화하기 위함이다.[10]
 
-### 2.5 이중 출력 표지자 정의
+### 2.4 이중 출력 표지자 정의
 
 본 연구의 핵심 기여는 동일한 모델에서 성격이 상이한 두 출력을 명시적으로 구분하는 이중 출력 시스템(dual-output system)을 제안하고 각각의 임상적 의미를 정의하는 데 있다. 이 이중 출력 시스템은 모델의 확신도를 나타내는 1) Confidence Score 기반 출력과, 임베딩 공간의 기하학적 유사도를 나타내는 2) Cosine Similarity 기반 출력(HCC Cosine Score 및 Δscore)으로 구성된다.
 
 Confidence Score. HCC 클래스에 해당하는 softmax 값으로 정의한다. 보정된 사후 확률을 자동으로 의미하지 않으므로,[16] 본 연구에서는 이를 확률이 아닌 모델의 결정 강도(decision strength)로 명명한다.
 
-HCC Cosine Score. 학습 완료 후 훈련 세트 HCC 표본들의 평균 임베딩 벡터를 HCC prototype으로 구성한다. 임의의 병변 영상 임베딩과 HCC prototype 간의 cosine similarity를 HCC cosine score로 산출한다. 이 점수는 임상의가 병변을 전형적 HCC 소견과 비교하는 유사성 기반 추론을 수치화한 연속형 영상표지자 후보이다.
+HCC Cosine Score. 학습 완료 후 훈련 세트 HCC 표본들의 평균 임베딩 벡터를 HCC prototype으로 구성한다. 임의의 병변 영상 임베딩과 HCC prototype 간의 cosine similarity를 HCC cosine score로 산출한다. 
+구체적으로, HCC prototype은 B-mode 초음파에서 여러 형태로 나타나는 HCC 그룹이고, 본 연구에서는 4개의 그룹을 가정하였다. 간 초음파 이미지를 학습된 모델로 분석하여, 이미지를 고차원 벡터로 투영(projection, embedding)한다. 이 벡터와, 4개의 HCC 그룹 및 4개의 Hemangioma 그룹 간 유사도를 Cosine similarity 방법으로 측정하였다. 4개의 HCC 그룹(Prototype)과 이미지 간의 유사도 4개를 평균한 값이 HCC score이고, 4개의 Hemangioma 그룹(Prototype) 과 이미지 간의 유사도 4개를 평균한 값이 Hemangioma score이다. HCC score와 Hemangioma score의 차이를 Delta (Δ) score로 명명한다. 이 점수는 임상의가 병변을 전형적 HCC 소견과 비교하는 유사성 기반 추론을 수치화한 연속형 영상표지자 후보이다.
 
 Δscore. HCC cosine score와 hemangioma cosine score의 차이로 정의하는 비교형 감별 표지자이다. 단일 클래스 절대 유사도가 아닌 경쟁 두 클래스 간 상대적 위치를 정량화하여, "이 병변이 HCC와 hemangioma 중 어느 쪽에 얼마나 더 가까운가"를 반영한다.
 
-### 2.6 임계값 결정 및 데이터 유출 방지
+### 2.5 임계값 결정 및 데이터 유출 방지
 
 모든 운영 임계값은 검증 세트에서만 Youden's J 통계(민감도 + 특이도 − 1 최대화 지점)로 결정하였다. 검증 세트에서 결정된 임계값을 테스트 세트에 변경 없이 고정 적용하여 낙관적 편향을 배제하였다. 이 절차는 confidence score, HCC cosine score, Δscore 각각에 대해 독립적으로 수행하였다.
 
-### 2.7 통계 분석
+### 2.6 통계 분석
 
 모델 변별력은 AUROC로 평가하고 신뢰구간은 DeLong 방법으로 추정하였다.[14] ROC-A(confidence score), ROC-B(HCC cosine score), ROC-C(Δscore) 세 ROC 곡선 간 쌍별 비교는 DeLong 검정으로 수행하였으며, p > 0.05를 cosine 기반 표지자의 비열등성(non-inferiority) 지지로 해석하였다. 임계값 의존적 지표로는 민감도·특이도·PPV·NPV·F1·혼동행렬이 포함되었다. Confidence score와 Δscore의 결합 분포를 이중 출력 산점도로 시각화하였다. SupCon 유무에 따른 true HCC cases의 HCC cosine score 및 Δscore 분포 차이는 독립표본 t-검정으로 비교하였다.
 
@@ -191,7 +186,7 @@ Figure 1. t-SNE Visualization of Embedding Space — Primary Model (EfficientNet
 
 *Val n=530 (HCC 277, Hem 253); Test n=268 (HCC 140, Hem 128). Cutoff (Youden's J, Val): 0.0011.*
 
-Figure 2. Confusion Matrices — Primary Model, Test Set (Three Outputs)
+Figure 2. Confusion Matrices — Primary Model, Test Set (Three Outputs, 2-A, 2-B, 2-C)
 
 | ROC-A (Confidence) | ROC-B (HCC Cosine) | ROC-C (Δscore) |
 |:-:|:-:|:-:|
@@ -203,9 +198,9 @@ Figure 2. Confusion Matrices — Primary Model, Test Set (Three Outputs)
 
 ### 3.4 이중 출력 ROC 비교 — 비열등성 검증
 
-주력 모델에서 confidence score(ROC-A), HCC cosine score(ROC-B), Δscore(ROC-C) 세 출력의 AUROC를 비교하였다(Table 4). Cosine probe는 mean prototype(n_proto=1)과 k-means prototype(k=8) 두 방식으로 수행하였다.
+주력 모델에서 confidence score(ROC-A), HCC cosine score(ROC-B), Δscore(ROC-C) 세 출력의 AUROC를 비교하였다(Table 4). Cosine probe는 mean prototype(n_proto=1)과 k-means prototype(k=4) 두 방식으로 수행하였다.
 
-Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon)
+Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon, 3-A, B)
 
 | Validation Set | Test Set |
 |:-:|:-:|
@@ -225,7 +220,7 @@ Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon)
 
 *ns: not significant (p>0.05). Val: n=530; Test: n=268. Cutoff (Youden's J, Val): ROC-A=0.0011, ROC-B(mean)=−0.0048, ROC-C(mean)=−0.9585.*
 
-주력 모델에서 cosine 기반 표지자의 완전한 비열등성이 성립하였다. Confidence score와 cosine score의 AUROC가 동일하게 1.000이며 DeLong z=0으로 두 출력 간 변별력의 차이가 전혀 없었다.
+주력 모델에서 cosine 기반 표지자(HCC score, Δscore )의 비열등성이 성립하였다. Confidence score와 cosine score의 AUROC가 동일하게 1.000이며 DeLong z=0으로 두 출력 간 변별력의 차이가 전혀 없었다.
 
 #### Table 4B. 전 모델 AUROC 비교 (Test Set)
 
@@ -242,32 +237,31 @@ Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon)
 
 ### 3.5 SupCon 학습의 필요성: True HCC Cases에서의 Score 분포 비교
 
-CE 단독 학습과 CE+SupCon 학습 간 cosine 기반 표지자의 분포 차이를 정량적으로 비교하기 위해, 검증 세트와 테스트 세트를 합산한 true HCC cases(n=381)를 대상으로 HCC cosine score 및 Δscore의 분포를 backbone별로 분석하였다(Figure 7, Figure 8).
+CE 단독 학습과 CE+SupCon 학습 간 cosine 기반 표지자의 분포 차이를 정량적으로 비교하기 위해, 검증 세트와 테스트 세트를 합산한 true HCC cases(n=381)를 대상으로 HCC cosine score 및 Δscore의 분포를 backbone별로 분석하였다(Figure 4, Figure 5).
 
 SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC cases HCC cosine score 중앙값은 0.857이었으나, CE+SupCon 조건에서 0.927로 유의하게 상승하였다(독립표본 t-검정, p < 0.001, *). ResNet50V2에서도 동일한 방향의 변화가 관찰되었다(CE only: 0.843 → CE+SupCon: 0.918, p < 0.001). Δscore에서도 동일한 패턴이 확인되었다. CE only 조건에서 EfficientNetV2B0의 Δscore 중앙값은 −0.132로 음수를 기록하여, 일부 true HCC cases의 임베딩이 HCC prototype보다 hemangioma prototype에 더 가깝게 위치함을 보였다. CE+SupCon 조건에서 이 값은 +0.061로 부호가 전환되었으며(p < 0.001, *), ResNet50V2 역시 −0.174에서 −0.097로 상승하였다(p < 0.001).
 
 이 결과는 SupCon이 분류 성능 이외에 임베딩 공간의 클래스별 정렬 구조를 직접적으로 개선함을 실험적으로 입증한다. CE only 조건에서 임베딩은 분류 경계를 넘지 않더라도 prototype 중심에서 이탈한 위치에 분산될 수 있으며, 이 경우 cosine similarity는 클래스 구성원임을 반영하는 타당한 척도로 기능하지 않는다. SupCon 학습은 동일 클래스 임베딩 간의 인력(pull)과 이종 클래스 임베딩 간의 척력(push)을 명시적 학습 목적으로 구성함으로써[13], HCC 표본의 임베딩이 HCC prototype 방향으로 정렬되도록 임베딩 공간을 재편한다. True HCC cases의 HCC cosine score 및 Δscore가 CE+SupCon 조건에서 일관되게 상승하고 군 간 차이가 모두 p < 0.001로 통계적으로 유의한 것은, cosine 기반 표지자가 임상적으로 의미 있는 유사성 척도로 기능하기 위해 SupCon이 필수적 학습 전략임을 뒷받침한다.
 
-Figure 7. HCC Cosine Score Distribution in True HCC Cases by Training Mode (Val + Test)
+Figure 4. HCC Cosine Score Distribution in True HCC Cases by Training Mode (Val + Test)
 
 ![Figure 7: HCC cosine score distribution](cosine_probe_result/hcc_cosine_annot_distrib.png)
 
-*Figure 7. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 HCC cosine score의 violin+boxplot 분포. CE+SupCon 조건이 CE only 대비 두 backbone 모두에서 유의하게 높은 HCC cosine score를 보이며(독립표본 t-검정, 모든 비교 p < 0.001), SupCon 학습이 HCC 임베딩을 HCC prototype 방향으로 정렬함을 확인한다. 최솟값 annotation은 군 내 하한치를 표시한다.*
+*Figure 4. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 HCC cosine score의 boxplot 분포. CE+SupCon 조건이 CE only 대비 두 backbone 모두에서 유의하게 높은 HCC cosine score를 보이며(독립표본 t-검정, 모든 비교 p < 0.001),  SupCon 학습이 HCC 임베딩을 HCC prototype 방향으로 정렬함을 확인한다.*
 
-Figure 8. Δscore Distribution in True HCC Cases by Training Mode (Val + Test)
+Figure 5. Δscore Distribution in True HCC Cases by Training Mode (Val + Test)
 
 ![Figure 8: Delta cosine score distribution](cosine_probe_result/delta_cosine_annot_distrib.png)
 
-*Figure 8. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 Δscore(HCC cosine − Hemangioma cosine)의 violin+boxplot 분포 비교. CE only 조건에서 중앙값 음수를 보이던 Δscore가 CE+SupCon 조건에서 양수로 전환되는 경향은 확인되었으나, EfficientNetV2B0와 ResNet50V2 간의 분포 차이는 명확하지 않았다. 이는 파라미터 수가 적은 EfficientNetV2B0에 CE+SupCon을 적용하는 전략이 무거운 ResNet50V2를 사용하는 것과 동등한 임상적 유효성을 가짐을 뒷받침하며, 해당 파이프라인의 효율성을 강하게 지지한다. 점선(Δ=0)은 두 prototype 간 등거리 기준선이다.*
+*Figure 5. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 Δscore(HCC cosine − Hemangioma cosine)의 boxplot 분포 비교. HCC score와는 다르게 cutoff, 훈련 방식에 따른 cutoff 및 분포의 차이가 통계적으로 유의하지 않다. 이는 두 케이스 모두 병변 자체의 특성을 제외하면 간 실질, 초음파라는 modality 자체의 유사성이 HCC 및 Hemangioma 그룹에 공히 강력하게 나타나, score 차이가 두 그룹 사이에서는 크지 않은 것으로 추측할 수 있다.*
 
-Figure 9. Cutoff Shift in HCC Cosine Score (EfficientNetV2B0, Test Set)
+Figure 6-A,B. Cutoff Shift in HCC Cosine Score (EfficientNetV2B0, Test Set)
 
 | EfficientNetV2B0 (CE Only) | EfficientNetV2B0 (CE+SupCon) |
 |:-:|:-:|
 | ![](cosine_probe_result/effnet_classification_only/media_images_cosine_probe_benchmark_images_test_cosine_distribution_1_392b88d204c7be366a8e.png) | ![](cosine_probe_result/effnet_supcon/cosine_dist_test.png) |
 
-*Figure 9. EfficientNetV2B0의 HCC cosine score 분포와 cutoff(점선) 변화. CE-only 학습(좌측)에서는 cutoff가 음수 영역에 위치하여 HCC 임베딩이 mean prototype에서 멀리 분산되어 있음을 나타낸다. 반면, CE+SupCon 학습(우측)에서는 cutoff가 0 부근으로 상승하며, HCC 표본들이 HCC prototype 방향으로 응집됨을 시각적으로 확인한다.*
-*Figure 9. EfficientNetV2B0의 HCC cosine score 분포와 cutoff(점선) 변화. CE-only 학습(좌측)에서는 cutoff가 음수 영역에 위치하여 HCC 임베딩이 mean prototype에서 멀리 분산되어 있음을 나타낸다. 반면, CE+SupCon 학습(우측)에서는 cutoff가 0 부근으로 상승하며, HCC 표본들이 HCC prototype 방향으로 응집됨을 확인한다.*
+*Figure 6-A,B. EfficientNetV2B0의 HCC cosine score 분포와 cutoff(점선) 변화. CE-only 학습(Figure 7-A)에서는 cutoff가 음수 영역에 위치하여 HCC 임베딩이 mean prototype에서 멀리 분산되어 있음을 나타낸다. 반면, CE+SupCon 학습(Figure 7-B)에서는 cutoff가 0 부근으로 상승하며, HCC 표본들이 HCC prototype 방향으로 응집됨을 시각적으로 확인한다.*
 
 ### 3.6 애매한 결정(Ambiguous Confidence) 구간에서의 Cosine 표지자 구제 효과
 
@@ -290,7 +284,7 @@ Confidence score 단독으로는 판정하기 힘든 결정 경계 부근(confid
 
 임상의가 간 병변을 진단하는 과정은 단순히 절대적인 '확률'을 내는 것이 아니라, 전형적인 HCC 소견과 혈관종의 전형적 소견을 현재 병변과 비교하는 유사성 기반 추론(similarity-based reasoning)이다. 본 연구는 단순히 logit이나 confidence에 의존하지 않고 임상적인 의사결정 프로세스와 비슷하게 prototype을 도입하여 연속형 점수(HCC cosine score, Δscore)를 도출하였다. 실험 결과, 이 cosine 기반 표지자들은 confidence score와 비교하여 변별력 측면에서 통계적으로 비열등하였다.
 
-이러한 성과는 SupCon의 역할이 결정적이었다. CE+SupCon 학습은 모델이 분류 경계선만 찾도록 두는 것이 아니라, 임베딩 공간 자체에 의미적인 기하학적 응집성(intra-class compactness)을 강제한다. 이를 시각적으로 뒷받침하는 것이 cutoff의 변화이다(Figure 9). CE-only 모델에서는 HCC 표본들이 분산되어 cutoff가 음수 영역에 머물렀으나, CE+SupCon 적용 후 cutoff가 0 부근으로 뚜렷하게 올라갔으며, true HCC cases의 score 점수 분포 역시 통계적으로 유의하게 상승하였다(p < 0.001). 
+이러한 성과는 SupCon의 역할이 결정적이었다. CE+SupCon 학습은 모델이 분류 경계선만 찾도록 두는 것이 아니라, 임베딩 공간 자체에 의미적인 기하학적 응집성(intra-class compactness)을 강제한다. 이를 시각적으로 뒷받침하는 것이 cutoff의 변화이다(Figure 7). CE-only 모델에서는 HCC 표본들이 분산되어 cutoff가 음수 영역에 머물렀으나, CE+SupCon 적용 후 cutoff가 0 부근으로 뚜렷하게 올라갔으며, true HCC cases의 score 점수 분포 역시 통계적으로 유의하게 상승하였다(p < 0.001). 
 
 결론적으로, 이 변화는 모델이 생성한 임베딩이 CE-only일 때보다 임상적으로 의미가 있게(실제로 HCC와 더욱 비슷하게) 판단하도록 정렬되었음을 의미한다. 이 과정을 거치므로 단순 CE로 학습한 confidence score보다, CE+SupCon으로 학습하고 나서 연산한 HCC cosine score가 방사선학적 보조 마커(radiologic adjunctive marker)로서 적합한 타당성을 갖는다. 특히 본 연구에서 수행한 애매한 결정 구간(confidence score 0.4~0.6)에 대한 하위 분석 결과는, Softmax 함수에 기반한 단일 confidence 출력이 판정을 내리지 못하고 위음성을 낼 때에도 임베딩 공간 기반의 HCC cosine score가 오분류를 구제(salvage)할 수 있음을 확인하였으며, 이 이중 출력 표지자의 임상적 보완 효용을 뒷받침한다.
 
@@ -300,7 +294,7 @@ Confidence score 단독으로는 판정하기 힘든 결정 경계 부근(confid
 
 이는 Self-Supervised Learning(SSL)이 유의미한 구조를 학습하기 위해서는 훨씬 더 거대한 규모의 데이터셋과 더 오랜 GPU 시간을 필요로 하기 때문인 것으로 생각된다. 제한된 수의 레이블 데이터셋(restricted labelled data) 환경에서는 번거로운 SSL 사전학습을 거치는 것보다, 주어진 레이블을 직관적이고 효율적으로 활용하는 지도 학습(Supervised Learning, 즉 CE+SupCon)이 더 나은 방법임을 본 실험 결과가 시사한다.
 
-### 4.5 본 연구의 Novelty
+### 4.5 본 연구의 기여
 
 본 연구의 신규성은 다섯 가지 차원에서 정의된다.
 
