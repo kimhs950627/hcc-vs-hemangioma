@@ -28,7 +28,7 @@ B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심
 
 ### 결과 (Results)
 
-주력 모델(EfficientNetV2B0 + CE+SupCon)에서 confidence score의 AUROC는 검증 세트 1.000, 테스트 세트 1.000이었으며, 검증 세트에서 민감도 99.6%, 특이도 100.0%(위양성 0건), 테스트 세트에서 민감도 100.0%, 특이도 99.2%를 달성하였다. HCC cosine score와 Δscore 역시 AUROC 1.000으로 confidence score와 통계적으로 동등하였다(DeLong p=1.000). SupCon 적용 후 HCC cosine score의 최적 임계값이 −0.47에서 −0.005로 이동하여 임베딩 공간의 클래스별 정렬이 향상됨을 확인하였다. NNCLR SSL 사전학습 후 CE+SupCon으로 미세조정한 2단계 학습(NNCLR→CE+SupCon)에서는 단일 prototype 기반 HCC cosine score의 AUROC가 0.068까지 열화하였으나, Δscore는 0.998을 유지하였다. 더불어 2단계 학습은 CE+SupCon 단독 대비 분류 성능이 열등하였으며(AUROC 0.985 vs 0.995), 추가적인 사전학습에 소요되는 계산 비용을 정당화할 이득이 관찰되지 않았다.
+주력 모델(EfficientNetV2B0 + CE+SupCon)에서 confidence score의 AUROC는 검증 세트 1.000, 테스트 세트 1.000이었으며, 검증 세트에서 민감도 99.6%, 특이도 100.0%(위양성 0건), 테스트 세트에서 민감도 100.0%, 특이도 99.2%를 달성하였다. HCC cosine score와 Δscore 역시 AUROC 1.000으로 confidence score와 통계적으로 동등하였다(DeLong p=1.000). SupCon 적용 후 HCC case에서 HCC cosine score의 분포가 통계적으로 유의하게 상승하며, 이는 SupCon 방법론이 HCC 케이스들을 더 비슷하게 응집시키며 score의 임상적 신뢰도를 높인다는 것으로 해석할 수 있다. NNCLR SSL 사전학습 후 CE+SupCon으로 미세조정한 2단계 학습(NNCLR→CE+SupCon)에서는 단일 prototype 기반 HCC cosine score의 AUROC가 0.068까지 열화하였으나, Δscore는 0.998을 유지하였다. 더불어 2단계 학습은 CE+SupCon 단독 대비 분류 성능이 열등하였으며(AUROC 0.985 vs 0.995), 추가적인 사전학습에 소요되는 계산 비용을 정당화할 이득이 관찰되지 않았다.
 
 ### 결론 (Conclusions)
 
