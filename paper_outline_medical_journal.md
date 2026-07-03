@@ -255,14 +255,6 @@ Figure 5. Δscore Distribution in True HCC Cases by Training Mode (Val + Test)
 
 *Figure 5. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 Δscore(HCC cosine − Hemangioma cosine)의 boxplot 분포 비교. HCC score와는 다르게 cutoff, 훈련 방식에 따른 cutoff 및 분포의 차이가 통계적으로 유의하지 않다. 이는 두 케이스 모두 병변 자체의 특성을 제외하면 간 실질, 초음파라는 modality 자체의 유사성이 HCC 및 Hemangioma 그룹에 공히 강력하게 나타나, score 차이가 두 그룹 사이에서는 크지 않은 것으로 추측할 수 있다.*
 
-Figure 6-A,B. Cutoff Shift in HCC Cosine Score (EfficientNetV2B0, Test Set)
-
-| EfficientNetV2B0 (CE Only) | EfficientNetV2B0 (CE+SupCon) |
-|:-:|:-:|
-| ![](cosine_probe_result/effnet_classification_only/media_images_cosine_probe_benchmark_images_test_cosine_distribution_1_392b88d204c7be366a8e.png) | ![](cosine_probe_result/effnet_supcon/cosine_dist_test.png) |
-
-*Figure 6-A,B. EfficientNetV2B0의 HCC cosine score 분포와 cutoff(점선) 변화. CE-only 학습(Figure 7-A)에서는 cutoff가 음수 영역에 위치하여 HCC 임베딩이 mean prototype에서 멀리 분산되어 있음을 나타낸다. 반면, CE+SupCon 학습(Figure 7-B)에서는 cutoff가 0 부근으로 상승하며, HCC 표본들이 HCC prototype 방향으로 응집됨을 시각적으로 확인한다.*
-
 ### 3.6 애매한 결정(Ambiguous Confidence) 구간에서의 Cosine 표지자 구제 효과
 
 Confidence score 단독으로는 판정하기 힘든 결정 경계 부근(confidence score 0.4~0.6)의 애매한 케이스들을 추출하여, 이중 출력 영상표지자의 보완적 효과를 검증하였다. 
@@ -284,7 +276,7 @@ Confidence score 단독으로는 판정하기 힘든 결정 경계 부근(confid
 
 임상의가 간 병변을 진단하는 과정은 단순히 절대적인 '확률'을 내는 것이 아니라, 전형적인 HCC 소견과 혈관종의 전형적 소견을 현재 병변과 비교하는 유사성 기반 추론(similarity-based reasoning)이다. 본 연구는 단순히 logit이나 confidence에 의존하지 않고 임상적인 의사결정 프로세스와 비슷하게 prototype을 도입하여 연속형 점수(HCC cosine score, Δscore)를 도출하였다. 실험 결과, 이 cosine 기반 표지자들은 confidence score와 비교하여 변별력 측면에서 통계적으로 비열등하였다.
 
-이러한 성과는 SupCon의 역할이 결정적이었다. CE+SupCon 학습은 모델이 분류 경계선만 찾도록 두는 것이 아니라, 임베딩 공간 자체에 의미적인 기하학적 응집성(intra-class compactness)을 강제한다. 이를 시각적으로 뒷받침하는 것이 cutoff의 변화이다(Figure 7). CE-only 모델에서는 HCC 표본들이 분산되어 cutoff가 음수 영역에 머물렀으나, CE+SupCon 적용 후 cutoff가 0 부근으로 뚜렷하게 올라갔으며, true HCC cases의 score 점수 분포 역시 통계적으로 유의하게 상승하였다(p < 0.001). 
+이러한 성과는 SupCon의 역할이 결정적이었다. CE+SupCon 학습은 모델이 분류 경계선만 찾도록 두는 것이 아니라, 임베딩 공간 자체에 의미적인 기하학적 응집성(intra-class compactness)을 강제한다. 이를 시각적으로 뒷받침하는 것이 HCC score 분포의 변화이다. EfficientNetV2B0을 적용한 CE-only 모델에 비해 CE와 SupCon을 동시 적용 시, true HCC cases의 score 점수 분포가 통계적으로 유의하게 상승하였다(p < 0.001). 
 
 결론적으로, 이 변화는 모델이 생성한 임베딩이 CE-only일 때보다 임상적으로 의미가 있게(실제로 HCC와 더욱 비슷하게) 판단하도록 정렬되었음을 의미한다. 이 과정을 거치므로 단순 CE로 학습한 confidence score보다, CE+SupCon으로 학습하고 나서 연산한 HCC cosine score가 방사선학적 보조 마커(radiologic adjunctive marker)로서 적합한 타당성을 갖는다. 특히 본 연구에서 수행한 애매한 결정 구간(confidence score 0.4~0.6)에 대한 하위 분석 결과는, Softmax 함수에 기반한 단일 confidence 출력이 판정을 내리지 못하고 위음성을 낼 때에도 임베딩 공간 기반의 HCC cosine score가 오분류를 구제(salvage)할 수 있음을 확인하였으며, 이 이중 출력 표지자의 임상적 보완 효용을 뒷받침한다.
 
