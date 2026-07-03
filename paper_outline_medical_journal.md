@@ -239,9 +239,7 @@ Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon, 3-A,
 
 CE 단독 학습과 CE+SupCon 학습 간 cosine 기반 표지자의 분포 차이를 정량적으로 비교하기 위해, 검증 세트와 테스트 세트를 합산한 true HCC cases(n=381)를 대상으로 HCC cosine score 및 Δscore의 분포를 backbone별로 분석하였다(Figure 4, Figure 5).
 
-SupCon을 적용하지 않은 조건(CE only)에서 EfficientNetV2B0의 true HCC cases HCC cosine score 중앙값은 0.857이었으나, CE+SupCon 조건에서 0.927로 유의하게 상승하였다(독립표본 t-검정, p < 0.001, *). ResNet50V2에서도 동일한 방향의 변화가 관찰되었다(CE only: 0.843 → CE+SupCon: 0.918, p < 0.001). Δscore에서도 동일한 패턴이 확인되었다. CE only 조건에서 EfficientNetV2B0의 Δscore 중앙값은 −0.132로 음수를 기록하여, 일부 true HCC cases의 임베딩이 HCC prototype보다 hemangioma prototype에 더 가깝게 위치함을 보였다. CE+SupCon 조건에서 이 값은 +0.061로 부호가 전환되었으며(p < 0.001, *), ResNet50V2 역시 −0.174에서 −0.097로 상승하였다(p < 0.001).
-
-이 결과는 SupCon이 분류 성능 이외에 임베딩 공간의 클래스별 정렬 구조를 직접적으로 개선함을 실험적으로 입증한다. CE only 조건에서 임베딩은 분류 경계를 넘지 않더라도 prototype 중심에서 이탈한 위치에 분산될 수 있으며, 이 경우 cosine similarity는 클래스 구성원임을 반영하는 타당한 척도로 기능하지 않는다. SupCon 학습은 동일 클래스 임베딩 간의 인력(pull)과 이종 클래스 임베딩 간의 척력(push)을 명시적 학습 목적으로 구성함으로써[13], HCC 표본의 임베딩이 HCC prototype 방향으로 정렬되도록 임베딩 공간을 재편한다. True HCC cases의 HCC cosine score 및 Δscore가 CE+SupCon 조건에서 일관되게 상승하고 군 간 차이가 모두 p < 0.001로 통계적으로 유의한 것은, cosine 기반 표지자가 임상적으로 의미 있는 유사성 척도로 기능하기 위해 SupCon이 필수적 학습 전략임을 뒷받침한다.
+SupCon을 적용하지 않은 조건(CE only)과 비교했을 때, true HCC cases에서 HCC cosine score는 두 backbone 모두에서 SupCon+CE 조건에서 유의하게 높게 나타났다. EfficientNetV2B0와 ResNet50V2 모두에서 HCC cosine score 분포 차이는 통계적으로 유의하였으며(각각 p < 0.001), 이는 SupCon이 HCC 임베딩을 HCC prototype 방향으로 더 밀집되게 정렬했음을 시사한다. 반면, Δscore(HCC cosine − hemangioma cosine)는 두 backbone 모두에서 CE only와 SupCon+CE 간 유의한 차이가 확인되지 않았다(EfficientNetV2B0: p = 0.902, ResNet50V2: p = 0.625). 즉, 본 분석은 SupCon이 단일 HCC prototype에 대한 절대적 유사도(HCC cosine score)는 강화하지만, HCC와 hemangioma prototype 사이의 상대적 거리 차이인 Δscore까지 일관되게 변화시킨다는 근거는 제공하지 않는다.
 
 Figure 4. HCC Cosine Score Distribution in True HCC Cases by Training Mode (Val + Test)
 
