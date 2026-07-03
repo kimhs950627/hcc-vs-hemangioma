@@ -89,7 +89,7 @@ HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 �
 
 제안 모델은 CNN과 트랜스포머 인코더를 결합한 hybrid vision transformer이다. CNN backbone으로는 EfficientNetV2B0를 채택하였다. 추출된 특징 맵은 패치 토큰으로 재형성되어 트랜스포머 인코더에 입력되며, 분류 토큰(CLS token)[9]의 최종 표현 벡터(임베딩)로부터 confidence score와 cosine 기반 표지자를 동시에 산출하는 이중 출력 구조를 구성하였다.
 
-EfficientNetV2B0를 주력 backbone으로 선택한 근거는 세 가지이다. 첫째, EfficientNetV2B0는 ResNet50V2[8] 대비 파라미터 효율성이 우수하며(7.1M vs 23.6M), 1,858장 규모의 의료 영상 데이터셋에서 과적합 위험이 낮다.[7] 둘째, ablation(Table 2) 결과 EfficientNetV2B0+CE+SupCon이 ResNet50V2+CE+SupCon과 동등한 분류 AUROC(각 1.000)를 보이면서 더 경량한 모델 크기를 유지하여 임상 배포 적합성이 높다. 셋째, EfficientNetV2B0는 SupCon 적용 후 HCC cosine score 임계값이 −0.47에서 −0.005로 이동하는 임베딩 정렬 향상이 ResNet50V2(−0.48 → −0.117)와 동등하게 관찰되어 cosine 기반 표지자 도출에도 동등한 적합성을 보인다.
+EfficientNetV2B0를 주력 backbone으로 선택한 근거는 두 가지이다. 첫째, EfficientNetV2B0는 ResNet50V2[8] 대비 파라미터 효율성이 우수하며(7.1M vs 23.6M), 1,858장 규모의 의료 영상 데이터셋에서 과적합 위험이 낮다.[7] 둘째, ablation(Table 2) 결과 EfficientNetV2B0+CE+SupCon이 ResNet50V2+CE+SupCon과 동등한 분류 AUROC(각 1.000)를 보이면서 더 경량한 모델 크기를 유지하여 임상 배포 적합성이 높다. 
 
 ### 2.3 학습 전략 및 Ablation 설계
 
