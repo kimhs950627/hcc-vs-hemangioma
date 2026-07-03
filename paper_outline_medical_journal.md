@@ -253,7 +253,7 @@ Figure 5. Δscore Distribution in True HCC Cases by Training Mode (Val + Test)
 
 ![Figure 8: Delta cosine score distribution](cosine_probe_result/delta_cosine_annot_distrib.png)
 
-*Figure 5. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 Δscore(HCC cosine − Hemangioma cosine)의 boxplot 분포 비교. HCC score와는 다르게 cutoff, 훈련 방식에 따른 cutoff 및 분포의 차이가 통계적으로 유의하지 않다. 이는 두 케이스 모두 병변 자체의 특성을 제외하면 간 실질, 초음파라는 modality 자체의 유사성이 HCC 및 Hemangioma 그룹에 공히 강력하게 나타나, score 차이가 두 그룹 사이에서는 크지 않은 것으로 추측할 수 있다.*
+*Figure 5. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 Δscore(HCC cosine − Hemangioma cosine)의 boxplot 분포 비교. HCC score와는 다르게 score 분포의 차이가 통계적으로 유의하지 않다. 이는 두 케이스 모두 병변 자체의 특성을 제외하면 간 실질, 초음파라는 modality 자체의 유사성이 HCC 및 Hemangioma 그룹에 공히 강력하게 나타나, score 차이가 두 그룹 사이에서는 크지 않은 것으로 추측할 수 있다.*
 
 ### 3.6 애매한 결정(Ambiguous Confidence) 구간에서의 Cosine 표지자 구제 효과
 
@@ -296,7 +296,7 @@ Confidence score 단독으로는 판정하기 힘든 결정 경계 부근(confid
 
 ③ 유사성 기반 추론의 정량화. 임상의의 prototype 비교 추론을 수치화하는 연속형 표지자(HCC cosine score, Δscore)를 SupCon 기반 임베딩에서 직접 도출하였다. 기존 prototype 기반 모델들[18][19]과 달리 추가적인 아키텍처 변경 없이 기존 분류 모델에 적용 가능하다.
 
-④ SupCon의 필수성 실험적 입증. CE-only 대비 SupCon이 cosine 기반 표지자의 임베딩 정렬 타당성(cutoff의 0 부근 수렴, true HCC cases score 유의 상승)을 확보함을 ablation으로 정량적으로 입증하였다. 이는 유사성 기반 표지자 도출을 위한 학습 전략 설계 원칙을 제시한다.
+④ SupCon의 필수성 실험적 입증. CE-only 대비 SupCon이 cosine 기반 표지자의 임베딩 정렬 타당성(true HCC cases score 유의 상승)을 확보함을 ablation으로 정량적으로 입증하였다. 이는 유사성 기반 표지자 도출을 위한 학습 전략 설계 원칙을 제시한다.
 
 ⑤ 소규모 의료 영상에서 SSL 사전학습의 한계 실증. CE+SupCon 단독 대비 NNCLR SSL 사전학습 → CE+SupCon 미세조정의 2단계 파이프라인이 분류 성능과 cosine 기반 표지자 품질 모두에서 열등한 결과를 보였다. 이는 충분한 레이블 데이터가 존재하는 소규모 의료 영상 데이터셋에서 SSL 사전학습이 CE+SupCon 단독의 지도 학습 기반 클래스 구조화를 능가하지 못하며, 추가적인 계산 비용이 임상 배포 맥락에서 정당화되지 않음을 시사하는 실험적 근거이다.
 
