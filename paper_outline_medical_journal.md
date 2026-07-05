@@ -1,6 +1,6 @@
 # 논문 초고 개요 — 의학 저널 투고용
 
-> 작성 상태: 개정판 (rev. 2026-07-01 — CE+SupCon 재실험 수치 반영, 이미지 경로 개정; intraclass heterogeneity 논거 추가 (§1.2, §1.3, §4.6); 참고문헌 검증·정리 (허위·중복 레퍼런스 제거, DOI·서지사항 정정); §3.5 SupCon 필요성 섹션 개편)
+> 작성 상태: 개정판 (rev. 2026-07-06 — manuscript.docx 최종본 반영; Clean subset 표현 보강; AdamW 반영; HCC cosine score 정의 간소화; 기여 섹션 정리; 결론 수정)
 > 목표 저널: PubMed 등재, SCIE Q1–Q2
 > *(예: Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics)*
 
@@ -24,7 +24,7 @@ B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심
 
 ### 방법 (Methods)
 
-삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장)[12]을 이용한 단일 기관 후향적 연구이다. EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합으로 학습하였다. 단일 softmax 출력을 confidence score로, 임베딩과 HCC prototype 간 cosine similarity를 HCC cosine score, 두 클래스 prototype 간 마진을 Δscore로 각각 정의하는 이중 출력 체계를 구성하였다. 임계값은 검증 세트에서만 Youden's J로 결정 후 테스트 세트에 고정 적용하였다.
+삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장)[12]을 이용한 단일 기관 후향적 연구이다. 원래 데이터셋 중 calliper 및 poor echo window가 드러나지 않는 Clean subset (744명, 2,656장) 을 활용하였다. EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합으로 학습하였다. 단일 softmax 출력을 confidence score로, 임베딩과 HCC prototype 간 cosine similarity를 HCC cosine score, 두 클래스 prototype 간 마진을 Δscore로 각각 정의하는 이중 출력 체계를 구성하였다. 임계값은 검증 세트에서만 Youden's J로 결정 후 테스트 세트에 고정 적용하였다.
 
 ### 결과 (Results)
 
@@ -32,7 +32,7 @@ B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심
 
 ### 결론 (Conclusions)
 
-본 연구는 B-mode 초음파에서 임상의의 유사성 기반 추론에 대응하는 새로운 연속형 영상표지자 후보(HCC cosine score, Δscore)를 제안하였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였다. 나아가 SSL 사전학습 단계가 CE+SupCon 단독 대비 분류 성능 향상을 제공하지 못하는 본 실험 결과는, 소규모 의료 영상 데이터셋에서 SSL 사전학습의 계산 비용 대비 효용이 제한적임을 시사한다.
+본 연구는 B-mode 초음파에서 임상의의 유사성 기반 추론에 대응하는 새로운 연속형 영상표지자 후보(HCC cosine score, Δscore)를 제안하였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보 및 그에 의한 HCC score의 Radiologic marker로의 신뢰도에 필수적임을 ablation으로 확인하였다. 나아가 SSL 사전학습 단계가 CE+SupCon 단독 대비 분류 성능 향상을 제공하지 못하는 본 실험 결과는, 소규모 의료 영상 데이터셋에서 SSL 사전학습의 계산 비용 대비 효용이 제한적임을 시사한다.
 
 핵심어: 간세포암; 초음파; 영상표지자; cosine similarity; supervised contrastive learning; 이중 출력; 임상 의사결정 지원
 
@@ -72,7 +72,8 @@ HCC와 hemangioma의 초음파 감별을 어렵게 만드는 근본 원인 중 �
 
 ### 2.1 연구 설계
 
-본 연구에서는 SMC-LUD(Samsung Medical Center–Liver Ultrasound Dataset)를 사용하였다.[12] 동 데이터셋은 2015년부터 2024년까지 수집된 간 국소 병변 B-mode 영상으로, 병리학적으로 확인된 HCC 2,716장과 영상 기준으로 진단된 혈관종 2,669장을 포함하는 총 1,021명 5,385장의 흑백 영상으로 구성된다. 동일 환자 영상의 개발·평가 단계 간 교차 오염을 방지하기 위해 환자 단위 분리를 적용하였으며, 훈련 1,858장·검증 530장·테스트 268장으로 구분하였다. HCC와 hemangioma의 클래스 비율은 세트 간에 균형 있게 유지되었다(각 약 52% vs 48%).
+본 연구에서는 SMC-LUD(Samsung Medical Center–Liver Ultrasound Dataset)를 사용하였다.[12] 동 데이터셋은 2015년부터 2024년까지 수집된 간 국소 병변 B-mode 영상으로, 병리학적으로 확인된 HCC 2,716장과 영상 기준으로 진단된 혈관종 2,669장을 포함하는 총 1,021명 5,385장의 흑백 영상으로 구성된다. 
+실제 분석 수행 시 동일 환자 영상의 개발·평가 단계 간 교차 오염을 방지하기 위해 환자 단위 분리를 적용하였으며, 원본 데이터셋에서 calliper 등 artifact가 없고 poor echo window를 보이는 이미지를 제외한 Clean subset인 744명, 2,656장의 이미지(훈련 1,858장·검증 530장·테스트 268장)를 사용하였다. HCC와 hemangioma의 클래스 비율은 세트 간에 균형 있게 유지되었다(각 약 52% vs 48%).
 
 #### Table 1. Patient and Lesion Demographics
 
@@ -103,7 +104,7 @@ $$ \mathcal{L}_{SupCon} = \sum_{i} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \fra
 
 여기서 $P(i)$는 표본 $i$와 동일한 클래스에 속하는 양성 표본들의 집합, $A(i)$는 미니배치 내의 전체 표본, $\tau$는 temperature 파라미터이다. 이 수식은 동일 클래스 표본 간의 거리를 가깝게 당기고(pull) 다른 클래스 표본 간의 거리는 밀어내는(push) 명시적 역할을 수행한다.[13] 이를 통해 CE+SupCon 모델은 분류 경계 형성뿐만 아니라 임베딩 공간 자체에 강력한 기하학적 응집성(intra-class compactness)과 분리성(inter-class separability)을 부여하도록 최적화된다.
 
-모든 모델은 384 × 384 흑백 입력, Adam optimizer, cosine annealing + warmup 학습률 스케줄로 학습하였다. 데이터 증강에는 수평·수직 반전, 무작위 자르기·크기 조정, 밝기·대비 변환, Gaussian blur가 포함되었으며, 이는 모델이 초음파 영상의 단순 단서(shortcut feature)에 과도하게 의존하는 학습을 완화하기 위함이다.[10]
+모든 모델은 384 × 384 흑백 입력, AdamW optimizer, cosine annealing + warmup 학습률 스케줄로 학습하였다. 데이터 증강에는 수평·수직 반전, 무작위 자르기·크기 조정, 밝기·대비 변환, Gaussian blur가 포함되었으며, 이는 모델이 초음파 영상의 단순 단서(shortcut feature)에 과도하게 의존하는 학습을 완화하기 위함이다.[10]
 
 ### 2.4 이중 출력 표지자 정의
 
@@ -112,7 +113,7 @@ $$ \mathcal{L}_{SupCon} = \sum_{i} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \fra
 Confidence Score. HCC 클래스에 해당하는 softmax 값으로 정의한다. 보정된 사후 확률을 자동으로 의미하지 않으므로,[16] 본 연구에서는 이를 확률이 아닌 모델의 결정 강도(decision strength)로 명명한다.
 
 HCC Cosine Score. 학습 완료 후 훈련 세트 HCC 표본들의 평균 임베딩 벡터를 HCC prototype으로 구성한다. 임의의 병변 영상 임베딩과 HCC prototype 간의 cosine similarity를 HCC cosine score로 산출한다. 
-구체적으로, HCC prototype은 B-mode 초음파에서 여러 형태로 나타나는 HCC 그룹이고, 본 연구에서는 4개의 그룹을 가정하였다. 간 초음파 이미지를 학습된 모델로 분석하여, 이미지를 고차원 벡터로 투영(projection, embedding)한다. 이 벡터와, 4개의 HCC 그룹 및 4개의 Hemangioma 그룹 간 유사도를 Cosine similarity 방법으로 측정하였다. 4개의 HCC 그룹(Prototype)과 이미지 간의 유사도 4개를 평균한 값이 HCC score이고, 4개의 Hemangioma 그룹(Prototype) 과 이미지 간의 유사도 4개를 평균한 값이 Hemangioma score이다. HCC score와 Hemangioma score의 차이를 Delta (Δ) score로 명명한다. 이 점수는 임상의가 병변을 전형적 HCC 소견과 비교하는 유사성 기반 추론을 수치화한 연속형 영상표지자 후보이다.
+본 연구에서는 클래스별 다중 prototype 기반 cosine probe를 사용하였다. 구체적으로, 훈련 세트의 임베딩을 각 클래스 내에서 k-means clustering (k=4)으로 요약하여 HCC prototype 4개와 hemangioma prototype 4개를 구성하였다. 각 병변 영상은 학습된 모델을 통해 임베딩 벡터로 변환되며, 이 벡터와 각 prototype 간 cosine similarity를 계산하였다. HCC cosine score는 4개의 HCC prototype과의 cosine similarity 평균으로 정의하였고, hemangioma cosine score는 4개의 hemangioma prototype과의 cosine similarity 평균으로 정의하였다. Δscore는 HCC cosine score에서 hemangioma cosine score를 뺀 값으로 정의하였다. 이들 표지자는 각각 단일 클래스에 대한 절대적 유사도와 두 클래스 간 상대적 유사도를 정량화하기 위한 연속형 영상표지자 후보로 해석하였다.
 
 Δscore. HCC cosine score와 hemangioma cosine score의 차이로 정의하는 비교형 감별 표지자이다. 단일 클래스 절대 유사도가 아닌 경쟁 두 클래스 간 상대적 위치를 정량화하여, "이 병변이 HCC와 hemangioma 중 어느 쪽에 얼마나 더 가까운가"를 반영한다.
 
@@ -155,9 +156,9 @@ HCC Cosine Score. 학습 완료 후 훈련 세트 HCC 표본들의 평균 임베
 | 5 | ResNet50V2 | NNCLR (SSL) | 0.9990 | 99.64 | 99.21 | 0.9945 |
 | 6 | EfficientNetV2B0 | NNCLR (SSL) | 0.9990 | 98.19 | 98.42 | 0.9840 |
 
-*Bold: primary model (#4). CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; NNCLR = 2단계 학습(NNCLR SSL pre-training → CE+SupCon fine-tuning). 단순 SSL 전용 모델이 아님에 유의. Table 2의 수치는 ROC-A(Confidence Score) 기준이다.*
+*Bold: primary model (#4). CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; NNCLR = 2단계 학습(NNCLR SSL pre-training → CE+SupCon fine-tuning). Table 2의 수치는 ROC-A(Confidence Score) 기준이다.*
 
-CE+SupCon 조건(#3, #4)은 CE only(#1, #2)와 동등한 분류 성능을 유지하면서 임베딩 군집 분리도를 개선하였다. EfficientNetV2B0+CE+SupCon(#4)은 ResNet50V2+CE+SupCon(#3) 대비 동등한 AUROC를 경량 모델(7.1M 파라미터)로 달성하여 주력 모델로 선정하였다.
+CE+SupCon 조건(#3, #4)은 CE only(#1, #2)와 동등한 분류 성능을 유지하면서 임베딩 군집 분리도를 개선하였다. EfficientNetV2B0+CE+SupCon(#4)은 ResNet50V2+CE+SupCon(#3) 대비 동등한 AUROC를 경량 모델(7.1M 파라미터)로 달성하여 주력 모델(Primary model)로 선정하였다.
 
 주목할 결과는 NNCLR 2단계 학습 조건(#5, #6)에서 분류 성능이 CE+SupCon 단독 대비 열등하였다는 점이다(ResNet: 0.9990 vs 1.0000; EfficientNet: 0.9990 vs 1.0000). SSL 사전학습 단계는 분류 AUROC 기준으로 어떠한 성능 향상도 제공하지 못하였으며, 오히려 특이도와 F1 Score가 CE+SupCon 대비 낮았다. 이는 SSL 사전학습에 소요되는 추가적인 학습 시간과 계산 자원이 본 데이터셋 규모와 과제에서 정당화되지 않음을 시사한다.
 
@@ -192,13 +193,13 @@ Figure 2. Confusion Matrices — Primary Model, Test Set (Three Outputs, 2-A, 2-
 |:-:|:-:|:-:|
 | ![](cosine_probe_result/effnet_supcon/cm_test_roc-a_confidence.png) | ![](cosine_probe_result/effnet_supcon/cm_test_roc-b_hcc_cosine___mean.png) | ![](cosine_probe_result/effnet_supcon/cm_test_roc-c_deltascore___mean.png) |
 
-*Figure 2. 주력 모델(EfficientNetV2B0 + CE+SupCon) 테스트 세트 혼동행렬. 세 출력 모두 FN=0(HCC 누락 없음)이며 FP는 각 1건이다.*
+*Figure 2. 주력 모델(EfficientNetV2B0 + CE+SupCon) 테스트 세트 혼동행렬. 세 출력 모두 위양성 0건 (특이도 100%), 위음성 1건 (민감도 99.6%)이다.*
 
 검증 세트에서 위양성이 한 건도 발생하지 않았으며(특이도 100%), 위음성 역시 없었다(민감도 99.6%). 테스트 세트에서 위양성(n=1)의 임상적 특성(병변 크기, echo pattern)에 대한 상세 분석은 추후 기술한다.
 
 ### 3.4 이중 출력 ROC 비교 — 비열등성 검증
 
-주력 모델에서 confidence score(ROC-A), HCC cosine score(ROC-B), Δscore(ROC-C) 세 출력의 AUROC를 비교하였다(Table 4). Cosine probe는 mean prototype(n_proto=1)과 k-means prototype(k=4) 두 방식으로 수행하였다.
+주력 모델에서 confidence score(ROC-A), HCC cosine score(ROC-B), Δscore(ROC-C) 세 출력의 AUROC를 비교하였다(Figure 3, Table 4). Cosine probe는 mean prototype(n_proto=1)과 k-means prototype(k=4) 두 방식으로 수행하였다.
 
 Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon, 3-A, B)
 
@@ -220,7 +221,7 @@ Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon, 3-A,
 
 *ns: not significant (p>0.05). Val: n=530; Test: n=268. Cutoff (Youden's J, Val): ROC-A=0.0011, ROC-B(mean)=−0.0048, ROC-C(mean)=−0.9585.*
 
-주력 모델에서 cosine 기반 표지자(HCC score, Δscore )의 비열등성이 성립하였다. Confidence score와 cosine score의 AUROC가 동일하게 1.000이며 DeLong z=0으로 두 출력 간 변별력의 차이가 전혀 없었다.
+주력 모델에서 cosine 기반 표지자(HCC score, Δscore )의 비열등성이 성립하였다. Confidence score와 cosine score의 AUROC가 동일하게 1.000이며 DeLong z=0으로 두 출력 간 변별력의 차이가 없었다.
 
 #### Table 4B. 전 모델 AUROC 비교 (Test Set)
 
@@ -286,7 +287,7 @@ Confidence score 단독으로는 판정하기 힘든 결정 경계 부근(confid
 
 ### 4.5 본 연구의 기여
 
-본 연구의 신규성은 다섯 가지 차원에서 정의된다.
+
 
 ① 클래스 내 이질성에 대응하는 연속형 표지자 제안. HCC와 hemangioma는 각각 전형적 소견과 비전형적 소견이 넓은 스펙트럼에 걸쳐 공존한다.[21][22][23] 전체 HCC의 10–15%는 atypical 소견을 보이며,[21] atypical hemangioma는 악성 종양을 mimicking하여 단순 B-mode 초음파에서의 감별이 현저히 어렵다.[22][23] 그럼에도 기존 딥러닝 분류 모델은 이 intraclass heterogeneity를 단일 이진 출력으로 압축하여 전형 병변과 비전형 병변을 동등하게 처리한다. 기존 AI 문헌은 전형적 소견 병변에서의 높은 정확도를 보고하나 atypical case에 대한 검증은 불충분하다는 점이 한계로 지적된다.[21] 본 연구가 제안하는 HCC cosine score는 병변 임베딩과 HCC prototype 간의 거리를 연속값으로 정량화하여, 분류 경계를 넘지 않는 범위에서도 해당 병변이 전형 HCC cluster의 핵심부에 있는지 주변부에 있는지를 반영한다. 이는 임상의가 LI-RADS 체계에서 수행하는 위험 계층화 추론[24]과 구조적으로 대응하며, 단일 이진 출력으로는 표현 불가능한 비전형성의 정도를 영상표지자로 제공한다. 나아가, 단일 이진 출력이 0.4~0.6 사이의 애매한 확신도(confidence)를 보일 때에도 임베딩 공간의 구조적 거리 기반 평가가 실제 라벨을 정확히 분류할 수 있음을 확인하여, 단일 출력 모델이 놓치기 쉬운 비전형적 케이스 감별에 있어 연속형 Cosine 표지자가 보완재 역할을 수행함을 보고한다.
 
@@ -306,7 +307,7 @@ Confidence score 단독으로는 판정하기 힘든 결정 경계 부근(confid
 
 ## 5. 결론 (Conclusion)
 
-본 연구는 B-mode 복부 초음파 영상에서 HCC를 hemangioma와 감별하는 hybrid vision transformer를 개발하고, 단일 softmax 출력 체계를 넘어 confidence score와 HCC cosine score·Δscore로 구성된 이중 출력 영상표지자 체계를 제안하였다. 주력 모델(EfficientNetV2B0 + CE+SupCon)은 검증 세트에서 AUROC 1.000, 민감도 99.6%, 특이도 100.0%, 테스트 세트에서 AUROC 1.000, 민감도 100.0%, 특이도 99.2%를 달성하였으며, cosine 기반 표지자는 confidence score와 통계적으로 동등한 변별력을 보였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였으며, true HCC cases에서 HCC cosine score 및 Δscore가 CE+SupCon 조건에서 CE only 대비 유의하게 상승함을(모든 비교 p < 0.001) 실험적으로 실증하였다. SSL 사전학습 → CE+SupCon 미세조정의 2단계 파이프라인은 CE+SupCon 단독 대비 분류 성능과 cosine 기반 표지자 품질 모두에서 이점을 제공하지 못하였다. 외부 검증, AFP 대비 독립적 기여 평가, 및 SSL 하이퍼파라미터 민감도 분석이 향후 과제이다.
+본 연구는 B-mode 복부 초음파 영상에서 HCC를 hemangioma와 감별하는 hybrid vision transformer를 개발하고, 단일 softmax 출력 체계를 넘어 confidence score와 HCC cosine score·Δscore로 구성된 이중 출력 영상표지자 체계를 제안하였다. 주력 모델(EfficientNetV2B0 + CE+SupCon)은 검증 세트에서 AUROC 1.000, 민감도 99.6%, 특이도 100.0%, 테스트 세트에서 AUROC 1.000, 민감도 100.0%, 특이도 99.2%를 달성하였으며, cosine 기반 표지자는 confidence score와 통계적으로 동등한 변별력을 보였다. SupCon 학습이 cosine 기반 표지자의 임베딩 정렬 타당성 확보에 필수적임을 ablation으로 확인하였으며, true HCC cases에서 HCC cosine score가 CE+SupCon 조건에서 CE only 대비 유의하게 상승함을(모든 비교 p < 0.001) 실험적으로 실증하였다. SSL 사전학습 → CE+SupCon 미세조정의 2단계 파이프라인은 CE+SupCon 단독 대비 분류 성능과 cosine 기반 표지자 품질 모두에서 이점을 제공하지 못하였다. 외부 검증, AFP 대비 독립적 기여 평가, 및 SSL 하이퍼파라미터 민감도 분석이 향후 과제이다.
 
 ---
 

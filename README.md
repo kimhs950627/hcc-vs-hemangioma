@@ -38,7 +38,7 @@ This study uses the **SMC-LUD (Samsung Medical Center – Liver Ultrasound Datas
 | **Total (Clean)** | **1,267** | **1,389** | **2,656** |
 
 - **Patient-level split** applied to prevent data leakage between development and evaluation sets
-- Clean subset (no caliper artifacts): 744 patients, 2,656 images
+- Clean subset (no caliper artifacts, no poor echo window): 744 patients, 2,656 images
 - Full dataset: 1,021 patients, 5,385 images (HCC: 2,716 images, Hemangioma: 2,669 images)
 
 ### Patient Demographics
@@ -97,8 +97,8 @@ Six conditions were compared (2 backbones × 3 training modes):
 | Output | Definition | Clinical Meaning |
 |--------|-----------|------------------|
 | **Confidence Score** | HCC softmax value | Model decision strength (not calibrated probability) |
-| **HCC Cosine Score** | Cosine similarity between lesion embedding and HCC prototype cluster (k=4) | Quantified similarity to "typical HCC" appearance |
-| **Hemangioma Cosine Score** | Cosine similarity to hemangioma prototype cluster (k=4) | Quantified similarity to "typical hemangioma" |
+| **HCC Cosine Score** | Mean cosine similarity between lesion embedding and HCC prototype cluster (k-means, k=4) | Quantified similarity to "typical HCC" appearance |
+| **Hemangioma Cosine Score** | Mean cosine similarity to hemangioma prototype cluster (k-means, k=4) | Quantified similarity to "typical hemangioma" |
 | **Δscore** | HCC Cosine Score − Hemangioma Cosine Score | Relative discriminative margin between two competing classes |
 
 The **SupCon loss** forces intra-class compactness in the embedding space:
@@ -165,7 +165,7 @@ This ensures that cosine distances in embedding space meaningfully reflect clini
 |:---:|:---:|:---:|
 | ![](paper_submission/fig%202-A%20Confusion%20matrix-A.png) | ![](paper_submission/fig%202-B%20Confusion%20matrix-B.png) | ![](paper_submission/fig%202-C%20Confusion%20matrix-C.png) |
 
-*All three outputs achieve FN=0 (no missed HCC) with FP=1 each on the test set.*
+*All three outputs achieve zero false positives (Specificity 100%) with one false negative (Sensitivity 99.6%) on the test set.*
 
 ### Figure 3 — Triple ROC Curves (Primary Model)
 
