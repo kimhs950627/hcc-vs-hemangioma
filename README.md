@@ -1,270 +1,348 @@
-# hcc-vs-hemangioma
+# HCC vs Hemangioma: Dual-Output Imaging Marker on B-mode Ultrasound
 
-> **B-mode Ultrasound 기반 HCC Score 개발 — Operator-Independent Radiologic Marker**  
-> Primary Care AI · Computer Vision · Self-Supervised Learning · Radiologic Marker Development
+> **Development of a Novel Dual-Output Imaging Marker for Quantifying HCC-Likeness on B-mode Abdominal Ultrasound: Complementary Clinical Roles of HCC Cosine Score and Confidence Score**
+
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/) [![TensorFlow](https://img.shields.io/badge/TensorFlow-2.x-orange.svg)](https://tensorflow.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+---
+
+## Overview
+
+This repository contains the full implementation of a **hybrid vision transformer** that differentiates hepatocellular carcinoma (HCC) from hepatic hemangioma on B-mode abdominal ultrasound images, and proposes a **dual-output imaging marker system** — the **HCC Cosine Score** and **Δscore** — as a complement to the conventional single softmax output (Confidence Score).
+
+The core contribution lies not in classification performance alone, but in providing a **continuous, similarity-based imaging marker** that corresponds to the clinician's prototype-comparison reasoning process.
 
 ---
 
-## 🔬 Research Motivation
+## Background & Motivation
 
-일차의료(primary care) 현장에서 PIVKA-II, AFP 등 종양표지자를 폭넓게 검사하기 어려운 현실이 있다.  
-비용, 보험 급여, 추적 동선 등의 문제로 인해 **tumor marker 없이도 HCC를 스크리닝할 수 있는 도구**가 필요하다.
+B-mode ultrasound is the primary surveillance tool for HCC, yet its early-detection sensitivity remains ~47% (63% with AFP) [[Tzartzeva 2018]](https://doi.org/10.1053/j.gastro.2018.01.064). Conventional deep learning classifiers produce a single softmax output, which:
 
-진료실에서 이미 사용 중인 **B-mode Ultrasound 이미지**만을 입력으로 받아,  
-딥러닝 기반 **HCC Score (0–1 continuous)** 를 산출하는 Computer Vision 모델을 개발한다.  
-이 score는 radiologic marker로 기능하며, 명확한 cutoff와 함께 임상적 의사결정을 지원한다.
+- Does **not** reflect calibrated posterior probability [[Guo 2017]](https://arxiv.org/abs/1706.04599)
+- Cannot quantify whether a lesion sits in the **core or periphery** of the HCC embedding cluster
+- Fails to capture the **intraclass heterogeneity** of both HCC (10–15% atypical appearance) and hemangioma (atypical patterns mimicking malignancy)
+
+By contrast, clinicians perform **similarity-based reasoning** — asking "how much does this lesion resemble a typical HCC?" — analogous to the LI-RADS tiered risk stratification system. This study operationalizes that reasoning with geometric cosine similarity in the embedding space.
 
 ---
-# 실험 정리
 
-| # | Mode                    | Backbone         | Model ID                                 | Status |
-| - | ----------------------- | ---------------- | ---------------------------------------- | ------ |
-| 1 | Classification Only     | ResNet50V2       | Benchmark-Classification_Only_resnet50v2 | ✅ 완료   |
-| 2 | Classification Only     | EfficientNetV2B0 | Benchmark-Classification_Only            | ✅ 완료   |
-| 3 | Classification + SupCon | ResNet50V2       | jgms789l                                        | ✅ 완료 |
-| 4 | Classification + SupCon | EfficientNetV2B0 | jgms789l                                        | ✅ 완료 |
-| 5 | VICReg (SSL)            | ResNet50V2       | —                                        | 🔲 미실행 |
-| 6 | VICReg (SSL)            | EfficientNetV2B0 | 6bn40bha                                 | ✅ 완료   |
-| 7 | NNCLR (SSL)             | ResNet50V2       | 7p28wnk2                                 | ✅ 완료   |
-| 8 | NNCLR (SSL)             | EfficientNetV2B0 | zqe3125v                                 | ✅ 완료   |
+## Dataset
 
-## 🧠 Model Architecture Overview
+This study uses the **SMC-LUD (Samsung Medical Center – Liver Ultrasound Dataset)** [[Tak et al. 2026]](https://doi.org/10.1038/s41597-026-07023-7), a publicly available large-scale B-mode liver ultrasound dataset.
 
-### SSL Pre-training: VICReg + Hybrid ViT
+| Split | Hemangioma | HCC | Total |
+|-------|-----------|-----|-------|
+| Train | 886 | 972 | 1,858 |
+| Validation | 253 | 277 | 530 |
+| Test | 128 | 140 | 268 |
+| **Total (Clean)** | **1,267** | **1,389** | **2,656** |
 
-본 연구는 **DINO를 사용하지 않는다.** 대신 아래 구조를 채택한다.
+- **Patient-level split** applied to prevent data leakage between development and evaluation sets
+- Clean subset (no caliper artifacts): 744 patients, 2,656 images
+- Full dataset: 1,021 patients, 5,385 images (HCC: 2,716 images, Hemangioma: 2,669 images)
 
-```
-┌─────────────────────────────────────────────────────┐
-│               Hybrid Vision Transformer              │
-│                                                     │
-│  Input 384×384 (grayscale, [0,255])                  │
-│       ↓                                             │
-│  CNN Stem (Conv 7×7, stride 4)                       │
-│       ↓  Patch embedding via CNN (not linear proj)   │
-│  Transformer Encoder (ViT-S/16 blocks)               │
-│       ↓  [CLS] token representation                  │
-│  Projector MLP (2048-2048-2048, BN, ReLU)            │
-│       ↓                                             │
-│  VICReg Loss: Variance + Invariance + Covariance     │
-└─────────────────────────────────────────────────────┘
-         ↓  (SSL pre-training finished)
-┌─────────────────────────────────────────────────────┐
-│          Supervised Fine-tuning (PureClassifier)     │
-│                                                     │
-│  Hybrid ViT Encoder (frozen or partial fine-tune)   │
-│       ↓  [CLS] token                               │
-│  Linear head → softmax(2) → [P(Hem), P(HCC)]        │
-│       ↓                                             │
-│  HCC Score = P(HCC) ∈ [0, 1]                        │
-└─────────────────────────────────────────────────────┘
-```
+### Patient Demographics
 
-### Why Hybrid ViT (not plain ViT)?
-
-| Feature | Plain ViT | Hybrid ViT (ours) |
+| Characteristic | HCC (n=600 pts) | Hemangioma (n=421 pts) |
 |---|---|---|
-| Patch embedding | Linear projection | CNN stem (Conv 7×7 + stride) |
-| Low-level feature | Weak (needs huge data) | Strong (CNN inductive bias) |
-| Small dataset fit | Poor | **Better** |
-| Positional encoding | Fixed/learned 1D | CNN feature map → 2D spatial |
-| Memory (384×384) | High (576 patches) | Moderate (CNN reduces spatial early) |
-
-> **의료 이미징 맥락**: labeled 의료 데이터는 ImageNet 대비 절대적으로 적다.  
-> CNN stem의 inductive bias (locality, translation equivariance)는  
-> 초음파 병변의 texturally similar한 특징 추출에 효과적이다.
-
-### Why VICReg (not DINO)?
-
-| 항목 | DINO | VICReg |
-|---|---|---|
-| Architecture | Teacher-Student (EMA) | Symmetric twin network |
-| Loss | Cross-entropy (softmax) | Variance + Invariance + Covariance |
-| Collapse 방지 | Centering + Sharpening | Variance regularization term |
-| Momentum update | ✅ 필요 | ❌ 불필요 (simpler) |
-| Batch sensitivity | 높음 | **낮음** (small batch 가능) |
-| Feature redundancy 제거 | 암묵적 | **명시적** (Covariance term) |
-| 의료 US 적합성 | 검증 있으나 복잡 | **구현 단순, 소규모 데이터 유리** |
-
-> VICReg의 핵심: 세 loss의 합산으로 collapse 방지 + decorrelated feature 학습  
-> `L = λ·Invariance + μ·Variance + ν·Covariance`  
-> (default: λ=25, μ=25, ν=1 — Bardes et al., NeurIPS 2022)
+| Age, mean ± SD (range), yr | 66.65 ± 11.02 (20–90) | 55.50 ± 12.76 (30–90) |
+| Male, n (%) | 491 (81.8%) | 174 (41.3%) |
+| Female, n (%) | 109 (18.2%) | 247 (58.7%) |
+| Lesion size (max diameter), median / Q1 / Q3, cm | 2.90 / 2.10 / 4.50 | — |
 
 ---
 
-## 📊 Dataset
+## Model Architecture
 
-```
-Modality     : B-mode Ultrasound (grayscale)
-Task         : Binary classification — HCC vs Hemangioma
-Total images : 2,656
-  Train      : 1,858  (HCC 972 / Hemangioma 886)
-  Val        :   530  (HCC 277 / Hemangioma 253)
-  Test       :   268  (HCC 140 / Hemangioma 128)
+The proposed model is a **CNN–Transformer hybrid** architecture:
 
-Image spec   : 384 × 384 px, float32 [0, 255], normalize=False
-Label        : 0 = Hemangioma, 1 = HCC (positive class)
-Class ratio  : ~52% HCC / ~48% Hemangioma (balanced)
-```
+- **CNN Backbone**: EfficientNetV2B0 (7.1M parameters)
+- Feature maps reshaped into patch tokens and fed into a **Transformer Encoder**
+- A **CLS token** representation yields the final embedding vector
+- **Dual-output heads**: Confidence Score (softmax) + Cosine Similarity Scores (HCC Cosine Score, Δscore)
+
+![Model Architecture](figures/model_architecture.jpg)
+
+*Figure: Hybrid Vision Transformer architecture. EfficientNetV2B0 extracts local CNN features, which are processed by a Transformer encoder. The CLS token embedding is used to derive both the confidence score and cosine-based imaging markers.*
 
 ---
 
-## ⚙️ Experimental Pipeline
+## Training Strategy & Ablation
 
-### Stage 1 — VICReg SSL Pre-training
+Six conditions were compared (2 backbones × 3 training modes):
 
-```python
-# Pseudo-code (Keras 3 / TF backend)
-class HybridViTEncoder(keras.Model):
-    """
-    CNN Stem: Conv2D(96, 7, stride=4) → LayerNorm
-    Transformer Encoder: depth=12, heads=6, dim=384 (ViT-S config)
-    Output: [CLS] token, shape (B, 384)
-    """
+| # | Backbone | Training Mode | Val AUROC | Val Sens (%) | Val Spec (%) | F1 |
+|---|----------|--------------|:---------:|:------------:|:------------:|:---:|
+| 1 | ResNet50V2 | CE Only | 1.0000 | 100.00 | 100.00 | 1.0000 |
+| 2 | EfficientNetV2B0 | CE Only | 1.0000 | 100.00 | 99.60 | 0.9980 |
+| 3 | ResNet50V2 | CE + SupCon | 1.0000 | 99.64 | 100.00 | 0.9982 |
+| **4** | **EfficientNetV2B0** | **CE + SupCon** | **1.0000** | **99.64** | **100.00** | **0.9982** |
+| 5 | ResNet50V2 | NNCLR (2-stage) | 0.9990 | 99.64 | 99.21 | 0.9945 |
+| 6 | EfficientNetV2B0 | NNCLR (2-stage) | 0.9990 | 98.19 | 98.42 | 0.9840 |
 
-class VICRegProjector(keras.Model):
-    """
-    MLP: 384 → 2048 → 2048 → 2048 (BN + ReLU, last layer no activation)
-    Output: (B, 2048)
-    """
+**Bold = Primary Model (#4)**. CE = Cross-Entropy; SupCon = Supervised Contrastive Learning; NNCLR = 2-stage pipeline (NNCLR SSL pre-training → CE+SupCon fine-tuning).
 
-# VICReg Loss
-def vicreg_loss(z1, z2, lam=25.0, mu=25.0, nu=1.0):
-    inv = mse_loss(z1, z2)                        # Invariance
-    var = variance_loss(z1) + variance_loss(z2)   # Variance
-    cov = covariance_loss(z1) + covariance_loss(z2)  # Covariance
-    return lam * inv + mu * var + nu * cov
-```
+### Key Ablation Findings
 
-**Augmentation (SSL pre-training)**:
-- Random crop + resize to 384×384
-- Random horizontal/vertical flip
-- Gaussian blur, brightness/contrast jitter (grayscale-safe)
-- **Two views** per image → (z1, z2) → VICReg loss
-
-### Stage 2 — Supervised Fine-tuning (PureClassifier)
-
-```python
-class PureClassifier(keras.Model):
-    """
-    encoder : HybridViTEncoder (pretrained, partial fine-tune or frozen)
-    head    : Dense(2) → Softmax
-    output  : dict {"logits": (B,2), "probabilities": (B,2)}
-    """
-    def call(self, x, training=False):
-        feats = self.encoder(x, training=training)   # (B, 384)
-        logits = self.head(feats)
-        return {"logits": logits,
-                "probabilities": tf.nn.softmax(logits)}
-```
-
-**HCC Score 정의**:
-
-```
-HCC Score = probabilities[:, 1] = P(HCC)  ∈ [0, 1]
-```
-
-### Stage 3 — Radiologic Marker Cutoff
-
-| Strategy | Formula | Set |
-|---|---|---|
-| **Youden's J** (primary) | argmax(Sensitivity + Specificity − 1) | **Val only** |
-| Sensitivity-first | min threshold s.t. Sensitivity ≥ 0.90 | Val only |
-
-> **원칙**: Cutoff는 Val set에서만 결정. Test는 완전 blind evaluation.
-
-### Stage 4 — Statistical Analysis
-
-- AUROC: DeLong method 95% CI
-- At cutoff: Sens, Spec, PPV, NPV, F1, Confusion Matrix
-- **Decision Curve Analysis (DCA)**: Vickers & Elkin 2006
-- Bootstrap (n=1,000): 95% CI for all metrics
-- Score distribution: per-class Gaussian KDE (Train / Val / Test 3-row subplot)
+- **CE + SupCon ≥ CE Only** in embedding alignment quality, with equivalent classification performance
+- **EfficientNetV2B0 (7.1M) ≈ ResNet50V2 (23.6M)** in AUROC — lighter model preferred for clinical deployment
+- **NNCLR 2-stage pipeline** consistently underperformed CE+SupCon alone, providing **no justification** for the additional computational cost in this dataset size
 
 ---
 
-## 🗂️ Repository Structure
+## Dual-Output Imaging Marker System
+
+### Definitions
+
+| Output | Definition | Clinical Meaning |
+|--------|-----------|------------------|
+| **Confidence Score** | HCC softmax value | Model decision strength (not calibrated probability) |
+| **HCC Cosine Score** | Cosine similarity between lesion embedding and HCC prototype cluster (k=4) | Quantified similarity to "typical HCC" appearance |
+| **Hemangioma Cosine Score** | Cosine similarity to hemangioma prototype cluster (k=4) | Quantified similarity to "typical hemangioma" |
+| **Δscore** | HCC Cosine Score − Hemangioma Cosine Score | Relative discriminative margin between two competing classes |
+
+The **SupCon loss** forces intra-class compactness in the embedding space:
+
+$$\mathcal{L}_{SupCon} = \sum_{i} \frac{-1}{|P(i)|} \sum_{p \in P(i)} \log \frac{\exp(z_i \cdot z_p / \tau)}{\sum_{a \in A(i)} \exp(z_i \cdot z_a / \tau)}$$
+
+This ensures that cosine distances in embedding space meaningfully reflect clinical similarity — a prerequisite for valid cosine-based imaging markers.
+
+---
+
+## Results
+
+### Primary Model Performance (EfficientNetV2B0 + CE+SupCon)
+
+| Metric | Validation Set | Test Set |
+|--------|:--------------:|:--------:|
+| AUROC | **1.000** | **1.000** |
+| Accuracy (%) | 100.00 | 99.63 |
+| Sensitivity (%) | 99.64 | 100.00 |
+| Specificity (%) | 100.00 | 99.22 |
+| PPV (%) | 100.00 | 99.29 |
+| NPV (%) | 99.61 | 100.00 |
+| F1 Score | 0.9982 | 0.9964 |
+| TP / FP / FN / TN | 277 / 0 / 0 / 253 | 140 / 1 / 0 / 127 |
+
+*Val n=530 (HCC 277, Hemangioma 253); Test n=268 (HCC 140, Hemangioma 128). Cutoff (Youden's J on Val): 0.0011.*
+
+### Three-Way ROC Comparison (Non-inferiority Validation)
+
+| Output | Score Type | Prototype | AUROC (Val) | AUROC (Test) | DeLong p |
+|--------|-----------|-----------|:-----------:|:------------:|:--------:|
+| ROC-A | Confidence Score | — | 1.000 | 1.000 | — (ref) |
+| ROC-B | HCC Cosine Score | mean | 1.000 | 1.000 | 1.000 (ns) |
+| ROC-C | Δscore | mean | 1.000 | 1.000 | 1.000 (ns) |
+| ROC-B | HCC Cosine Score | k-means (k=4) | 1.000 | 1.000 | 1.000 (ns) |
+| ROC-C | Δscore | k-means (k=4) | 1.000 | 1.000 | 1.000 (ns) |
+
+*ns: not significant (p>0.05). Cosine-based markers are **non-inferior** to Confidence Score.*
+
+### Cross-Model AUROC Summary (Test Set)
+
+| Model | Training | Conf. (A) | Cosine-B (mean) | Δscore-C (mean) | DeLong p (A vs B) |
+|-------|----------|:---------:|:---------------:|:---------------:|:-----------------:|
+| EfficientNet | CE Only | 1.000 | 1.000 | 1.000 | 1.000 (ns) |
+| **EfficientNet** | **CE+SupCon** | **1.000** | **1.000** | **1.000** | **1.000 (ns)** |
+| EfficientNet | NNCLR | 1.000 | 0.893 | 1.000 | < 0.001 |
+| ResNet | CE Only | 1.000 | 1.000 | 1.000 | 1.000 (ns) |
+| ResNet | CE+SupCon | 1.000 | 1.000 | 1.000 | 1.000 (ns) |
+| ResNet | NNCLR | 0.999 | 0.068 | 0.989 | < 0.001 |
+
+---
+
+## Figures
+
+### Figure 1 — t-SNE Embedding Space Visualization (Primary Model)
+
+![Figure 1: t-SNE Visualization](paper_submission/fig%201%20TSNE%20visualization.png)
+
+*t-SNE visualization of the embedding space (EfficientNetV2B0 + CE+SupCon, test set). HCC (orange) and Hemangioma (blue) clusters are clearly separated. SupCon-induced intra-class compactness is confirmed.*
+
+### Figure 2 — Confusion Matrices (Test Set, Three Outputs)
+
+| Fig 2-A: Confidence Score | Fig 2-B: HCC Cosine Score | Fig 2-C: Δscore |
+|:---:|:---:|:---:|
+| ![](paper_submission/fig%202-A%20Confusion%20matrix-A.png) | ![](paper_submission/fig%202-B%20Confusion%20matrix-B.png) | ![](paper_submission/fig%202-C%20Confusion%20matrix-C.png) |
+
+*All three outputs achieve FN=0 (no missed HCC) with FP=1 each on the test set.*
+
+### Figure 3 — Triple ROC Curves (Primary Model)
+
+| Fig 3-A: Validation Set | Fig 3-B: Test Set |
+|:---:|:---:|
+| ![](paper_submission/fig%203-A.png) | ![](paper_submission/fig%203-B.png) |
+
+*ROC-A (Confidence), ROC-B (HCC Cosine, mean prototype), and ROC-C (Δscore) overlap completely at AUROC=1.000. DeLong test: all p=1.000.*
+
+### Figure 4 — ROC Curve Overlay
+
+![Figure 4: ROC Curves](paper_submission/fig%204.png)
+
+*Multi-model ROC curve comparison. CE+SupCon models maintain AUROC=1.000 across all three output types.*
+
+### Figure 5 — HCC Cosine Score Distribution (True HCC Cases)
+
+![Figure 5: HCC Cosine Score Distribution](paper_submission/fig%205.png)
+
+*Boxplot of HCC Cosine Score in true HCC cases (Val+Test combined, n=381) by backbone and training mode. CE+SupCon yields significantly higher HCC cosine scores than CE Only for both backbones (all p < 0.001 by independent-samples t-test), confirming SupCon's role in aligning HCC embeddings toward the HCC prototype.*
+
+### Figure 6 — Δscore Distribution (True HCC Cases)
+
+![Figure 6: Delta Score Distribution](paper_submission/fig%206.png)
+
+*Δscore distribution in true HCC cases. Unlike HCC Cosine Score, Δscore shows no statistically significant difference between CE Only and CE+SupCon (EfficientNetV2B0: p=0.902, ResNet50V2: p=0.625), suggesting that the shared ultrasound modality characteristics affect both HCC and hemangioma prototypes equally.*
+
+### Figure 7 — Dual-Output Scatter Plot (Confidence vs Δscore)
+
+| Fig 7-A | Fig 7-B |
+|:---:|:---:|
+| ![](paper_submission/fig%207-A.png) | ![](paper_submission/fig%207-B.png) |
+
+*Dual-output scatter plot of Confidence Score vs Δscore. Cases near the decision boundary in confidence score (0.4–0.6) can be correctly identified by Δscore, demonstrating the salvage effect of cosine-based markers.*
+
+---
+
+## Key Finding: Ambiguous Confidence Salvage Effect
+
+For lesions with Confidence Score in the **ambiguous range (0.4–0.6)**:
+
+| Classifier | Ambiguous HCC Cases | Correct | Accuracy |
+|---|---|---|---|
+| Classification-only (CE) | 7 | 3 | **42.86%** |
+| **CE+SupCon + Cosine Rescue** | 5 | 5 | **100%** |
+
+When the softmax output hesitates near the decision boundary, **HCC Cosine Score and Δscore correctly identify all ambiguous HCC cases** (TP=5, FN=0). This demonstrates the complementary clinical value of the dual-output system.
+
+---
+
+## Why SupCon is Essential
+
+The critical insight is that **SupCon training restructures the embedding space** in a way that makes cosine distances clinically meaningful:
+
+- **CE Only**: Embedding geometry is an incidental byproduct of classification boundary formation
+- **CE + SupCon**: Embedding space is explicitly optimized for intra-class compactness and inter-class separability, making cosine similarity a valid proxy for clinical prototype-comparison reasoning
+
+Without SupCon, cosine-based markers may be statistically valid (AUROC ~1.000 for Δscore) but lack the **radiologic interpretability** that justifies their clinical use.
+
+---
+
+## Why SSL Pre-training (NNCLR) Fails Here
+
+The 2-stage NNCLR pipeline (SSL pre-training → CE+SupCon fine-tuning) consistently **underperformed** CE+SupCon alone:
+
+- NNCLR mean-prototype HCC Cosine Score collapsed to AUROC **0.068** (ResNet) — near-random
+- Classification AUROC: 0.985–0.999 vs. **1.000** for CE+SupCon
+- SSL pre-training provides **no performance gain** at this dataset scale (~2,656 images)
+
+**Conclusion**: For labeled medical image datasets of this size, direct supervised training with CE+SupCon is more efficient and effective than SSL pre-training pipelines.
+
+---
+
+## Repository Structure
 
 ```
 hcc-vs-hemangioma/
-├── README.md                           ← 실험·방법론 위주 요약 (this file)
-├── paper_outline_medical_journal.md    ← 논문 뼈대 (Intro ~ Conclusion)
-├── Stage1_SSK_run.ipynb                ← SSL pre-training (VICReg)
-├── Stage2_Classification_Benchmark.ipynb ← Supervised fine-tuning benchmark
-├── VICReg_ConvHybrid_run.ipynb         ← Hybrid ViT + VICReg 실험
-├── VICReg_Conv_run.ipynb               ← ConvNet + VICReg 실험
-├── full_training_notebook.ipynb        ← 통합 학습 노트북
-├── dataloader.py                       ← Dataset pipeline
-├── models/                             ← Model 정의
-├── training/                           ← Training loop, loss
-├── validation/                         ← Val/Test evaluation
-├── inference/                          ← Score extraction, cutoff
-├── visualization/                      ← ROC, KDE, DCA 시각화
-├── callbacks/                          ← Keras callbacks
-├── utils/                              ← 공통 유틸
-└── experiment_registry/                ← 실험 결과 기록
+├── Stage1_SSK_run.ipynb              # Stage 1: NNCLR SSL pre-training
+├── Stage2_Classification_Benchmark.ipynb  # Stage 2: CE/CE+SupCon classification
+├── VICReg_ConvHybrid_run.ipynb       # VICReg-based SSL experiments
+├── NNCLR_ConvHybrid_run.ipynb        # NNCLR-based SSL experiments
+├── full_training_notebook.ipynb      # Full training pipeline
+├── classification_with_supcon.ipynb  # SupCon classification notebook
+├── dataloader.py                     # Dataset loader with patient-level split
+├── ambiguous_case_analysis.py        # Ambiguous confidence zone analysis
+├── misclassified_rescue_analysis.py  # Misclassification rescue analysis
+├── models/                           # Model architecture definitions
+├── training/                         # Training utilities and callbacks
+├── validation/                       # Validation and evaluation scripts
+├── visualization/                    # t-SNE, ROC, confusion matrix plots
+├── cosine_probe_result/              # Cosine probe results per model condition
+├── figures/                          # Key result figures
+│   ├── fig_roc_curve.jpg
+│   ├── fig_tsne_embeddings.jpg
+│   └── model_architecture.jpg
+├── paper_submission/                 # Manuscript and submission materials
+│   ├── manuscript.docx
+│   ├── fig 1 TSNE visualization.png
+│   ├── fig 2-A~C Confusion matrix-*.png
+│   ├── fig 3-A, 3-B.png
+│   ├── fig 4.png ~ fig 7-B.png
+│   └── figures/                      # JPG versions of submission figures
+└── paper_outline_medical_journal.md  # Full paper outline (Korean)
 ```
 
 ---
 
-## 🚀 Future Work
+## Methods Summary
 
-| Priority | Task | Description |
-|---|---|---|
-| **High** | AFP / PIVKA-II 연동 | Serology data와 B-mode US image를 paired하여 AFP-negative subgroup 성능 검증 |
-| **High** | 다기관 전향적 연구 | External validation (multi-center) → generalizability 확인 |
-| **Medium** | 영상의학과 vs HCC Score | Human radiologist performance와 직접 비교 (non-inferiority study) |
-| **Medium** | <2cm subgroup 분석 | Lesion size metadata 확보 후 early-stage HCC 집중 분석 |
-| **Low** | FNH / regenerative nodule 추가 | 대조군 확장 → 더 현실적인 임상 시나리오 |
-| **Low** | CEUS 비교 | B-mode 단독 vs CEUS보조 성능 비교 |
+### Threshold Determination (No Data Leakage)
 
----
+All operating thresholds were determined **exclusively on the validation set** using Youden's J statistic (maximizing sensitivity + specificity − 1), then applied **unchanged** to the test set.
 
-## 🛠️ Tech Stack
+| Output | Cutoff (Youden's J, Val) |
+|--------|:------------------------:|
+| ROC-A (Confidence Score) | 0.0011 |
+| ROC-B (HCC Cosine, mean) | −0.0048 |
+| ROC-C (Δscore, mean) | −0.9585 |
 
-| Component | Choice | Rationale |
-|---|---|---|
-| Framework | Keras 3 (TF backend) | Backend-agnostic, clean API |
-| SSL Algorithm | **VICReg** | No momentum network, small-batch friendly, explicit decorrelation |
-| Backbone | **Hybrid ViT** (CNN stem + Transformer) | CNN inductive bias + global attention |
-| Fine-tuning | PureClassifier (linear head) | SSL representation quality 평가 목적 |
-| Environment | Kaggle Notebooks (GPU T4 x2) | 16 GB VRAM constraint |
-| Analysis | scikit-learn, scipy, matplotlib | ROC, DCA, KDE |
-| Reporting | TRIPOD guideline | Prediction model reporting standard |
+### Statistical Analysis
+
+- **Discrimination**: AUROC with DeLong 95% CI
+- **Three-way ROC comparison**: DeLong pairwise test (p>0.05 → non-inferiority)
+- **SupCon effect on score distribution**: Independent-samples t-test on true HCC cases (Val+Test, n=381)
+- Threshold-dependent metrics: Sensitivity, Specificity, PPV, NPV, F1, Confusion Matrix
 
 ---
 
-## 📝 Author
+## Citation
 
-**Kim Hyun-Soo, M.D.**  
-Department of Family Medicine, Primary Care Clinic, Jeonju, Republic of Korea  
-AI Researcher (amateur) · Medical AI · Multimodal Learning · CV · Self-Supervised Learning  
-GitHub: [kimhs950627](https://github.com/kimhs950627)
+If you use this code or findings, please cite:
+
+```bibtex
+@article{kim2026hcc_cosine,
+  title   = {Development of a Novel Dual-Output Imaging Marker for Quantifying 
+             HCC-Likeness on B-mode Abdominal Ultrasound: Complementary Clinical 
+             Roles of HCC Cosine Score and Confidence Score},
+  author  = {Kim, Hyun Soo},
+  year    = {2026},
+  note    = {Manuscript in preparation}
+}
+```
+
+### Dataset Citation
+
+```bibtex
+@article{tak2026smclud,
+  title   = {SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for 
+             Hepatocellular Carcinoma and Hemangioma Classification},
+  author  = {Tak, Jongwon and Ko, Ryoung-Eun and Kwon, Ryung-Dae and others},
+  journal = {Scientific Data},
+  volume  = {13},
+  pages   = {649},
+  year    = {2026},
+  doi     = {10.1038/s41597-026-07023-7}
+}
+```
 
 ---
 
+## Key References
+
+1. Tzartzeva K, et al. *Gastroenterology.* 2018. [DOI](https://doi.org/10.1053/j.gastro.2018.01.064) — Ultrasound surveillance sensitivity meta-analysis
+2. Yang Q, et al. *EBioMedicine.* 2020. [DOI](https://doi.org/10.1016/j.ebiom.2020.102777) — Deep learning for focal liver lesions (AUROC 0.924)
+3. Khosla P, et al. *NeurIPS.* 2020. [arXiv](https://arxiv.org/abs/2004.11362) — Supervised Contrastive Learning
+4. Guo C, et al. *ICML.* 2017. [arXiv](https://arxiv.org/abs/1706.04599) — Neural network calibration
+5. Tan M & Le QV. *ICML.* 2021. [arXiv](https://arxiv.org/abs/2104.00298) — EfficientNetV2
+6. Dosovitskiy A, et al. *ICLR.* 2021. [arXiv](https://arxiv.org/abs/2010.11929) — Vision Transformer (ViT)
+7. Du Z, et al. *eClinicalMedicine.* 2025. [DOI](https://doi.org/10.1016/j.eclinm.2025.103098) — Multicentre HCC ultrasound AI validation
+8. Minami Y, et al. *Liver Cancer.* 2023. [DOI](https://doi.org/10.1159/000528538) — Atypical HCC imaging and AI
 
 ---
 
-## 📋 TODO — 논문 수치 및 행정 정보 기입 목록 (paper_outline_medical_journal.md 연동)
-=============================================================================
-논문 초고 파일의 `> 📝 **[TODO: ...]**` 태그와 연동되는 체크리스트입니다.
+## License
 
-### 행정 및 데이터 정보
-- [ ] **[TODO: IRB]** IRB 승인번호 확인 및 기입 (2.1절)
-- [ ] **[TODO: 메타데이터]** 연령, 성별, 간경변 유무, 병변 크기 등 임상 메타데이터 요약 표 작성 (2.2절)
-- [ ] **[TODO: 인구통계표]** 환자 인구통계학적 정보 및 병변 수준 요약 Table 1 완성 (3.1절)
+MIT License. See [LICENSE](LICENSE) for details.
 
-### 실험 결과 수치 기입
-- [ ] **[TODO: Table 2]** Ablation 표 (ResNet/EfficientNet + CE/SupCon/SSL) 8개 실험 수치 빈칸 채우기
-- [ ] **[TODO: Test 결과]** Table 3의 Test Set AUROC, Sens, Spec, PPV, NPV, F1 등 기입
-- [ ] **[TODO: ROC 비교]** Table 4 (ROC-B, ROC-C) 계산 및 쌍별 DeLong p-value 수치 기입
-- [ ] **[TODO: 불일치 분석]** Table 5의 Dual-Output 4분면 케이스 N 수 기입
-- [ ] **[TODO: Appendix B]** cfg 확정 후 하이퍼파라미터(Batch, LR, Epoch 등) 표 완성
+---
 
-### 그림(Figure) 삽입
-- [ ] **[TODO: 3종 ROC]** ROC-A, ROC-B, ROC-C 겹쳐 그린 Figure 1 삽입
-- [ ] **[TODO: t-SNE / DCA]** (옵션) t-SNE 군집화 그림 및 의사결정 곡선(DCA) 그림 삽입 여부 결정
-
-### 참고문헌
-- [ ] **[TODO: 참고문헌]** [8], [14], [16], [17] 등 미확정 서지정보(DOI) 최종 업데이트
+*Target Journal: SCIE Q1–Q2 (PubMed-indexed) — e.g., Ultrasonics, Diagnostics, Frontiers in Oncology, JMIR Medical Informatics*
