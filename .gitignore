@@ -3,9 +3,9 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .DS_Store
-*.npy
-*.npz
-*.h5
-*.keras
-*.ckpt
-output/
+# Do not upload patient-sensitive data
+*.dcm
+patient_data/
+PHI/
+secrets.json
+.secrets/
