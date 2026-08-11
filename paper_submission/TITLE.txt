@@ -1,0 +1,22 @@
+[0] Title: B-mode 복부 초음파에서 HCC 유사도를 정량화하는 이중 출력 영상표지자의 개발
+Author names and affiliations:
+
+[1] Hyunsu Kim¹
+
+¹ Medical doctor, Department of Family medicine, Presbyterian Medical Center, Jeonju,
+Republic of Korea
+
+[2] Jinhee Lee²
+
+² Medical doctor, Department of Family medicine, Presbyterian Medical Center, Jeonju,
+Republic of Korea
+
+[3] Corresponding author: Jinhee Lee
+
+[4] Medical doctor, Department of Family medicine, Presbyterian Medical Center, Jeonju,
+Republic of Korea
+
+[5] Address: 45 Seonnemuro-gil, Wansan-gu, Jeonju-si, Jeollabuk-do, 54924,
+Republic of Korea
+E-mail: kimhs950627@gmail.com
+Phone: 010–2620–6477
