@@ -1,24 +1,35 @@
 """
 inference/kaggle_explainable_predictor.py
 =========================================
-Kaggle-Optimized Explainable Inference Module for HCC vs. Hemangioma Classification.
+Kaggle Version of Explainable Inference Module for HCC vs. Hemangioma Classification.
 
-Designed specifically for Kaggle Notebooks & Scripts:
-1. Auto-Discovery:
-   - Recursively locates weights (*.weights.h5) and prototype banks (*bank*.npy)
-     in `/kaggle/input/` or `/kaggle/working/`.
-   - Locates `conv_hybrid_vit.py` if not in python path.
-2. Dual-Output Prediction:
-   - Confidence P(HCC) vs. Validation Cutoff (0.001088)
-   - Cosine Similarity Scores (HCC, Hemangioma, Δscore) vs. Validation Cutoffs (-0.004843, -0.958471)
-3. Explainable Visualizations:
-   - Grad-CAM heatmap & overlay
-   - ViT Attention Rollout across Cross-Attention layers
-   - Metric scorecard dashboard with cutoff comparison
-4. Kaggle-Friendly Execution:
-   - Displays inline plots when run in Kaggle Notebooks (`plt.show()`)
-   - Automatically saves reports to `/kaggle/working/`
-   - Includes `predict_batch()` to evaluate whole test folders and export CSV.
+Key Design:
+- Explicit User Paths: Requires user to directly provide `weights_path` (.weights.h5) and `image_path`.
+- Prototypes: Defaults to looking in the same directory as `weights_path` (or can be explicitly passed).
+- Output: Allows saving report directly to `/kaggle/working/` and/or displaying inline in Kaggle Notebook (`show_inline=True`).
+- Metrics & Explainability:
+    1. Confidence Score P(HCC) vs. Validation Cutoff (0.001088)
+    2. Embedding Cosine Similarity (HCC score, Hemangioma score, Δscore) vs. Validation Cutoffs (-0.004843, -0.958471)
+    3. Grad-CAM visual heatmap overlay
+    4. ViT Cross-Attention rollout heatmap overlay
+    5. 4-panel diagnostic visual report & scorecard dashboard
+
+Example (Kaggle Notebook Cell):
+-------------------------------
+    from kaggle_explainable_predictor import KaggleExplainablePredictor
+
+    # 1. Initialize predictor with explicit weights path
+    predictor = KaggleExplainablePredictor(
+        weights_path="/kaggle/input/my-dataset/classifier_y0taaeki_BM.weights.h5"
+    )
+
+    # 2. Predict on image and display / save result
+    res = predictor.predict_and_explain(
+        image_path="/kaggle/input/my-dataset/test_clean/HCC/hcc_001.jpg",
+        save_plot_path="/kaggle/working/hcc_001_report.png",
+        show_inline=True
+    )
+    print(res["summary"])
 """
 
 from __future__ import annotations
@@ -26,108 +37,40 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Union, Dict, Any, Optional, List, Tuple
-import importlib.util
+from typing import Union, Dict, Any, Optional, Tuple, List
 
 import numpy as np
 import cv2
 from PIL import Image
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import tensorflow as tf
 import keras
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 1. Path Auto-Discovery & Module Resolver for Kaggle
+# 1. Model Definition & Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-def get_kaggle_candidate_dirs() -> List[Path]:
-    """Return prioritized candidate search roots for Kaggle & local environments."""
-    candidates = []
-    # Kaggle input & working
-    if Path("/kaggle/input").exists():
-        candidates.append(Path("/kaggle/input"))
-    if Path("/kaggle/working").exists():
-        candidates.append(Path("/kaggle/working"))
-
-    # Current script directory and parent tree
-    curr = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
-    candidates.extend([curr, curr.parent, curr.parent.parent])
-    candidates.append(Path.cwd())
-
-    # De-duplicate while preserving order
-    unique = []
-    seen = set()
-    for c in candidates:
-        res = c.resolve()
-        if res not in seen and res.exists():
-            seen.add(res)
-            unique.append(res)
-    return unique
-
-
-def find_file_auto(
-    patterns: Union[str, List[str]],
-    search_dirs: Optional[List[Path]] = None
-) -> Optional[Path]:
-    """Recursively search for a file matching pattern(s) across candidate directories."""
-    if isinstance(patterns, str):
-        patterns = [patterns]
-
-    if search_dirs is None:
-        search_dirs = get_kaggle_candidate_dirs()
-
-    for root in search_dirs:
-        for pat in patterns:
-            # Direct check
-            direct = root / pat
-            if direct.exists() and direct.is_file():
-                return direct
-
-            # Recursive search
-            try:
-                for match in root.rglob(pat):
-                    if match.is_file():
-                        return match
-            except Exception:
-                continue
-    return None
-
-
-def resolve_conv_hybrid_vit():
-    """Ensure `build_conv_hybrid_vit` is accessible, dynamically finding it if necessary."""
+def _get_vit_builder():
+    """Import build_conv_hybrid_vit from models or local directory."""
     try:
         from models.conv_hybrid_vit import build_conv_hybrid_vit
         return build_conv_hybrid_vit
     except ImportError:
-        pass
-
-    vit_file = find_file_auto("conv_hybrid_vit.py")
-    if vit_file is not None:
-        parent_dir = str(vit_file.parent.parent)
-        if parent_dir not in sys.path:
-            sys.path.insert(0, parent_dir)
-        try:
-            from models.conv_hybrid_vit import build_conv_hybrid_vit
-            return build_conv_hybrid_vit
-        except Exception:
-            spec = importlib.util.spec_from_file_location("conv_hybrid_vit", vit_file)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            return getattr(mod, "build_conv_hybrid_vit")
-
-    raise ImportError(
-        "Could not find 'conv_hybrid_vit.py'. Please make sure the project directory or dataset "
-        "containing conv_hybrid_vit.py is attached to /kaggle/input or sys.path."
-    )
+        # Check current working dir or script parent dir
+        for p in [Path.cwd(), Path(__file__).resolve().parent.parent if "__file__" in globals() else None]:
+            if p and (p / "models" / "conv_hybrid_vit.py").exists():
+                if str(p) not in sys.path:
+                    sys.path.insert(0, str(p))
+                from models.conv_hybrid_vit import build_conv_hybrid_vit
+                return build_conv_hybrid_vit
+        raise ImportError(
+            "Could not import 'build_conv_hybrid_vit'. Ensure 'models/conv_hybrid_vit.py' "
+            "is in your Python path or working directory."
+        )
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 2. Self-Contained Attention Rollout Helper
-# ──────────────────────────────────────────────────────────────────────────────
-
-def compute_attention_rollout_ca(attn_weights_list: list) -> np.ndarray:
+def _compute_attention_rollout_ca(attn_weights_list: list) -> np.ndarray:
     """Compute Cross-Attention rollout over layers [B, H, 1, N] -> [B, N]."""
     per_layer = []
     for a in attn_weights_list:
@@ -167,11 +110,11 @@ class SupconClassifier(keras.Model):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 3. Kaggle Explainable Predictor Class
+# 2. Kaggle Explainable Predictor Class
 # ──────────────────────────────────────────────────────────────────────────────
 
 class KaggleExplainablePredictor:
-    """Explainable Inference Engine for HCC vs. Hemangioma Classification on Kaggle."""
+    """Explainable Predictor with explicit paths for Kaggle and cloud environments."""
 
     # Youden's J optimal cutoffs from validation set
     DEFAULT_CUTOFFS = {
@@ -182,60 +125,57 @@ class KaggleExplainablePredictor:
 
     def __init__(
         self,
-        weights_path: Optional[Union[str, Path]] = None,
-        probe_dir: Optional[Union[str, Path]] = None,
+        weights_path: Union[str, Path],
+        hcc_prototype_path: Optional[Union[str, Path]] = None,
+        hem_prototype_path: Optional[Union[str, Path]] = None,
         image_size: int = 384,
         cutoffs: Optional[Dict[str, float]] = None,
-        prototype_mode: str = "mean",
     ):
+        """Initialize the predictor with user-specified model and prototype paths.
+
+        Parameters
+        ----------
+        weights_path : str or Path
+            Path to the saved `.weights.h5` model file (e.g., `/kaggle/input/.../classifier_y0taaeki_BM.weights.h5`).
+        hcc_prototype_path : str or Path, optional
+            Path to `hcc_bank_mean.npy`. If None, automatically searches the same directory as `weights_path`.
+        hem_prototype_path : str or Path, optional
+            Path to `hem_bank_mean.npy`. If None, automatically searches the same directory as `weights_path`.
+        image_size : int, default 384
+            Input resolution for the network.
+        cutoffs : dict, optional
+            Threshold dictionary {'confidence_score': float, 'hcc_cosine_score': float, 'delta_score': float}.
+        """
         self.image_size = image_size
         self.cutoffs = cutoffs or self.DEFAULT_CUTOFFS.copy()
-        self.prototype_mode = prototype_mode.lower()
 
-        # 1. Locate weights file
-        if weights_path is not None and Path(weights_path).exists():
-            self.weights_path = Path(weights_path)
-        else:
-            found_w = find_file_auto([
-                "classifier_y0taaeki_BM.weights.h5",
-                "*y0taaeki*.weights.h5",
-                "*.weights.h5"
-            ])
-            if found_w is None:
-                raise FileNotFoundError(
-                    "Weights file (*.weights.h5) not found. Provide `weights_path` or attach dataset to /kaggle/input."
-                )
-            self.weights_path = found_w
+        # 1. Check Weights Path
+        self.weights_path = Path(weights_path)
+        if not self.weights_path.exists():
+            raise FileNotFoundError(f"Weights file not found at: {self.weights_path}")
+        print(f"[Predictor] Weights path: {self.weights_path}")
 
-        print(f"[KagglePredictor] Weight file: {self.weights_path}")
+        # 2. Check Prototype Paths
+        base_dir = self.weights_path.parent
+        hcc_p = Path(hcc_prototype_path) if hcc_prototype_path else base_dir / "hcc_bank_mean.npy"
+        hem_p = Path(hem_prototype_path) if hem_prototype_path else base_dir / "hem_bank_mean.npy"
 
-        # 2. Locate prototype banks
-        if probe_dir is not None and Path(probe_dir).exists():
-            probe_path = Path(probe_dir)
-        else:
-            probe_path = self.weights_path.parent
+        # Fallback to kmeans if mean is not found in the directory
+        if not hcc_p.exists() and (base_dir / "hcc_bank_kmeans.npy").exists():
+            hcc_p = base_dir / "hcc_bank_kmeans.npy"
+        if not hem_p.exists() and (base_dir / "hem_bank_kmeans.npy").exists():
+            hem_p = base_dir / "hem_bank_kmeans.npy"
 
-        hcc_name = f"hcc_bank_{self.prototype_mode}.npy"
-        hem_name = f"hem_bank_{self.prototype_mode}.npy"
+        if not hcc_p.exists():
+            raise FileNotFoundError(f"HCC prototype file not found: {hcc_p}. Please specify `hcc_prototype_path`.")
+        if not hem_p.exists():
+            raise FileNotFoundError(f"Hemangioma prototype file not found: {hem_p}. Please specify `hem_prototype_path`.")
 
-        hcc_bank_file = probe_path / hcc_name if (probe_path / hcc_name).exists() else find_file_auto(hcc_name)
-        hem_bank_file = probe_path / hem_name if (probe_path / hem_name).exists() else find_file_auto(hem_name)
+        print(f"[Predictor] HCC prototype: {hcc_p}")
+        print(f"[Predictor] Hemangioma prototype: {hem_p}")
 
-        if hcc_bank_file is None or hem_bank_file is None:
-            # Fallback to mean/kmeans
-            alt_mode = "kmeans" if self.prototype_mode == "mean" else "mean"
-            hcc_bank_file = find_file_auto(f"hcc_bank_{alt_mode}.npy")
-            hem_bank_file = find_file_auto(f"hem_bank_{alt_mode}.npy")
-            if hcc_bank_file is not None and hem_bank_file is not None:
-                print(f"[KagglePredictor] Using fallback prototype mode: {alt_mode}")
-                self.prototype_mode = alt_mode
-
-        if hcc_bank_file is None or hem_bank_file is None:
-            raise FileNotFoundError(f"Could not find prototype bank files in {probe_path} or search paths.")
-
-        print(f"[KagglePredictor] Prototype banks: {hcc_bank_file.parent}")
-        self.hcc_bank = np.load(hcc_bank_file)
-        self.hem_bank = np.load(hem_bank_file)
+        self.hcc_bank = np.load(hcc_p)
+        self.hem_bank = np.load(hem_p)
 
         # L2-normalize prototypes
         if self.hcc_bank.ndim == 1:
@@ -245,14 +185,15 @@ class KaggleExplainablePredictor:
         self.hcc_bank = self.hcc_bank / (np.linalg.norm(self.hcc_bank, axis=-1, keepdims=True) + 1e-8)
         self.hem_bank = self.hem_bank / (np.linalg.norm(self.hem_bank, axis=-1, keepdims=True) + 1e-8)
 
-        # 3. Build model and load weights
+        # 3. Build & Load Model
         self._build_and_load_model()
 
     def _build_and_load_model(self):
-        build_fn = resolve_conv_hybrid_vit()
+        """Construct the ConvHybridViT architecture and load pre-trained weights."""
+        build_fn = _get_vit_builder()
 
         d_model = 128
-        n_patches = (self.image_size // 32) ** 2  # 144
+        n_patches = (self.image_size // 32) ** 2  # 144 for 384x384
 
         self.encoder = build_fn(
             input_shape=(self.image_size, self.image_size, 3),
@@ -287,23 +228,23 @@ class KaggleExplainablePredictor:
             projection_head=self.projection_head
         )
 
-        # Build graph
+        # Build graph with dummy input
         dummy = tf.zeros((1, self.image_size, self.image_size, 3))
         _ = self.model(dummy, training=False)
 
         # Load weights
         self.model.load_weights(str(self.weights_path))
-        print("[KagglePredictor] Model weights loaded successfully.")
+        print("[Predictor] Model weights loaded successfully.")
 
     def preprocess_image(self, image_input: Union[str, Path, np.ndarray, Image.Image]) -> Tuple[np.ndarray, np.ndarray]:
-        """Convert arbitrary input into normalized float32 tensor [384, 384, 3] in [0, 255] and display RGB."""
+        """Load and resize image to (image_size, image_size)."""
         if isinstance(image_input, (str, Path)):
             p = str(image_input)
             if not os.path.exists(p):
-                raise FileNotFoundError(f"Image not found: {p}")
+                raise FileNotFoundError(f"Target image not found at: {p}")
             bgr = cv2.imread(p)
             if bgr is None:
-                raise ValueError(f"cv2.imread failed on: {p}")
+                raise ValueError(f"Failed to read image with cv2: {p}")
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         elif isinstance(image_input, Image.Image):
             rgb = np.array(image_input.convert("RGB"))
@@ -318,14 +259,13 @@ class KaggleExplainablePredictor:
 
         resized = cv2.resize(rgb, (self.image_size, self.image_size), interpolation=cv2.INTER_LINEAR)
         img_float = resized.astype(np.float32)
-        # Keep scale in [0, 255] for consistency with backbone preprocessing
         if img_float.max() <= 1.0:
             img_float = img_float * 255.0
 
         return img_float, resized
 
     def compute_gradcam(self, img_tensor_np: np.ndarray, target_class: int = 1) -> Tuple[np.ndarray, np.ndarray]:
-        """Compute Grad-CAM activation map and colored overlay."""
+        """Compute Grad-CAM activation map and heatmap overlay."""
         H, W = img_tensor_np.shape[:2]
         img_display = np.clip(img_tensor_np / 255.0, 0.0, 1.0)
         x_var = tf.Variable(img_tensor_np[None], dtype=tf.float32, trainable=True)
@@ -376,7 +316,7 @@ class KaggleExplainablePredictor:
         return cam_resized, overlay
 
     def compute_attention_map(self, img_tensor_np: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract Cross-Attention weights and compute spatial rollout map."""
+        """Extract ViT Cross-Attention weights and compute spatial rollout overlay."""
         H, W = img_tensor_np.shape[:2]
         img_display = np.clip(img_tensor_np / 255.0, 0.0, 1.0)
         x = tf.constant(img_tensor_np[None], dtype=tf.float32)
@@ -387,7 +327,7 @@ class KaggleExplainablePredictor:
         if attn_weights is None or len(attn_weights) == 0:
             return np.zeros((H, W), dtype=np.float32), img_display
 
-        rollout_vec = compute_attention_rollout_ca(attn_weights)[0]
+        rollout_vec = _compute_attention_rollout_ca(attn_weights)[0]
         side = int(round(np.sqrt(len(rollout_vec))))
         rollout_map = rollout_vec.reshape((side, side))
 
@@ -403,13 +343,25 @@ class KaggleExplainablePredictor:
 
     def predict_and_explain(
         self,
-        image_input: Union[str, Path, np.ndarray, Image.Image],
+        image_path: Union[str, Path, np.ndarray, Image.Image],
         save_plot_path: Optional[Union[str, Path]] = None,
         show_inline: bool = True,
         title_prefix: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Run full explainable prediction for a single ultrasound image."""
-        img_tensor_np, img_display = self.preprocess_image(image_input)
+        """Perform dual-output prediction and explainable visualization.
+
+        Parameters
+        ----------
+        image_path : str, Path, np.ndarray, or PIL Image
+            Path to ultrasound image file.
+        save_plot_path : str or Path, optional
+            Path where the 4-panel figure should be saved (e.g. `/kaggle/working/report.png`).
+        show_inline : bool, default True
+            If True, displays plot inline in notebook using `plt.show()`.
+        title_prefix : str, optional
+            Title for the case report.
+        """
+        img_tensor_np, img_display = self.preprocess_image(image_path)
         x = tf.constant(img_tensor_np[None], dtype=tf.float32)
 
         # 1. Forward Pass
@@ -429,7 +381,7 @@ class KaggleExplainablePredictor:
         hem_cos = float(np.mean(hem_sims))
         delta_score = float(hcc_cos - hem_cos)
 
-        # 3. Cutoff Comparisons
+        # 3. Decision based on Validation Cutoffs
         pred_conf = "HCC" if p_hcc >= self.cutoffs["confidence_score"] else "Hemangioma"
         pred_cos = "HCC" if hcc_cos >= self.cutoffs["hcc_cosine_score"] else "Hemangioma"
         pred_delta = "HCC" if delta_score >= self.cutoffs["delta_score"] else "Hemangioma"
@@ -439,7 +391,7 @@ class KaggleExplainablePredictor:
         attn_map, attn_overlay = self.compute_attention_map(img_tensor_np)
 
         # 5. Format Title & Summary
-        title_str = title_prefix or (Path(image_input).name if isinstance(image_input, (str, Path)) else "Ultrasound Examination")
+        title_str = title_prefix or (Path(image_path).name if isinstance(image_path, (str, Path)) else "Ultrasound Examination")
 
         summary_text = (
             f"==========================================================\n"
@@ -449,7 +401,7 @@ class KaggleExplainablePredictor:
             f"   - P(HCC)            : {p_hcc:.6f}  (Cutoff: {self.cutoffs['confidence_score']:.6f})\n"
             f"   - P(Hemangioma)     : {p_hem:.6f}\n"
             f"   - Decision          : [{pred_conf}]\n\n"
-            f"2. Embedding Similarity Scores ({self.prototype_mode.upper()} Prototype):\n"
+            f"2. Embedding Similarity Scores:\n"
             f"   - HCC Cosine Score  : {hcc_cos:.4f}  (Cutoff: {self.cutoffs['hcc_cosine_score']:.4f}) -> [{pred_cos}]\n"
             f"   - Hemangioma Score  : {hem_cos:.4f}\n"
             f"   - Δscore (Margin)   : {delta_score:.4f}  (Cutoff: {self.cutoffs['delta_score']:.4f}) -> [{pred_delta}]\n\n"
@@ -476,12 +428,8 @@ class KaggleExplainablePredictor:
             "original_image": img_display,
         }
 
-        # 6. Save & Plot Report
-        default_save_path = save_plot_path
-        if default_save_path is None and Path("/kaggle/working").exists():
-            default_save_path = Path("/kaggle/working") / f"report_{Path(title_str).stem}.png"
-
-        self._plot_dashboard(results, save_path=default_save_path, show_inline=show_inline)
+        # 6. Render & Save Report
+        self._plot_dashboard(results, save_path=save_plot_path, show_inline=show_inline)
 
         return results
 
@@ -543,7 +491,7 @@ class KaggleExplainablePredictor:
             save_p = Path(save_path)
             save_p.parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(str(save_p), bbox_inches="tight")
-            print(f"[KagglePredictor] Diagnostic report saved to: {save_p}")
+            print(f"[Predictor] Diagnostic report saved to: {save_p}")
 
         if show_inline:
             plt.show()
@@ -557,7 +505,7 @@ class KaggleExplainablePredictor:
         max_samples: Optional[int] = None,
         save_reports_dir: Optional[Union[str, Path]] = None,
     ):
-        """Batch evaluate images from a folder or list and export a summary CSV."""
+        """Batch evaluate a list or directory of images and export a summary CSV."""
         import pandas as pd
 
         if isinstance(image_dir_or_files, (str, Path)):
@@ -576,7 +524,7 @@ class KaggleExplainablePredictor:
         if max_samples is not None:
             files_to_eval = files_to_eval[:max_samples]
 
-        print(f"[KagglePredictor] Running batch evaluation on {len(files_to_eval)} images...")
+        print(f"[Predictor] Running batch evaluation on {len(files_to_eval)} images...")
         rows = []
         for idx, img_p in enumerate(files_to_eval):
             img_path = Path(img_p)
@@ -586,7 +534,7 @@ class KaggleExplainablePredictor:
 
             try:
                 res = self.predict_and_explain(
-                    image_input=img_path,
+                    image_path=img_path,
                     save_plot_path=save_report,
                     show_inline=False,
                     title_prefix=img_path.name
@@ -611,41 +559,41 @@ class KaggleExplainablePredictor:
             out_p = Path(output_csv)
             out_p.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(out_p, index=False)
-            print(f"[KagglePredictor] Batch summary exported to: {out_p}")
+            print(f"[Predictor] Batch summary exported to: {out_p}")
 
         return df
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 4. CLI Execution
+# 3. CLI Execution with Explicit Arguments
 # ──────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Kaggle Explainable Inference for HCC vs. Hemangioma")
-    parser.add_argument("--image", "-i", type=str, default=None, help="Path to ultrasound image file")
-    parser.add_argument("--output", "-o", type=str, default=None, help="Path to save explanation report")
-    parser.add_argument("--weights", "-w", type=str, default=None, help="Path to weights file")
+    parser.add_argument("--weights", "-w", type=str, required=True, help="Path to model weights file (.weights.h5)")
+    parser.add_argument("--image", "-i", type=str, default=None, help="Path to single ultrasound image file")
     parser.add_argument("--batch_dir", "-b", type=str, default=None, help="Directory to run batch evaluation on")
+    parser.add_argument("--hcc_proto", type=str, default=None, help="Path to hcc_bank_mean.npy (optional)")
+    parser.add_argument("--hem_proto", type=str, default=None, help="Path to hem_bank_mean.npy (optional)")
+    parser.add_argument("--output", "-o", type=str, default=None, help="Path to save report image or batch CSV")
     parser.add_argument("--title", "-t", type=str, default="US Examination Case", help="Report title")
     args = parser.parse_args()
 
-    predictor = KaggleExplainablePredictor(weights_path=args.weights)
+    # User explicitly provides weights
+    predictor = KaggleExplainablePredictor(
+        weights_path=args.weights,
+        hcc_prototype_path=args.hcc_proto,
+        hem_prototype_path=args.hem_proto
+    )
 
     if args.batch_dir is not None:
-        csv_out = args.output or (Path("/kaggle/working/predictions.csv") if Path("/kaggle/working").exists() else "batch_predictions.csv")
+        csv_out = args.output or "batch_predictions.csv"
         predictor.predict_batch(args.batch_dir, output_csv=csv_out)
-    else:
-        test_img = args.image
-        if test_img is None:
-            sample_candidate = find_file_auto("hcc1.jpg")
-            if sample_candidate is not None:
-                test_img = str(sample_candidate)
-            else:
-                print("No image provided. Specify `--image <path>`.")
-                sys.exit(0)
-
-        out_p = args.output
-        res = predictor.predict_and_explain(test_img, save_plot_path=out_p, show_inline=False, title_prefix=args.title)
+    elif args.image is not None:
+        out_p = args.output or "report.png"
+        res = predictor.predict_and_explain(args.image, save_plot_path=out_p, show_inline=False, title_prefix=args.title)
         print(res["summary"])
+    else:
+        print("Please provide either `--image <path>` or `--batch_dir <path>`.")
