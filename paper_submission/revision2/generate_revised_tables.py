@@ -244,11 +244,11 @@ captions = [
     ("Figure 3. Triple Receiver Operating Characteristic (ROC) Curves on Test Set.",
      "ROC curves for ROC-A (Confidence Score), ROC-B (HCC Cosine Score), and ROC-C (Δscore). All three metrics achieve an AUROC of 1.000 on the held-out test set under the clean subset benchmark.",
      False),
-    ("Figure 4. Comparison of HCC Cosine Scores in True HCC Cases (n=417, Val+Test combined).",
-     "Distribution of HCC Cosine Score (Mean Prototype) across training modes (CE only vs. CE+SupCon) evaluated on identical true HCC images. Supervised contrastive learning significantly increased HCC cosine scores toward the HCC prototype in both backbones (paired t-test, both p < 0.001).",
+    ("Figure 4. Impact of Supervised Contrastive Learning (SupCon) on HCC Cosine Score Distributions in Unseen HCC Cases (n=417, Val+Test combined).",
+     "Multi-panel evaluation of representation cohesion on identical held-out HCC images. (A) Probability density distribution (KDE and histogram) of EfficientNetV2B0 showing elimination of dispersed left tails and sharp prototype clustering under CE+SupCon. (B) Paired individual sample trajectories of EfficientNetV2B0 (mean paired shift: +0.125, 95% CI [0.110, 0.140], Wilcoxon signed-rank p < 0.001; variance shrinkage: -60.7%, Pitman-Morgan test p < 0.001). (C) Probability density distribution of baseline backbone ResNet50V2. (D) Paired individual sample trajectories of ResNet50V2 (mean paired shift: +0.104, Wilcoxon p < 0.001; Pitman-Morgan p < 0.001).",
      True),
-    ("Figure 5. Comparison of ΔScores in True HCC Cases (n=417, Val+Test combined).",
-     "Distribution of Δscore (HCC Cosine − Hemangioma Cosine) in true HCC cases. In contrast to HCC cosine scores, Δscore demonstrated a statistically significant decrease following SupCon training (paired t-test, both p < 0.001) due to concurrent geometric shifts in the embedding space.",
+    ("Figure 5. Impact of Supervised Contrastive Learning (SupCon) on Hemangioma Cosine Score Distributions in Unseen Hemangioma Cases (n=381, Val+Test combined).",
+     "Multi-panel evaluation of representation cohesion on identical held-out Hemangioma images. (A) Probability density distribution of EfficientNetV2B0 demonstrating near-deterministic clustering at the hemangioma prototype under CE+SupCon. (B) Paired individual sample trajectories of EfficientNetV2B0 (mean paired shift: +0.048, 95% CI [0.043, 0.052], Wilcoxon signed-rank p < 0.001; variance shrinkage: -98.7%, Pitman-Morgan test p < 0.001). (C) Probability density distribution of ResNet50V2. (D) Paired individual sample trajectories of ResNet50V2 (mean paired shift: +0.024, Wilcoxon p < 0.001; variance shrinkage: -95.6%, Pitman-Morgan p < 0.001).",
      True)
 ]
 

@@ -1,0 +1,28 @@
+=== BEFORE REVISION (first 10 paras) ===
+[1] B-mode 복부 초음파에서 HCC 유사도를 정량화하는 이중 출력 영상표지자의 개발: HCC Cosine Score와 Confidence Score의 상호보완적 임상적 의의
+[3] Abstract
+[5] 연구 배경 (Background)
+[6] B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심 도구이나, 조기 병변에 대한 민감도는 47% 수준에 머물며 검사자 의존성이 크다.[4] 기존 딥러닝 분류 모델은 대부분 단일 softmax 출력만을 제공하는데, 이는 임상의가 수행하는 유사성 기반 추론과 직접 대응하지 않으며 보정되지 않은 과잉 확신을 반영할 수 있다.[16]
+[8] 방법 (Methods)
+[9] 삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장)[12]을 이용한 단일 기관 후향적 연구이다. 원래 데이터셋 중 calliper 및 poor echo window가 드러나지 않는 Clean subset (744명, 2,656장) 을 활용하였다. EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합으로 학습하였다. 단일 softmax 출력을 confidence score로, 임베딩과 HCC prototype 간 cosine similarity를 HCC cosine score, 두 클래스 prototype 간 마진을 Δscore로 각각 정의하는 이중 출력 체계를 구성하였다. 임계값은 검증 세트에서만 Youden's J로 결정 후 테스트 세트에 고정 적용하였다. 상기 연구 방법 및 연구계획은 본원 IRB의 심사를 통과하였다 (PMC 2026-07-001).
+
+=== REVISION 1 (first 10 paras) ===
+[1] B-mode 복부 초음파에서 HCC 유사도를 정량화하는 이중 출력 영상표지자의 개발: HCC Cosine Score와 Confidence Score의 상호보완적 임상적 의의
+[3] Abstract
+[4] 연구배경
+[5] B-mode 초음파는 간세포암(HCC) 감시의 핵심 도구이나 민감도가 제한적이며, 기존 딥러닝 모델은 단일 softmax 출력만을 제공하여 임상의의 유사성 기반 추론에 대응하지 못한다.
+[6] 방법
+[7] 본 연구는 공개 데이터셋 SMC-LUD의 Clean subset(744명, 2,656장)을 이용한 후향적 연구다. EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합 학습하였다. Softmax를 confidence score로, 임베딩과 HCC prototype 간 cosine similarity를 HCC cosine score, 두 클래스 간 마진을 Δscore로 정의하는 이중 출력 체계를 구성하였다(IRB No. PMC 2026-07-001).
+[8] 결과
+[9] 주력 모델의 confidence score AUROC는 검증 및 테스트 세트 모두 1.000이었으며, 테스트 세트에서 민감도 100.0%, 특이도 99.2%를 달성하였다. HCC cosine score와 Δscore AUROC 1.000으로 confidence score와 동등하였다(DeLong p=1.000). SupCon 적용 시 true HCC cases에서 HCC cosine score가 유의하게 상승하였다(p<0.001). NNCLR 사전학습 후 미세조정한 2단계 학습은 CE+SupCon 대비 분류 성능이 열등하였다.
+
+=== MARKED REVISION 2 (first 10 paras) ===
+[0] B-mode 복부 초음파에서 간세포암과 간혈관종 감별을 위한 딥러닝 모델의 Confidence Score와 임베딩 기반 유사도 점수: 단일기관 공개 데이터셋을 이용한 탐색적 연구
+[2] 김현서1, ..., 정밀의학/가정의학 연구팀
+1... 병원 가정의학과
+[4] 초록 (Abstract)
+[5] 연구 배경 (Background)
+[6] B-mode 초음파는 임상 현장에서 간 질환 평가에 광범위하게 활용되는 비침습적 영상 도구이나, 우연히 발견된 간 국소 병변에서 악성인 간세포암(hepatocellular carcinoma, HCC)과 양성인 간혈관종(hemangioma)을 B-mode 영상 소견만으로 감별하는 데에는 상당한 진단적 어려움이 존재한다. 기존 딥러닝 분류 모델은 대부분 단일 softmax 출력(confidence score)만을 제공하여 모델의 결정 강도만을 나타낼 뿐, 임상의가 수행하는 질환의 전형적 소견과의 기하학적 유사성 비교 추론을 반영하지 못한다.
+[7] 방법 (Methods)
+[8] 삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장) 중 caliper 등 인공음영이 배제된 Clean subset(744명, 2,656장)의 원저 제공 분할(훈련 1,858장, 검증 530장, 테스트 268장)을 활용하였다. EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피(cross-entropy)와 지도 대조학습(supervised contrastive learning, SupCon) 결합으로 학습하였다. 단일 softmax 출력을 confidence score로, 임베딩 공간에서 훈련 세트 HCC prototype과의 cosine similarity를 HCC cosine score, 두 클래스 prototype 간 마진을 Δscore로 각각 정의하는 이중 출력 체계를 구성하였다. 모든 운영 임계값은 검증 세트에서 Youden's J 통계량으로 결정한 후 테스트 세트에 고정 적용하였다.
+[9] 결과 (Results)

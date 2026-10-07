@@ -83,11 +83,11 @@ ax1.legend(loc="upper left", frameon=True, fontsize=9.5)
 ax1.grid(axis="y", linestyle=":", alpha=0.6)
 
 ax1.annotate(
-    f"Rightward Shift: +{np.mean(eff_diff):.3f}\nVariance Shrinkage: -37.3%\n(Paired t-test: p < 0.001)",
-    xy=(0.90, 2.7), xytext=(0.10, 2.4),
+    f"Rightward Shift: +{np.mean(eff_diff):.3f} (Wilcoxon p < 0.001)\nVariance Reduction: -60.7% (Pitman-Morgan p < 0.001)",
+    xy=(0.90, 2.7), xytext=(0.03, 2.4),
     arrowprops=dict(arrowstyle="->", color="#c0392b", lw=2),
     bbox=dict(boxstyle="round,pad=0.4", fc="#fff5f5", ec="#e74c3c", lw=1.2),
-    fontsize=9.5, fontweight="bold", color="#c0392b"
+    fontsize=9.2, fontweight="bold", color="#c0392b"
 )
 
 # --- (B) EfficientNet Paired Scatter / Boxplot with Individual Shift Lines ---
@@ -139,11 +139,11 @@ ax3.legend(loc="upper left", frameon=True, fontsize=9.5)
 ax3.grid(axis="y", linestyle=":", alpha=0.6)
 
 ax3.annotate(
-    f"Rightward Shift: +{np.mean(res_diff):.3f}\n(Paired t-test: p < 0.001)",
-    xy=(0.88, 2.5), xytext=(0.10, 2.3),
+    f"Rightward Shift: +{np.mean(res_diff):.3f} (Wilcoxon p < 0.001)\nVariance Reduction: -25.0% (Pitman-Morgan p < 0.001)",
+    xy=(0.88, 2.5), xytext=(0.03, 2.3),
     arrowprops=dict(arrowstyle="->", color="#c0392b", lw=2),
     bbox=dict(boxstyle="round,pad=0.4", fc="#fff5f5", ec="#e74c3c", lw=1.2),
-    fontsize=9.5, fontweight="bold", color="#c0392b"
+    fontsize=9.2, fontweight="bold", color="#c0392b"
 )
 
 # --- (D) ResNet50V2 Paired Scatter / Boxplot with Individual Shift Lines ---
