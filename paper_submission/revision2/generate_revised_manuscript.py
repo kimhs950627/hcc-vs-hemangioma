@@ -1,0 +1,230 @@
+"""
+Generate revised manuscript for Korean Journal of Family Practice (KJFP).
+Produces:
+1. manuscript_revised_final.txt (plain text with markdown markup)
+2. manuscript_revised_marked.docx (with revised text colored in RED as requested)
+"""
+
+import os
+import docx
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+OUT_DIR = r"d:\fm_paper_works\hcc-vs-hemangioma\paper_submission\revision2"
+os.makedirs(OUT_DIR, exist_ok=True)
+
+# Manuscript sections: list of (paragraph_type, text_chunks)
+# text_chunks is a list of tuples: (text, is_revised_bool)
+
+doc_structure = [
+    # Title
+    ("title", [
+        ("B-mode 복부 초음파에서 간세포암과 간혈관종 감별을 위한 딥러닝 모델의 Confidence Score와 임베딩 기반 유사도 점수: 단일기관 공개 데이터셋을 이용한 탐색적 연구", True)
+    ]),
+    
+    # Authors
+    ("authors", [
+        ("김현서1, ..., 정밀의학/가정의학 연구팀\n1... 병원 가정의학과", False)
+    ]),
+    
+    # Abstract
+    ("heading1", [("초록 (Abstract)", False)]),
+    ("heading2", [("연구 배경 (Background)", False)]),
+    ("body", [
+        ("B-mode 초음파는 임상 현장에서 간 질환 평가에 광범위하게 활용되는 비침습적 영상 도구이나, 우연히 발견된 간 국소 병변에서 악성인 간세포암(hepatocellular carcinoma, HCC)과 양성인 간혈관종(hemangioma)을 B-mode 영상 소견만으로 감별하는 데에는 상당한 진단적 어려움이 존재한다. ", True),
+        ("기존 딥러닝 분류 모델은 대부분 단일 softmax 출력(confidence score)만을 제공하여 모델의 결정 강도만을 나타낼 뿐, 임상의가 수행하는 질환의 전형적 소견과의 기하학적 유사성 비교 추론을 반영하지 못한다.", False)
+    ]),
+    
+    ("heading2", [("방법 (Methods)", False)]),
+    ("body", [
+        ("삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장) 중 caliper 등 인공음영이 배제된 Clean subset(744명, 2,656장)의 원저 제공 분할(훈련 1,858장, 검증 530장, 테스트 268장)을 활용하였다. ", True),
+        ("EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피(cross-entropy)와 지도 대조학습(supervised contrastive learning, SupCon) 결합으로 학습하였다. 단일 softmax 출력을 confidence score로, 임베딩 공간에서 훈련 세트 HCC prototype과의 cosine similarity를 HCC cosine score, 두 클래스 prototype 간 마진을 Δscore로 각각 정의하는 이중 출력 체계를 구성하였다. 모든 운영 임계값은 검증 세트에서 Youden's J 통계량으로 결정한 후 테스트 세트에 고정 적용하였다.", True)
+    ]),
+    
+    ("heading2", [("결과 (Results)", False)]),
+    ("body", [
+        ("주력 모델(EfficientNetV2B0 + CE+SupCon)에서 confidence score의 AUROC는 검증 세트 1.000, 테스트 세트 1.000이었다. 검증 세트에서 민감도 100.0% (95% CI 98.7–100.0), 특이도 100.0% (95% CI 98.6–100.0), 정확도 100.0% (95% CI 99.3–100.0)를 기록하였다. 테스트 세트(n=268)에서는 민감도 100.0% (95% CI 97.4–100.0), 특이도 99.2% (95% CI 95.7–100.0, 위양성 1건, 위음성 0건), 정확도 99.6% (95% CI 97.9–100.0)를 달성하였다. ", True),
+        ("HCC cosine score와 Δscore 역시 테스트 세트 AUROC 1.000을 기록하였으며, confidence score와 동일하게 정확히 1건의 위양성만을 공통적으로 오분류하였다. ", True),
+        ("실제 HCC 영상(Val+Test 합산, n=417)을 대상으로 한 대응표본(paired) 비교에서, SupCon 적용 시 HCC cosine score의 중앙값은 CE 단독 대비 0.882에서 0.970으로 유의하게 상승하였으나(p < 0.001), Δscore는 1.508에서 1.076으로 감소하였다(p < 0.001). 한편 자기지도학습(NNCLR) 2단계 파이프라인은 본 데이터셋에서 분류 성능 개선을 제공하지 못하였다.", True)
+    ]),
+    
+    ("heading2", [("결론 (Conclusions)", False)]),
+    ("body", [
+        ("본 연구는 B-mode 초음파에서 B-mode 영상 소견 기반 간세포암과 혈관종 감별을 보조하는 이중 출력 지표(confidence score, HCC cosine score, Δscore)의 산출 가능성을 탐색하였다. 정제된 단일기관 내부 검증 세트에서 높은 변별력을 나타내었으나, 본 연구는 배경 간 질환에 따른 층화 분석과 외부 독립 검증이 결여되어 일반화에 한계가 있다. 향후 다양한 기관 및 장비 환경에서의 전향적 외부 검증이 필수적이다.", True)
+    ]),
+    
+    ("body", [
+        ("중심 단어: 간세포암; 간혈관종; 초음파; 영상표지자; 지도 대조학습; 컴퓨터 보조 진단", True)
+    ]),
+    
+    # Introduction
+    ("heading1", [("1. 서론", False)]),
+    ("body", [
+        ("간세포암(hepatocellular carcinoma, HCC)은 원발성 간암의 대부분을 차지하며 전 세계적으로 암 관련 사망의 주요 원인 중 하나이다.[1,2] 복부 초음파 검사는 비침습적이고 접근성이 높아 임상 현장에서 간 질환 평가 및 간 병변 선별에 가장 널리 사용되는 1차 영상 도구이다.[2,3] 그러나 복부 초음파 검사 중 간 실질 내에서 국소 병변(focal liver lesion)이 우연히 발견되었을 때, 이를 악성 종양인 HCC와 흔한 양성 종양인 간혈관종(hepatic hemangioma)으로 정확히 감별하는 것은 B-mode 초음파 단독 소견만으로는 임상적 난제에 해당한다.[4,5]", True),
+        ("이러한 감별의 어려움은 두 질환 모두 영상 소견상 넓은 스펙트럼과 비전형적(atypical) 표현형을 지니기 때문이다. 전형적인 HCC는 만성 간질환이나 간경변 배경에서 저에코 결절로 관찰되지만, 고분화 간세포암 등 일부 증례는 고에코성을 띠어 혈관종과 유사하게 관찰될 수 있다.[6] 간혈관종 역시 전형적으로는 경계가 명확한 균질한 고에코 종괴로 나타나나, 이질적 에코나 저에코 테두리를 갖는 비전형적 혈관종은 악성 종양을 모사하여 진단적 혼선을 유발한다.[7,8] 따라서 임상의는 조영증강 CT, MRI 또는 조영증강 초음파(CEUS) 등의 정밀 2차 영상 검사에 크게 의존하게 된다.", True),
+        ("최근 인공지능 및 딥러닝 기술의 발전으로 B-mode 초음파 영상을 이용한 간 국소 병변 분류 연구들이 활발히 진행되고 있다.[9,10] 그러나 기존 연구들은 대부분 소프트맥스(softmax) 함수의 최종 확률값인 단일 'confidence score'만을 출력 지표로 활용한다. 이러한 단일 출력 체계는 두 가지 방법론적 한계를 지닌다. 첫째, 딥러닝 모델의 소프트맥스 출력은 과잉 확신(overconfidence) 성향을 보이며, 잘 보정(calibrated)되지 않은 경우 실제 임상적 유병 확률과 일치하지 않는 결정 강도(decision strength)만을 나타낸다.[11] 둘째, 임상의가 실제로 병변을 판독할 때 '이 병변이 전형적인 간세포암의 영상 특징과 얼마나 기하학적으로 유사한가'를 평가하는 사례 기반 추론(similarity-based reasoning) 정보를 제공하지 못한다.", True),
+        ("임베딩 공간(embedding space)에서 지도 대조학습(supervised contrastive learning, SupCon)을 적용하면 클래스 내 응집성과 클래스 간 분리능을 강화할 수 있으며,[12] 훈련 세트의 질환별 중심 벡터(prototype)와의 cosine 유사도를 통해 연속형 유사도 점수를 산출할 수 있다. 본 연구는 대규모 공개 초음파 데이터셋(SMC-LUD)의 정제 서브셋을 활용하여, B-mode 초음파에서 간세포암과 혈관종을 감별하는 딥러닝 모델을 구축하고, 단일 confidence score와 함께 임베딩 기반 유사도 점수(HCC cosine score 및 Δscore)를 산출하는 이중 출력 체계의 기술적 타당성을 내부 검증 세트에서 탐색적으로 평가하고자 하였다.", True)
+    ]),
+    
+    # Materials and Methods
+    ("heading1", [("2. 대상 및 방법", False)]),
+    ("body", [
+        ("2.1 연구 대상 및 데이터셋 구성\n", False),
+        ("본 연구는 삼성서울병원에서 구축하여 공개한 대규모 B-mode 간 초음파 데이터셋인 SMC-LUD(Samsung Medical Center–Liver Ultrasound Dataset)[13]를 활용한 단일기관 후향적 연구이다. SMC-LUD 전체 코호트는 2015년부터 2024년까지 수집된 1,021명 환자의 5,385장 B-mode 영상으로 구성된다. 원 데이터셋에서 HCC는 수술적 절제 또는 생검을 통해 병리학적으로 확진되었으며, 간혈관종은 숙련된 복부 영상의학과 전문의의 전형적 영상 소견 및 공식 판독 문서를 기준으로 진단되었다. 원 데이터셋의 영상 선정 과정에서 HCC는 확진 시점에 근접한 전형적 소견의 대표 B-mode 영상 1장이 선택되었다.", True),
+        ("원 데이터셋 중 측정선(caliper) 표시 등 주석 인공음영이 포함되지 않은 'Clean' 서브셋(744명, 2,656장)을 분석 대상으로 사용하였다. 원저에서 환자 단위(patient-level)로 분할하여 공개한 분할 기준을 그대로 준용하여 훈련 세트 1,858장(HCC 972장, 혈관종 886장), 검증 세트 530장(HCC 277장, 혈관종 253장), 테스트 세트 268장(HCC 140장, 혈관종 128장)으로 구성하였다(Table 1B). 다만 공개 데이터셋 특성상 영상 파일 수준에서 환자 식별자가 제공되지 않아 환자 간 영상 교차의 부재를 본 연구팀이 독립적으로 직접 재검증하지는 못하였으며, 원저의 분할 프로토콜을 그대로 따랐다. 본 연구의 수행은 연구자 소속 기관의 기관생명윤리위원회(IRB) 심사를 통과하였다(PMC 2026-07-001).", True),
+        ("\n2.2 모델 아키텍처 및 학습 프로토콜\n", False),
+        ("분류 모델로는 EfficientNetV2B0 합성곱 신경망을 백본(backbone)으로 하고 트랜스포머 인코더 블록을 결합한 경량 Hybrid Vision Transformer 아키텍처를 구축하였다. 추출된 특징 맵은 패치 토큰으로 재구성되어 인코더를 통과하며, 분류 토큰(CLS token)의 최종 표현 벡터(임베딩, d=128)로부터 분류 헤드와 프로젝션 헤드를 통해 출력을 산출하였다.", False),
+        ("학습 전략의 효과를 비교하기 위해 backbone(EfficientNetV2B0 vs. ResNet50V2)과 학습 손실 함수(Cross-Entropy 단독 [CE only], Cross-Entropy + Supervised Contrastive Loss [CE+SupCon], NNCLR 사전학습 후 CE+SupCon 미세조정 [NNCLR])의 6가지 조합에 대한 절제 연구(ablation study)를 수행하였다. 모든 모델은 384×384 해상도, AdamW 옵티마이저, Cosine Annealing 학습률 스케줄러를 적용하여 동일 조건에서 학습되었다.", True),
+        ("\n2.3 이중 출력 영상표지자의 정의\n", False),
+        ("제안하는 모델은 동일한 병변 영상에 대해 두 가지 형태의 보완적 출력을 제공한다:\n"
+         "1) Confidence Score: 최종 분류 레이어의 소프트맥스 출력 중 HCC 클래스에 할당된 값(0~1)으로, 모델의 결정 강도(decision strength)를 나타낸다.\n"
+         "2) HCC Cosine Score: 훈련 세트(train set)의 HCC 임베딩 벡터들의 평균으로 산출된 단일 중심 벡터(mean prototype)와 대상 병변 임베딩 벡터 간의 코사인 유사도(cosine similarity)로 정의된다. 부가적인 민감도 분석을 위해 훈련 세트 임베딩을 k-means 클러스터링(k=4)하여 4개 서브 프로토타입과의 평균 코사인 유사도를 구하는 방식도 함께 평가하였다.\n"
+         "3) Δscore: 대상 병변의 HCC cosine score에서 훈련 세트 혈관종 프로토타입과의 코사인 유사도(Hemangioma cosine score)를 뺀 값으로 정의되며, 두 경쟁 질환 간 상대적 기하학적 마진을 나타낸다. 모든 프로토타입 벡터는 데이터 유출을 방지하기 위해 오직 훈련 세트만을 사용하여 산출하였다.", True),
+        ("\n2.4 임계값 설정 및 통계 분석\n", False),
+        ("모든 성능 평가 지표의 이진 분류 운영 임계값(operational cutoff)은 검증 세트(validation set)에서 Youden's J 통계량(민감도 + 특이도 - 1을 최대화하는 지점)을 기준으로 독립적으로 결정하였으며, 테스트 세트에 동일하게 고정 적용하였다. 모델의 변별력은 AUROC로 평가하였으며, 이진 분류 지표(민감도, 특이도, 양성예측도, 음성예측도, 정확도, F1 점수)에 대해서는 Clopper-Pearson 정확 이항 분포(exact binomial) 95% 신뢰구간(CI)을 산출하였다. 두 AUROC 곡선 간의 통계적 비교는 DeLong 검정으로 계산하였으나, 내부 검증 세트에서 AUROC가 천장값(1.000)에 도달하는 조건에서는 통계적 검정력이 제한되므로 비열등성이나 동등성의 증거로 단정하지 않고 기술적 비교로 해석하였다. 학습 방식(CE vs. SupCon)에 따른 실제 HCC 영상(n=417) 내 코사인 점수 분포의 차이는 동일 영상 간 대응표본 t-검정(paired t-test)을 적용하여 분석하였다. 통계적 유의수준은 양측 p < 0.05로 정의하였다.", True)
+    ]),
+    
+    # Results
+    ("heading1", [("3. 결과", False)]),
+    ("body", [
+        ("3.1 데이터셋 특성\n", False),
+        ("원 데이터셋 SMC-LUD 전체 1,021명(HCC 600명, 혈관종 421명)의 인구통계학적 특성은 Table 1에 제시하였다. HCC 환자군은 혈관종 환자군에 비해 연령이 높았고(66.65 ± 11.02세 vs 55.50 ± 12.76세), 남성 비율이 높았다(81.8% vs 41.3%). HCC 병변의 최대 직경 중앙값은 2.90 cm (사분위수 범위 2.10–4.50 cm)였다. Clean subset 744명(2,656장)의 세트별 클래스 분포는 Table 1B에 정리하였다.", True),
+        ("\n3.2 백본 및 학습 방식별 성능 비교 (Ablation Study)\n", False),
+        ("검증 세트(n=530)에서 백본 및 학습 방식에 따른 분류 성능 비교 결과는 Table 2와 같다. 주력 모델인 EfficientNetV2B0 + CE+SupCon(#4)은 검증 세트에서 AUROC 1.000, 민감도 100.0%, 특이도 100.0%, F1 점수 1.000을 달성하여 ResNet50V2 + CE+SupCon(#3, AUROC 1.000, 민감도 99.64%, 특이도 100.0%) 대비 동등 이상의 분류 성능을 보다 경량화된 파라미터(7.1M vs 23.6M)로 구현하였다. 반면 자기지도학습을 결합한 2단계 학습(NNCLR) 조건(#5, #6)은 CE+SupCon 단독 학습 대비 검증 세트 분류 성능이 오히려 소폭 저하되었다(EfficientNet NNCLR: AUROC 0.9986, 민감도 98.19%, 특이도 98.42%).", True),
+        ("\n3.3 주력 모델의 테스트 세트 분류 성능\n", False),
+        ("주력 모델(EfficientNetV2B0 + CE+SupCon)의 검증 및 독립 테스트 세트 분류 성능은 Table 3에 제시하였다. 검증 세트에서 결정된 운영 임계값(cutoff = 0.00109)을 독립 테스트 세트(n=268; HCC 140장, 혈관종 128장)에 적용하였을 때, AUROC 1.000, 정확도 99.63% (95% CI 97.94–99.99), 민감도 100.0% (95% CI 97.40–100.0), 특이도 99.22% (95% CI 95.72–99.98), 양성예측도 99.29%, 음성예측도 100.0%, F1 점수 0.9964를 기록하였다. 테스트 세트 268장 중 오분류는 단 1건으로, 혈관종 영상 1장이 위양성(false positive, FP=1)으로 판정되었으며 위음성(false negative, FN=0)은 발생하지 않았다(Figure 2).", True),
+        ("\n3.4 이중 출력 표지자의 비교\n", False),
+        ("주력 모델에서 산출된 confidence score(ROC-A), HCC cosine score(ROC-B), Δscore(ROC-C)의 변별력을 비교하였다(Table 4). 검증 세트에서 산출된 임계값(confidence score: 0.0011, HCC cosine mean: -0.0048, Δscore mean: -0.9585)을 테스트 세트에 적용했을 때, 세 출력 모두 AUROC 1.000을 기록하였다. 흥미롭게도 테스트 세트에서 발생한 단 1건의 오분류(index 576, 실제 혈관종)는 5가지 출력 형태(confidence score, HCC cosine score mean 및 k-means, Δscore mean 및 k-means) 모두에서 동일하게 위양성으로 판정되었다. 즉 정제된 단일기관 테스트 세트 내에서는 오분류 사례 수가 극히 적어 cosine 기반 표지자가 confidence score에 추가적인 분류 증분 이득(incremental benefit)을 제공하는지 통계적으로 입증할 수 없었다.", True),
+        ("\n3.5 실제 HCC 영상에서의 코사인 유사도 점수 분포 (SupCon 효과)\n", False),
+        ("SupCon 학습이 임베딩 공간의 기하학적 정렬에 미치는 영향을 평가하기 위해, 검증 및 테스트 세트에 포함된 실제 HCC 영상 전체(n=417; Val 277장 + Test 140장)를 대상으로 동일 영상에 대한 CE 단독 모델과 CE+SupCon 모델 간의 점수 분포를 대응표본 분석하였다(Figure 4, Figure 5). EfficientNetV2B0 백본에서 HCC cosine score(mean prototype)의 중앙값은 CE 단독 시 0.882에서 SupCon 적용 후 0.970으로 통계적으로 유의하게 상승하였다(paired t-test, p < 0.001; ResNet50V2에서도 0.879에서 0.974로 상승, p < 0.001). 반면 두 클래스 프로토타입 간의 상대적 마진인 Δscore 중앙값은 EfficientNetV2B0에서 CE 단독 1.508에서 SupCon 적용 후 1.076으로 감소하였으며(paired t-test, p < 0.001; ResNet50V2에서도 1.400에서 1.184로 감소, p < 0.001), 이는 실제 혈관종 영상(n=381)에서도 코사인 점수 전반이 함께 상승하는 기하학적 이동이 발생했기 때문으로 확인되었다. 따라서 SupCon은 임베딩 공간에서 HCC 표본 간의 상대적 코사인 응집성을 높이는 효과를 보였으나, 분류 성능 자체를 통계적으로 개선하는 필수적 요소라기보다는 표지자의 절대적 수치 분포를 변화시키는 기하학적 특성으로 해석된다.", True)
+    ]),
+    
+    # Discussion
+    ("heading1", [("4. 고찰", False)]),
+    ("body", [
+        ("본 연구는 B-mode 복부 초음파 영상에서 간세포암과 간혈관종을 감별하기 위해 EfficientNetV2B0 기반 hybrid vision transformer를 구축하고, 전통적인 단일 소프트맥스 confidence score 외에 임베딩 공간의 프로토타입 거리에 기반한 연속형 유사도 점수(HCC cosine score 및 Δscore)를 함께 산출하는 이중 출력 프레임워크를 탐색적으로 제안하였다. 정제된 단일기관 내부 검증 세트에서 제안 모델은 AUROC 1.000 및 테스트 정확도 99.63%의 매우 우수한 변별 성능을 나타내었다.", True),
+        ("임상 판독 환경에서 초음파 의사는 국소 병변을 대할 때 단순한 이진 확률뿐만 아니라 '병변이 전형적인 간세포암의 소견을 얼마나 닮았는가'를 연속적으로 고찰한다. 본 연구에서 제안한 HCC cosine score는 모델의 임베딩 벡터와 훈련 세트 전형적 간세포암 프로토타입 간의 기하학적 유사도를 정량화함으로써, 기존 딥러닝 분류기가 제공하지 못했던 사례 기반 유사성 정보를 보완적으로 제시할 수 있는 가능성을 보여주었다.", True),
+        ("그러나 본 연구의 결과는 다음과 같은 중대한 임상적·방법론적 제한점의 맥락에서 매우 신중하게 해석되어야 한다. 첫째, 본 연구의 과제는 무증상 고위험군을 대상으로 미세 병변을 조기에 찾아내는 '간암 감시(surveillance) 또는 선별 검사'가 아니라, 이미 초음파상에서 명확히 발견된 결절에 대한 '간세포암과 혈관종 간의 2진 감별 진단'에 국한된다. 더욱이 원 데이터셋(SMC-LUD)에서 간세포암은 수술이나 생검으로 확진된 반면 간혈관종은 영상의학적 판독 소견으로 진단되었고, 원저 구축 과정에서 확진 시점에 근접한 전형적 대표 영상 1장이 선별되었으며, HCC 병변의 직경 중앙값도 2.90 cm로 비교적 컸다. 이러한 참조표준(reference standard)의 비대칭성과 전형적 증례 중심의 선정 과정은 불가피하게 스펙트럼 편향(spectrum bias) 및 선택 편향(selection bias)을 수반하며, 내부 검증 세트에서 관찰된 99.6% 이상의 극단적으로 높은 정확도는 이러한 이상적인 데이터 정제 환경이 반영된 결과일 가능성이 높다.", True),
+        ("둘째, 실제 간암 감시 환경에서 흔히 접하는 만성 B형·C형 간염, 간경변증, 그리고 거친 지방간 등 다양한 배경 간 실질 에코 환경에 따른 층화 분석을 수행하지 못하였다. 공개 데이터셋 메타데이터에 배경 간 질환 정보가 포함되어 있지 않아, 딥러닝 모델이 병변 자체의 내부 에코 특성뿐만 아니라 간세포암이 호발하는 거친 간경변 배경 실질이나 혈관종이 호발하는 정상 간 실질의 배경 음영을 일종의 단축 경로(shortcut feature)로 학습했을 가능성을 완전히 배제할 수 없다.", True),
+        ("셋째, 본 연구는 삼성서울병원 단일 기관의 후향적 데이터셋에 대한 내부 검증에 국한되어 있으며, 타 기관, 타 초음파 장비 및 다양한 검사자 환경을 포괄하는 독립적인 외부 검증(external validation)이 수행되지 못하였다. 초음파 검사는 장비의 게인(gain), 동적 범위(dynamic range), 탐촉자 주파수 및 검사자의 술기에 따른 영상 변동성이 매우 크므로, 본 모델의 일반화 가능성(generalizability)과 실제 임상 현장 적용 타당성은 향후 다기관 전향적 외부 검증을 거치기 전까지는 결코 단정할 수 없다.", True),
+        ("넷째, 744명의 환자가 제공한 2,656장의 영상을 활용하였으나, 공개 데이터셋의 익명화 정책으로 인해 영상별 환자 식별 번호(patient ID)가 결여되어 있어 환자 단위 예측값 집계나 환자 단위 cluster bootstrap 분석을 적용하지 못하였다. 본 연구에 제시된 신뢰구간은 영상 단위(image-level) exact CI이며, 동일 환자로부터 얻어진 복수 영상 간의 환자 내 상관성(intra-patient correlation)으로 인해 실제보다 신뢰구간이 좁게 추정되었을 가능성이 있다.", True),
+        ("다섯째, 내부 검증 세트에서 주력 모델의 세 가지 출력이 모두 AUROC 1.000에 도달하는 천장 효과(ceiling effect)가 나타남에 따라, DeLong 검정이나 기타 통계 검정으로 두 출력 간의 우열이나 증분적 임상 이득을 입증할 수 없었다. 또한 Youden's J로 산출된 confidence score의 운영 임계값(0.0011)은 일반적인 임계값(0.5)과 비교하여 극단적으로 낮았으며, 테스트 세트에서 발생한 단 1건의 오분류는 모든 출력에서 동일하게 관찰되어 현재 데이터셋 구조하에서는 유사도 점수의 독자적인 임상적 구제 효과를 증명할 수 없었다.", True),
+        ("결론적으로, 본 연구는 B-mode 초음파에서 딥러닝 기반 임베딩 기하 구조를 활용한 유사도 표지자의 도출 가능성을 제시한 탐색적 기술 연구로서 의의를 지닌다. 향후 배경 간 실질 정보가 포함된 다기관 코호트와 독립 외부 검증 데이터를 확보하여, 비전형적 병변 및 소간암에 대한 진단적 보완 가치를 엄밀히 검증하는 후속 연구가 필요하다.", True)
+    ]),
+    
+    # Conclusion
+    ("heading1", [("5. 결론", False)]),
+    ("body", [
+        ("본 연구는 정제된 B-mode 복부 초음파 영상에서 간세포암과 혈관종을 감별하는 EfficientNetV2B0 기반 hybrid vision transformer를 구축하고, 전통적인 confidence score와 함께 임베딩 공간의 기하학적 유사도를 정량화하는 HCC cosine score 및 Δscore를 도출하였다. 내부 테스트 세트에서 높은 분류 정확도를 달성하였으나, 참조표준 비대칭성과 선택 편향, 배경 간 정보 부재, 그리고 외부 검증 결여로 인해 일반화 성능에는 명확한 한계가 존재한다. 본 제안 방법론의 실제 임상적 유용성은 다양한 배경 간 환경과 다기관 외부 검증을 통해 추가 평가되어야 한다.", True)
+    ]),
+    
+    # References
+    ("heading1", [("참고문헌 (References)", False)]),
+    ("body", [
+        ("1. Sung H, Ferlay J, Siegel RL, et al. Global Cancer Statistics 2020: GLOBOCAN Estimates of Incidence and Mortality Worldwide for 36 Cancers in 185 Countries. CA Cancer J Clin. 2021;71(3):209-249.\n"
+         "2. European Association for the Study of the Liver. EASL Clinical Practice Guidelines: Management of hepatocellular carcinoma. J Hepatol. 2018;69(1):182-236.\n"
+         "3. Korean Liver Cancer Association (KLCA) and National Cancer Center (NCC) Korea. 2022 KLCA-NCC Korea practice guidelines for the management of hepatocellular carcinoma. Clin Mol Hepatol. 2022;28(4):583-705.\n"
+         "4. Minami Y, Nishida N, Kudo M. Imaging Diagnosis of Various Hepatocellular Carcinoma Subtypes and Its Hypervascular Mimics: Differential Diagnosis Based on Conventional Interpretation and Artificial Intelligence. Liver Cancer. 2023;12(2):103-115.\n"
+         "5. Sirli R, Sporea I, Săndulescu DL, et al. Contrast enhanced ultrasound for the diagnosis of liver hemangiomas – results of a Romanian multicentre study. Med Ultrason. 2015;17(4):444-450.\n"
+         "6. Chou CT, Chen YL, Wu HK, Chen RC. Atypical hemangioma mimicking mixed hepatocellular cholangiocarcinoma. Medicine (Baltimore). 2017;96(50):e9192.\n"
+         "7. Liu S, Wang Y, Yang X, et al. Deep Learning in Medical Ultrasound Analysis: A Review. Engineering. 2019;5(2):261-275.\n"
+         "8. American College of Radiology. CT/MRI LI-RADS v2018: Diagnostic Categories and Technical Requirements. ACR; 2018.\n"
+         "9. Yang Q, Wei J, Hao X, et al. Improving B-mode ultrasound diagnostic performance for focal liver lesions using deep learning: A multicentre study. EBioMedicine. 2020;56:102777.\n"
+         "10. Du Z, Fan F, Ma J, et al. Development and validation of an ultrasound-based interpretable machine learning model for the classification of ≤3 cm hepatocellular carcinoma: a multicentre retrospective diagnostic study. eClinicalMedicine. 2025;81:103098.\n"
+         "11. Guo C, Pleiss G, Sun Y, Weinberger KQ. On Calibration of Modern Neural Networks. In: Proceedings of the 34th International Conference on Machine Learning (ICML). 2017.\n"
+         "12. Khosla P, Teterwak P, Wang C, et al. Supervised Contrastive Learning. In: Advances in Neural Information Processing Systems (NeurIPS). 2020.\n"
+         "13. Tak J, Ko RE, Kwon RD, et al. SMC-LUD: Large-Scale B-Mode Liver Ultrasound Dataset for Hepatocellular Carcinoma and Hemangioma Classification. Sci Data. 2026;13:649.\n"
+         "14. Tan M, Le QV. EfficientNetV2: Smaller Models and Faster Training. In: Proceedings of the 38th International Conference on Machine Learning (ICML). 2021.\n"
+         "15. DeLong ER, DeLong DM, Clarke-Pearson DL. Comparing the Areas under Two or More Correlated Receiver Operating Characteristic Curves: A Nonparametric Approach. Biometrics. 1988;44(3):837-845.", False)
+    ])
+]
+
+# Write plain text
+txt_path = os.path.join(OUT_DIR, "manuscript_revised_final.txt")
+with open(txt_path, "w", encoding="utf-8") as f:
+    for ptype, chunks in doc_structure:
+        p_text = "".join(c[0] for c in chunks)
+        if ptype == "title":
+            f.write(f"# {p_text}\n\n")
+        elif ptype == "heading1":
+            f.write(f"\n## {p_text}\n\n")
+        elif ptype == "heading2":
+            f.write(f"\n### {p_text}\n\n")
+        else:
+            f.write(f"{p_text}\n\n")
+
+print(f"Saved plain text manuscript to: {txt_path}")
+
+# Write docx with RED markup for revised parts
+doc = docx.Document()
+
+# Adjust margins
+sections = doc.sections
+for s in sections:
+    s.top_margin = Inches(1.0)
+    s.bottom_margin = Inches(1.0)
+    s.left_margin = Inches(1.0)
+    s.right_margin = Inches(1.0)
+
+RED = RGBColor(220, 20, 20)
+BLACK = RGBColor(20, 20, 20)
+
+for ptype, chunks in doc_structure:
+    p = doc.add_paragraph()
+    
+    if ptype == "title":
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for text, is_revised in chunks:
+            run = p.add_run(text)
+            run.font.name = "Malgun Gothic"
+            run.font.size = Pt(16)
+            run.font.bold = True
+            if is_revised:
+                run.font.color.rgb = RED
+        doc.add_paragraph() # space
+        
+    elif ptype == "authors":
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for text, is_revised in chunks:
+            run = p.add_run(text)
+            run.font.name = "Malgun Gothic"
+            run.font.size = Pt(10)
+            if is_revised:
+                run.font.color.rgb = RED
+        doc.add_paragraph()
+        
+    elif ptype == "heading1":
+        p.paragraph_format.space_before = Pt(14)
+        p.paragraph_format.space_after = Pt(6)
+        for text, is_revised in chunks:
+            run = p.add_run(text)
+            run.font.name = "Malgun Gothic"
+            run.font.size = Pt(13)
+            run.font.bold = True
+            if is_revised:
+                run.font.color.rgb = RED
+                
+    elif ptype == "heading2":
+        p.paragraph_format.space_before = Pt(8)
+        p.paragraph_format.space_after = Pt(4)
+        for text, is_revised in chunks:
+            run = p.add_run(text)
+            run.font.name = "Malgun Gothic"
+            run.font.size = Pt(11)
+            run.font.bold = True
+            if is_revised:
+                run.font.color.rgb = RED
+                
+    else: # body
+        p.paragraph_format.line_spacing = 1.3
+        p.paragraph_format.space_after = Pt(6)
+        for text, is_revised in chunks:
+            run = p.add_run(text)
+            run.font.name = "Malgun Gothic"
+            run.font.size = Pt(10)
+            if is_revised:
+                run.font.color.rgb = RED
+
+docx_path = os.path.join(OUT_DIR, "manuscript_revised_marked.docx")
+doc.save(docx_path)
+print(f"Saved marked docx manuscript to: {docx_path}")
