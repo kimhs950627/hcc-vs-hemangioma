@@ -1,0 +1,76 @@
+﻿index,filename,P_HCC,P_Hem,HCC_Cosine,Hem_Cosine,Delta_Score,Decision_Conf,Decision_HCC_Cos,Decision_Delta,report_path,summary_text
+1,01_jcth2024_fig1b_type2a_homogeneous_hyperechoic_HCC.png,0.9999442100524902,5.5749718740116805e-05,0.975297212600708,-0.2528058886528015,1.2281031012535095,HCC,HCC,HCC,D:\fm_paper_works\hcc-vs-hemangioma\scratch\mimic_reports\01_jcth2024_fig1b_type2a_homogeneous_hyperechoic_HCC_report.png,"==========================================================
+  Case: Mimic Case 1: 01_jcth2024_fig1b_type2a_homog
+==========================================================
+1. Confidence Score (Softmax Output):
+   - P(HCC)            : 0.999944  (Cutoff: 0.001088)
+   - P(Hemangioma)     : 0.000056
+   - Decision          : [HCC]
+
+2. Embedding Similarity Scores:
+   - HCC Cosine Score  : 0.9753  (Cutoff: -0.0048) -> [HCC]
+   - Hemangioma Score  : -0.2528
+   - Δscore (Margin)   : 1.2281  (Cutoff: -0.9585) -> [HCC]
+
+3. Consensus Decision  : HCC (Malignant)
+=========================================================="
+2,02_jmat2013_fig4_hyperechoic_HCC.png,0.9998314380645752,0.00016852191765792668,0.9885506629943848,-0.15713605284690857,1.1456867158412933,HCC,HCC,HCC,D:\fm_paper_works\hcc-vs-hemangioma\scratch\mimic_reports\02_jmat2013_fig4_hyperechoic_HCC_report.png,"==========================================================
+  Case: Mimic Case 2: 02_jmat2013_fig4_hyperechoic_H
+==========================================================
+1. Confidence Score (Softmax Output):
+   - P(HCC)            : 0.999831  (Cutoff: 0.001088)
+   - P(Hemangioma)     : 0.000169
+   - Decision          : [HCC]
+
+2. Embedding Similarity Scores:
+   - HCC Cosine Score  : 0.9886  (Cutoff: -0.0048) -> [HCC]
+   - Hemangioma Score  : -0.1571
+   - Δscore (Margin)   : 1.1457  (Cutoff: -0.9585) -> [HCC]
+
+3. Consensus Decision  : HCC (Malignant)
+=========================================================="
+3,03_jmat2013_fig10_two_hyperechoic_HCC_with_halo.png,0.9893446564674377,0.010655305348336697,0.8493664264678955,0.1985098272562027,0.6508565992116928,HCC,HCC,HCC,D:\fm_paper_works\hcc-vs-hemangioma\scratch\mimic_reports\03_jmat2013_fig10_two_hyperechoic_HCC_with_halo_report.png,"==========================================================
+  Case: Mimic Case 3: 03_jmat2013_fig10_two_hyperech
+==========================================================
+1. Confidence Score (Softmax Output):
+   - P(HCC)            : 0.989345  (Cutoff: 0.001088)
+   - P(Hemangioma)     : 0.010655
+   - Decision          : [HCC]
+
+2. Embedding Similarity Scores:
+   - HCC Cosine Score  : 0.8494  (Cutoff: -0.0048) -> [HCC]
+   - Hemangioma Score  : 0.1985
+   - Δscore (Margin)   : 0.6509  (Cutoff: -0.9585) -> [HCC]
+
+3. Consensus Decision  : HCC (Malignant)
+=========================================================="
+4,04_jmat2013_fig11B_hyperechoic_HCC.png,0.99994957447052,5.039006282459013e-05,0.9794892072677612,-0.24168729782104492,1.2211765050888062,HCC,HCC,HCC,D:\fm_paper_works\hcc-vs-hemangioma\scratch\mimic_reports\04_jmat2013_fig11B_hyperechoic_HCC_report.png,"==========================================================
+  Case: Mimic Case 4: 04_jmat2013_fig11B_hyperechoic
+==========================================================
+1. Confidence Score (Softmax Output):
+   - P(HCC)            : 0.999950  (Cutoff: 0.001088)
+   - P(Hemangioma)     : 0.000050
+   - Decision          : [HCC]
+
+2. Embedding Similarity Scores:
+   - HCC Cosine Score  : 0.9795  (Cutoff: -0.0048) -> [HCC]
+   - Hemangioma Score  : -0.2417
+   - Δscore (Margin)   : 1.2212  (Cutoff: -0.9585) -> [HCC]
+
+3. Consensus Decision  : HCC (Malignant)
+=========================================================="
+5,05_jmat2013_fig12C_hyperechoic_HCC.png,0.9999406337738037,5.932106796535663e-05,0.9769782423973083,-0.23473432660102844,1.2117125689983368,HCC,HCC,HCC,D:\fm_paper_works\hcc-vs-hemangioma\scratch\mimic_reports\05_jmat2013_fig12C_hyperechoic_HCC_report.png,"==========================================================
+  Case: Mimic Case 5: 05_jmat2013_fig12C_hyperechoic
+==========================================================
+1. Confidence Score (Softmax Output):
+   - P(HCC)            : 0.999941  (Cutoff: 0.001088)
+   - P(Hemangioma)     : 0.000059
+   - Decision          : [HCC]
+
+2. Embedding Similarity Scores:
+   - HCC Cosine Score  : 0.9770  (Cutoff: -0.0048) -> [HCC]
+   - Hemangioma Score  : -0.2347
+   - Δscore (Margin)   : 1.2117  (Cutoff: -0.9585) -> [HCC]
+
+3. Consensus Decision  : HCC (Malignant)
+=========================================================="
