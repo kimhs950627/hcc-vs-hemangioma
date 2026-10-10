@@ -41,11 +41,6 @@ doc_structure = [
         ("B-mode 복부 초음파에서 간세포암과 간혈관종 감별을 위한 딥러닝 모델의 Confidence Score와 임베딩 기반 유사도 점수: 단일기관 공개 데이터셋을 이용한 탐색적 연구", True)
     ]),
     
-    # Authors
-    ("authors", [
-        ("김현서1, ..., 정밀의학/가정의학 연구팀\n1... 병원 가정의학과", False)
-    ]),
-    
     # Abstract
     ("heading1", [("초록 (Abstract)", False)]),
     ("heading2", [("연구 배경 (Background)", False)]),
@@ -65,7 +60,7 @@ doc_structure = [
         ("주력 모델(EfficientNetV2B0 + CE+SupCon)에서 confidence score의 AUROC는 검증 세트 1.000, 테스트 세트 1.000이었다. ", False),
         ("검증 세트에서 민감도 100.0% (95% CI 98.7–100.0), 특이도 100.0% (95% CI 98.6–100.0), 정확도 100.0% (95% CI 99.3–100.0)를 기록하였다. 테스트 세트(n=268)에서는 민감도 100.0% (95% CI 97.4–100.0), 특이도 99.2% (95% CI 95.7–100.0, 위양성 1건, 위음성 0건), 정확도 99.6% (95% CI 97.9–100.0)를 달성하였다. ", True),
         ("HCC cosine score와 Δscore 역시 테스트 세트 AUROC 1.000을 기록하였으며, confidence score와 동일하게 정확히 1건의 위양성만을 공통적으로 오분류하였다. ", True),
-        ("미학습 실제 영상(Val+Test) 대상 대응표본 비교에서, SupCon 적용 시 HCC(n=417) 코사인 점수 중앙값은 0.882에서 0.970으로 상승하고 분산은 60.7% 축소되었으며(p < 0.001), 실제 혈관종(n=381) 코사인 점수 역시 0.955에서 0.985로 상승하고 분산이 98.7% 축소되어(p < 0.001) 양 질환 모두에서 유의한 기하학적 표상 정규화가 확인되었다. ", True),
+        ("미학습 실제 영상(Val+Test) 대상 대응표본 비교에서, SupCon 적용 시 실제 HCC(n=417)와 실제 혈관종(n=381) 영상 모두에서 각 클래스의 cosine score 분포가 상향 이동하고 분산이 감소하였다(모두 p < 0.001). ", True),
         ("한편 자기지도학습(NNCLR) 2단계 파이프라인은 본 데이터셋에서 분류 성능 개선을 제공하지 못하였다.", False)
     ]),
     
@@ -137,17 +132,15 @@ doc_structure = [
         
         ("\n\n3.3 주력 모델의 테스트 세트 분류 성능\n", False),
         ("주력 모델(EfficientNetV2B0 + CE+SupCon)의 검증 및 독립 테스트 세트 분류 성능은 Table 3에 제시하였다. ", False),
-        ("검증 세트에서 결정된 운영 임계값(cutoff = 0.00109)을 독립 테스트 세트(n=268; HCC 140장, 혈관종 128장)에 적용하였을 때, AUROC 1.000, 정확도 99.63% (95% CI 97.94–99.99), 민감도 100.0% (95% CI 97.40–100.0), 특이도 99.22% (95% CI 95.72–99.98), 양성예측도 99.29%, 음성예측도 100.0%, F1 점수 0.9964를 기록하였다. 테스트 세트 268장 중 오분류는 단 1건으로, 혈관종 영상 1장이 위양성(false positive, FP=1)으로 판정되었으며 위음성(false negative, FN=0)은 발생하지 않았다(Figure 2).", True),
+        ("검증 세트에서 결정된 운영 임계값을 독립 테스트 세트(n=268)에 적용하였을 때 AUROC 1.000, 정확도 99.6%, 민감도 100.0%, 특이도 99.2%를 기록하였다(Table 3). 테스트 세트의 오분류는 혈관종 영상 1장의 위양성 1건이었다(Figure 2).", True),
         
         ("\n\n3.4 이중 출력 표지자의 비교\n", False),
         ("주력 모델에서 산출된 confidence score(ROC-A), HCC cosine score(ROC-B), Δscore(ROC-C)의 변별력을 비교하였다(Table 4). 검증 세트에서 산출된 임계값(confidence score: 0.0011, HCC cosine mean: -0.0048, Δscore mean: -0.9585)을 테스트 세트에 적용했을 때, 세 출력 모두 AUROC 1.000을 기록하였다. ", False),
         ("흥미롭게도 테스트 세트에서 발생한 단 1건의 오분류(index 576, 실제 혈관종)는 5가지 출력 형태(confidence score, HCC cosine score mean 및 k-means, Δscore mean 및 k-means) 모두에서 동일하게 위양성으로 판정되었다. 즉 정제된 단일기관 테스트 세트 내에서는 오분류 사례 수가 극히 적어 cosine 기반 표지자가 confidence score에 추가적인 분류 증분 이득(incremental benefit)을 제공하는지 통계적으로 입증할 수 없었다.", True),
         
-        ("\n\n3.5 미학습 영상(HCC 및 혈관종)에서의 코사인 유사도 점수 분포 및 SupCon의 표상 정규화 효과\n", False),
-        ("SupCon 학습이 임베딩 공간의 기하학적 정렬에 미치는 영향을 정량적으로 평가하기 위해, 검증 및 테스트 세트에 포함된 미학습 실제 HCC 영상 전체(n=417; Val 277장 + Test 140장)와 실제 혈관종 영상 전체(n=381; Val 253장 + Test 128장)를 대상으로 동일 영상에 대한 CE 단독 모델과 CE+SupCon 모델 간의 코사인 점수 분포를 대응표본 분석하였다. ", True),
-        ("먼저 실제 HCC 영상(n=417)에서 주력 모델(EfficientNetV2B0)의 HCC cosine score(mean prototype) 평균은 CE 단독 시 0.783 ± 0.256(중앙값 0.882)에서 SupCon 적용 후 0.908 ± 0.160(중앙값 0.970)으로 통계적으로 유의하게 상승하였으며(평균 우측 이동 +0.125, 95% CI [0.110, 0.140], Wilcoxon signed-rank test p < 0.001, paired t-test t=16.94; 전체 증례의 94.7%에서 점수 상승), 점수 분산은 0.065에서 0.026으로 60.7% 대폭 축소되었다(Pitman-Morgan test t=16.84, p < 0.001; 대조 백본 ResNet50V2에서도 평균 +0.104 상승 및 분산 24.3% 축소 확인, Pitman-Morgan t=4.06, p < 0.001, Figure 4). ", True),
-        ("다음으로 실제 혈관종 영상(n=381)에서도 동일한 정규화 효과가 관찰되었다. EfficientNetV2B0에서 Hemangioma cosine score(mean prototype)는 CE 단독 0.937 ± 0.050(중앙값 0.955)에서 SupCon 적용 후 0.985 ± 0.006(중앙값 0.985)으로 유의하게 우측 이동하였고(평균 +0.048, 95% CI [0.043, 0.052], Wilcoxon p < 0.001, paired t=19.71), 분산은 0.00253에서 0.00003으로 98.7% 극단적으로 축소되어 혈관종 중심 프로토타입 주변으로 초고밀도 응집을 나타내었다(Pitman-Morgan test t=106.23, p < 0.001; ResNet50V2에서도 +0.024 상승 및 분산 95.6% 축소, Pitman-Morgan t=49.18, p < 0.001, Figure 5). ", True),
-        ("이와 같이 두 클래스 모두에서 각자의 질환 프로토타입 방향으로 강한 초구면 수렴이 발생함에 따라, 두 프로토타입 간의 상대적 마진인 Δscore 중앙값은 EfficientNetV2B0에서 CE 단독 1.508에서 SupCon 적용 후 1.076으로 감소하였으며(paired t-test, p < 0.001; ResNet50V2에서도 1.400에서 1.184로 감소, p < 0.001), 이는 임베딩 공간 전체가 양 극단으로 고도로 정규화되는 기하학적 수축 과정에서 나타난 현상으로 확인되었다. 즉 SupCon은 소규모 데이터셋 환경에서 미학습 영상의 분산을 억제하고 질환 고유의 표상 응집성을 강화하는 필수적인 정규화 역할을 수행함을 입증하였다.", True)
+        ("\n\n3.5 미학습 영상에서의 코사인 유사도 점수 분포\n", False),
+        ("SupCon 학습이 임베딩 공간에 미치는 영향을 평가하기 위해, 검증 및 테스트 세트의 실제 HCC 영상(n=417)과 실제 혈관종 영상(n=381)을 대상으로 동일 영상에 대한 CE 단독 모델과 CE+SupCon 모델의 cosine score를 대응 비교하였다. ", True),
+        ("실제 HCC 영상에서 SupCon 적용 후 HCC cosine score 분포는 상향 이동하였고 분산은 감소하였으며, 두 변화 모두 통계적으로 유의하였다(Figure 4). 실제 혈관종 영상에서도 hemangioma cosine score 분포의 상향 이동과 분산 감소가 관찰되었다(Figure 5). 이러한 경향은 대조 백본인 ResNet50V2에서도 동일하게 관찰되었다.", True)
     ]),
     
     # Discussion
@@ -156,13 +149,13 @@ doc_structure = [
         ("본 연구는 B-mode 복부 초음파 영상에서 간세포암과 간혈관종을 감별하기 위해 EfficientNetV2B0 기반 hybrid vision transformer를 구축하고, 전통적인 단일 소프트맥스 confidence score 외에 임베딩 공간의 프로토타입 거리에 기반한 연속형 유사도 점수(HCC cosine score 및 Δscore)를 함께 산출하는 이중 출력 프레임워크를 탐색적으로 제안하였다. 정제된 단일기관 내부 검증 세트에서 제안 모델은 AUROC 1.000 및 테스트 정확도 99.63%의 매우 우수한 변별 성능을 나타내었다.", False)
     ]),
     ("body", [
+        ("다만 softmax 기반 confidence score를 실제 질환 확률로 해석하거나 단일 출력만으로 판단 근거로 삼는 데에는 한계가 있다. Softmax 출력은 0과 1 사이로 정규화되지만, 별도의 calibration이 없다면 그 값이 실제 질환 발생 확률과 일치한다고 보장할 수 없다.[11] 현대 심층신경망은 높은 분류 정확도에도 불구하고 예측 confidence가 실제 정확도보다 높은 overconfidence를 보일 수 있으며,[11] 이러한 calibration error는 흉부 X선과 안저 영상을 포함한 의료영상 분류에서도 보고되었다.[16,17] 본 연구에서도 별도의 calibration을 시행하지 않았으므로, HCC 클래스의 softmax 출력값은 실제 HCC 확률이 아닌 모델의 상대적인 분류 결정 강도로 해석하였다. 이러한 이유로 본 연구는 confidence score와 별도로 임베딩 공간의 프로토타입 유사도에 기반한 cosine score를 함께 제시하였으며, 이 지표는 테스트 세트에서 confidence score와 같은 수준의 변별력을 보였고 SupCon 적용 시 실제 HCC 영상에서 점수 분포의 변화가 통계적으로 유의하였다.", True)
+    ]),
+    ("body", [
         ("임상 판독 환경에서 초음파 의사는 국소 병변을 대할 때 단순한 이진 확률뿐만 아니라 '병변이 전형적인 간세포암의 소견을 얼마나 닮았는가'를 연속적으로 고찰한다. 본 연구에서 제안한 HCC cosine score는 모델의 임베딩 벡터와 훈련 세트 전형적 간세포암 프로토타입 간의 기하학적 유사도를 정량화함으로써, 기존 딥러닝 분류기가 제공하지 못했던 사례 기반 유사성 정보를 보완적으로 제시할 수 있는 가능성을 보여주었다.", False)
     ]),
     ("body", [
-        ("특히 소규모 단일기관 초음파 데이터 환경에서 Vision Transformer는 공간 불변성에 대한 귀납적 편향(inductive bias)이 약해 소수 샘플의 결정 경계를 단순 암기(shortcut memorization)할 위험이 크다. 본 연구에서 CE 단독 학습 모델은 미학습 HCC 영상에서 코사인 유사도가 0.78에 머물고 분산이 컸던 반면(σ=0.26), CE+SupCon 결합 모델은 미학습 영상 전체에서 코사인 점수를 대폭 향상시키고 클래스 내 분산을 극단적으로 축소시켰다(HCC -60.7%, 혈관종 -98.7%, p < 0.001). 이는 분류 지표(AUROC 1.000)가 포화되어 모델 내부의 표상 품질을 분별할 수 없는 조건에서도, SupCon이 잠재공간 초구면 상에서 질환 고유의 의미론적 클러스터를 강제로 형성시키는 필수 정규화기(essential regularizer)로 작동함을 통계학적으로 입증한다.", True)
-    ]),
-    ("body", [
-        ("Softmax 출력은 0과 1 사이로 정규화되지만, 별도의 calibration이 없다면 그 값이 실제 질환 발생 확률과 일치한다고 보장할 수 없다.[11] 현대 심층신경망은 높은 분류 정확도에도 불구하고 예측 confidence가 실제 정확도보다 높은 overconfidence를 보일 수 있다.[11] 이러한 calibration error는 흉부 X선과 안저 영상을 포함한 의료영상 분류에서도 보고되었다.[16,17] 따라서 본 연구에서는 별도의 calibration을 시행하지 않았으므로, HCC 클래스의 softmax 출력값을 실제 HCC 확률이 아니라 모델의 상대적인 분류 결정 강도를 나타내는 confidence score로 해석하였다.", True)
+        ("본 연구는 한정된 컴퓨팅 자원으로 인해 경량 모델만을 학습하였으며, 단일기관의 수천 장 규모 데이터셋을 사용하였다. 이러한 조건에서는 모델이 질환의 일반적인 영상 특징을 학습하기보다 학습 영상 자체를 기억하거나 단축 경로(shortcut)를 찾을 가능성이 있으며, Vision Transformer 계열 구조는 합성곱 신경망에 비해 공간적 귀납적 편향(inductive bias)이 약해 이러한 경향이 더 나타날 수 있다. 분류 지표가 AUROC 1.000에 도달한 상황에서는 이러한 차이를 분류 성능만으로 구별하기 어렵다. 본 연구에서 CE 단독 모델은 미학습 HCC 영상에서 HCC cosine score의 분산이 컸던 반면, CE+SupCon 모델에서는 점수가 상향 이동하고 분산이 감소하였다(Figure 4). 이는 SupCon이 임베딩 공간에서 같은 질환의 영상을 더 가깝게 모으는 추가적인 정규화(additional regularizer) 역할을 하였을 가능성을 시사한다. 다만 이것이 외부 데이터에서의 일반화 향상으로 이어지는지는 별도의 검증이 필요하다.", True)
     ]),
     ("body", [
         ("그러나 본 연구의 결과는 다음과 같은 중대한 임상적·방법론적 제한점의 맥락에서 매우 신중하게 해석되어야 한다. 첫째, 본 연구의 과제는 무증상 고위험군을 대상으로 미세 병변을 조기에 찾아내는 '간암 감시(surveillance) 또는 선별 검사'가 아니라, 이미 초음파상에서 명확히 발견된 결절에 대한 '간세포암과 혈관종 간의 2진 감별 진단'에 국한된다. 더욱이 원 데이터셋(SMC-LUD)에서 간세포암은 수술이나 생검으로 확진된 반면 간혈관종은 영상의학적 판독 소견으로 진단되었고, HCC 병변의 직경 중앙값도 2.90 cm로 비교적 컸다. 이러한 참조표준(reference standard)의 비대칭성과 전형적 증례 중심의 선정 과정은 불가피하게 스펙트럼 편향(spectrum bias) 및 선택 편향(selection bias)을 수반하며, 내부 검증 세트에서 관찰된 99.6% 이상의 극단적으로 높은 정확도는 이러한 이상적인 데이터 정제 환경이 반영된 결과일 가능성이 높다.", True)
@@ -255,15 +248,6 @@ for ptype, chunks in doc_structure:
             run.font.color.rgb = RED if is_revised else BLACK
         doc.add_paragraph() # space
         
-    elif ptype == "authors":
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        for text, is_revised in chunks:
-            run = p.add_run(text)
-            run.font.name = "Malgun Gothic"
-            run.font.size = Pt(10)
-            run.font.color.rgb = RED if is_revised else BLACK
-        doc.add_paragraph()
-        
     elif ptype == "heading1":
         p.paragraph_format.space_before = Pt(14)
         p.paragraph_format.space_after = Pt(6)
@@ -294,5 +278,11 @@ for ptype, chunks in doc_structure:
             run.font.color.rgb = RED if is_revised else BLACK
 
 docx_path = os.path.join(OUT_DIR, "manuscript_revised_marked.docx")
-doc.save(docx_path)
-print(f"Saved marked docx manuscript to: {docx_path}")
+try:
+    doc.save(docx_path)
+    print(f"Saved marked docx manuscript to: {docx_path}")
+except PermissionError:
+    fallback_path = os.path.join(OUT_DIR, "manuscript_revised_marked_updated.docx")
+    doc.save(fallback_path)
+    print(f"WARNING: {docx_path} is currently locked (open in Word). Saved to: {fallback_path}")
+
