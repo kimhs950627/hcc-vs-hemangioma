@@ -9,3 +9,12 @@ patient_data/
 PHI/
 secrets.json
 .secrets/
+
+# Hidden-folder / tool temp outputs (chrome profiles, crash dumps, .dat, etc.)
+*.dat
+._chrome_shot/
+._chrome_shot*/
+._chrome_profile/
+_shots/
+*.tmp.pdf
+presentation/._*

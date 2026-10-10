@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import rcParams
-from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, Polygon, Rectangle
+from matplotlib.patches import Circle, Ellipse, FancyArrowPatch, FancyBboxPatch, Polygon, Rectangle
 from PIL import Image
 
 rcParams["font.family"] = "Malgun Gothic"
@@ -295,10 +295,161 @@ def figure_supcon_loss():
     plt.close(fig)
 
 
+def figure_supcon_explain():
+    fig = plt.figure(figsize=(14, 4.6), facecolor="white")
+    gs = fig.add_gridspec(1, 3, width_ratios=[0.82, 1.32, 1.12], wspace=0.14)
+
+    # ① batch of 4
+    ax = fig.add_subplot(gs[0, 0]); ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
+    ax.text(0.5, 0.97, "① batch = 4", ha="center", fontsize=13, color=INK, fontweight="bold")
+    ax.text(0.30, 0.86, "HCC ×2", ha="center", fontsize=11, color=HCC, fontweight="bold")
+    ax.text(0.72, 0.86, "Hemangioma ×2", ha="center", fontsize=11, color=HEM, fontweight="bold")
+    for x, y, lab, col in [(0.30, 0.62, "H1", HCC), (0.30, 0.32, "H2", HCC),
+                           (0.72, 0.62, "V1", HEM), (0.72, 0.32, "V2", HEM)]:
+        ax.add_patch(Circle((x, y), 0.115, facecolor=col, alpha=0.18, edgecolor=col, lw=2.2))
+        ax.text(x, y, lab, ha="center", va="center", color=col, fontsize=13, fontweight="bold")
+    ax.text(0.5, 0.08, "같은 클래스 2 + 다른 클래스 2", ha="center", fontsize=10.5, color=MUTED)
+
+    # ② SupCon
+    ax = fig.add_subplot(gs[0, 1]); ax.set_xlim(0, 6); ax.set_ylim(0, 5); ax.axis("off")
+    ax.text(3.0, 4.8, "② SupCon loss — 같은 클래스 pull / 다른 클래스 push",
+            ha="center", fontsize=12, color=INK, fontweight="bold")
+    H1, H2 = (1.35, 3.35), (2.05, 3.75)
+    V1, V2 = (4.05, 1.25), (4.75, 1.65)
+    ax.add_patch(Ellipse((1.7, 3.55), 2.0, 1.4, facecolor=HCC, alpha=0.07))
+    ax.add_patch(Ellipse((4.4, 1.45), 2.0, 1.4, facecolor=HEM, alpha=0.07))
+
+    def dot(p, lab, col, anchor=False):
+        if anchor:
+            ax.add_patch(Circle(p, 0.27, facecolor="none", edgecolor=INK, lw=1.8, linestyle=(0, (4, 3)), zorder=3))
+        ax.add_patch(Circle(p, 0.16, facecolor=col, edgecolor="white", lw=1.5, zorder=4))
+        ax.text(p[0], p[1], lab, ha="center", va="center", color="white", fontsize=10.5,
+                fontweight="bold", zorder=5)
+    dot(H1, "H1", HCC, anchor=True); dot(H2, "H2", HCC)
+    dot(V1, "V1", HEM); dot(V2, "V2", HEM)
+
+    ax.add_patch(FancyArrowPatch(H1, H2, arrowstyle="<|-|>", mutation_scale=14,
+                                 lw=2.2, color="#2e7d32", shrinkA=14, shrinkB=14))
+    ax.text(1.7, 4.15, "pull (positive)", color="#2e7d32", fontsize=9.5, ha="center", fontweight="bold")
+    ax.add_patch(FancyArrowPatch((1.9, 3.4), (4.2, 1.55), arrowstyle="<|-|>", mutation_scale=14,
+                                 lw=2.2, color="#b23b3b", shrinkA=0, shrinkB=0))
+    ax.text(3.4, 2.35, "push (negative)", color="#b23b3b", fontsize=9.5, ha="center", fontweight="bold")
+    ax.text(3.0, 0.95,
+            r"$\mathcal{L}_{\mathrm{SupCon}}=-\frac{1}{|P(i)|}\sum_{p\in P(i)}"
+            r"\log\frac{\exp(z_i\cdot z_p/\tau)}{\sum_{a\in A(i)}\exp(z_i\cdot z_a/\tau)}$",
+            ha="center", fontsize=11, color=INK)
+    ax.text(3.0, 0.3, "anchor H1 · positive {H2} · negatives {V1,V2}", ha="center",
+            fontsize=9.5, color=MUTED)
+
+    # ③ CE
+    ax = fig.add_subplot(gs[0, 2]); ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
+    ax.text(0.5, 0.97, "③ CE loss — 분류 헤드(softmax)", ha="center", fontsize=12,
+            color=INK, fontweight="bold")
+    xs = [0.02, 0.26, 0.46, 0.68, 0.88]
+    for x, c in zip(xs, ["case", "p(HCC)", "정답", "p(정답)", "CE"]):
+        ax.text(x, 0.84, c, fontsize=9.5, color=NAVY, fontweight="bold")
+    ax.plot([0.01, 0.99], [0.80, 0.80], color=LINE, lw=1)
+    rows = [("H1", "0.90", "HCC", "0.90", "0.11", HCC, False),
+            ("H2", "0.40", "HCC", "0.40", "0.92", HCC, True),
+            ("V1", "0.20", "Hem", "0.80", "0.22", HEM, False),
+            ("V2", "0.75", "Hem", "0.25", "1.39", HEM, True)]
+    for i, (case, ph, lab, pt, ce, col, wrong) in enumerate(rows):
+        y = 0.70 - 0.135 * i
+        tcol = "#b23b3b" if wrong else col
+        ax.text(0.02, y, case + (" (!)" if wrong else ""), fontsize=10.5, color=tcol, fontweight="bold")
+        ax.text(0.26, y, ph, fontsize=10.5, color=INK)
+        ax.text(0.46, y, lab, fontsize=10.5, color=col)
+        ax.text(0.68, y, pt, fontsize=10.5, color=INK)
+        ax.text(0.88, y, ce, fontsize=10.5, color=("#b23b3b" if wrong else INK),
+                fontweight="bold" if wrong else "normal")
+    ax.text(0.5, 0.17, r"$\mathcal{L}_{\mathrm{CE}}=-\sum_c y_c\log p_c$",
+            ha="center", fontsize=12, color=INK)
+    ax.text(0.5, 0.06, "= -log p(정답)  ·  p(정답)↓ → CE↑  ·  틀린 예측(H2·V2)은 큰 loss",
+            ha="center", fontsize=9, color=MUTED)
+
+    fig.savefig(FIG / "fig_supcon_explain.png", dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def figure_supcon_calc():
+    fig = plt.figure(figsize=(14, 5.4), facecolor="white")
+    gs = fig.add_gridspec(2, 2, width_ratios=[1.0, 1.5], height_ratios=[3.5, 1.0],
+                          wspace=0.10, hspace=0.18)
+
+    # left: similarity matrix
+    ax = fig.add_subplot(gs[0, 0]); ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
+    ax.text(0.5, 0.97, r"similarity:  $sim_{ij}=z_i\cdot z_j/\tau$", ha="center",
+            fontsize=13, color=INK, fontweight="bold")
+    labels = ["H_1", "H_2", "V_1", "V_2"]
+    cols = [HCC, HCC, HEM, HEM]
+    n = 4; x0 = 0.20; y0 = 0.16; w = 0.17; h = 0.155
+    for j in range(n):
+        ax.text(x0 + w * (j + 0.5), y0 + h * 4 + 0.05, f"${labels[j]}$", ha="center",
+                fontsize=11, color=cols[j], fontweight="bold")
+        ax.text(x0 - 0.04, y0 + h * (3.5 - j), f"${labels[j]}$", ha="right", va="center",
+                fontsize=11, color=cols[j], fontweight="bold")
+    for i in range(n):
+        for j in range(n):
+            x = x0 + w * j; y = y0 + h * (3 - i)
+            if i == j:
+                ax.add_patch(Rectangle((x, y), w, h, facecolor="#eef1f5", edgecolor=LINE))
+                ax.text(x + w / 2, y + h / 2, r"$-$", ha="center", va="center", color=MUTED)
+            else:
+                pos = cols[i] == cols[j]
+                ax.add_patch(Rectangle((x, y), w, h, facecolor=HCC if pos else "white",
+                                       alpha=0.13 if pos else 1.0, edgecolor=LINE))
+                ax.text(x + w / 2, y + h / 2, f"$sim_{{{labels[i]}{labels[j]}}}$",
+                        ha="center", va="center", fontsize=9.5, color=INK)
+    ax.text(0.5, 0.05, "대각선(자기 자신) 제외 · 음영 = positive 쌍", ha="center",
+            fontsize=10, color=MUTED)
+
+    # right: per-anchor computation
+    ax = fig.add_subplot(gs[0, 1]); ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
+
+    def put(y, s, size=11.5, color=INK, bold=False):
+        ax.text(0.01, y, s, fontsize=size, color=color, ha="left", va="center",
+                fontweight="bold" if bold else "normal")
+
+    put(0.97, "anchor i마다: 분자 = positive와의 sim, 분모 = 자기 제외 전체 sim 합", 11, INK, True)
+    put(0.86, r"$\mathcal{L}_{i}=-\frac{1}{|P(i)|}\sum_{p\in P(i)}\log"
+              r"\frac{\exp(sim_{ip})}{\sum_{a\neq i}\exp(sim_{ia})}$", 12.5)
+    put(0.755, r"$\frac{1}{4}\left(\mathcal{L}_{H_1}+\mathcal{L}_{H_2}+\mathcal{L}_{V_1}+\mathcal{L}_{V_2}\right)$"
+               r"  ← batch=4이므로 anchor 4개", 11, NAVY)
+    put(0.645, r"$\mathcal{L}_{H_1}=-\log\frac{e^{sim_{H_1H_2}}}"
+               r"{e^{sim_{H_1H_2}}+e^{sim_{H_1V_1}}+e^{sim_{H_1V_2}}}$"
+               r"   ($P=\{H_2\}$)", 11.5, HCC)
+    put(0.535, r"$\mathcal{L}_{H_2}=-\log\frac{e^{sim_{H_2H_1}}}"
+               r"{e^{sim_{H_2H_1}}+e^{sim_{H_2V_1}}+e^{sim_{H_2V_2}}}$"
+               r"   ($P=\{H_1\}$)", 11.5, HCC)
+    put(0.425, r"$\mathcal{L}_{V_1}=-\log\frac{e^{sim_{V_1V_2}}}"
+               r"{e^{sim_{V_1V_2}}+e^{sim_{V_1H_1}}+e^{sim_{V_1H_2}}}$"
+               r"   ($P=\{V_2\}$)", 11.5, HEM)
+    put(0.315, r"$\mathcal{L}_{V_2}=-\log\frac{e^{sim_{V_2V_1}}}"
+               r"{e^{sim_{V_2V_1}}+e^{sim_{V_2H_1}}+e^{sim_{V_2H_2}}}$"
+               r"   ($P=\{V_1\}$)", 11.5, HEM)
+    put(0.19, r"$\mathcal{L}_{SupCon}=\frac{1}{4}\left(\mathcal{L}_{H_1}+\mathcal{L}_{H_2}"
+              r"+\mathcal{L}_{V_1}+\mathcal{L}_{V_2}\right)$  (anchor 평균)", 12.5, INK, True)
+    put(0.07, r"self term($a=i$)은 분모에서 제외 · 같은 클래스끼리만 positive로 사용", 10, MUTED)
+
+    # bottom: numeric example
+    ax = fig.add_subplot(gs[1, :]); ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
+    box(ax, 0.005, 0.995, 0.12, 0.92, ec=LINE, fc="#f7fafd")
+    ax.text(0.02, 0.66, r"(예시) $sim_{H_1H_2}=2.0,\; sim_{H_1V_1}=0.2,\; sim_{H_1V_2}=0.3$",
+            fontsize=11.5, color=INK, va="center")
+    ax.text(0.02, 0.30, r"$\Rightarrow \mathcal{L}_{H_1}=-\log\frac{e^{2.0}}{e^{2.0}+e^{0.2}+e^{0.3}}"
+                        r"=-\log\frac{7.39}{7.39+1.22+1.35}=-\log 0.742\approx 0.30$",
+            fontsize=11.5, color=HCC, va="center")
+
+    fig.savefig(FIG / "fig_supcon_calc.png", dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     figure_embed_sphere()
     figure_score_calc()
     figure_three_outputs()
     figure_architecture()
     figure_supcon_loss()
+    figure_supcon_explain()
+    figure_supcon_calc()
     print("figures written to", FIG)

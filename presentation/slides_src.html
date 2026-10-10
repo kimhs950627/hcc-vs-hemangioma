@@ -67,24 +67,44 @@
   .footnote{font-size:.34em; color:var(--muted); margin-top:.45em; line-height:1.8;}
   html.pdfshot .fragment{ opacity:1 !important; visibility:visible !important; }
   html.pdfshot .reveal .controls, html.pdfshot .reveal .progress{ display:none !important; }
-  /* ---- print stylesheet: one slide per page (for Ctrl+P -> PDF) ---- */
+  /* ---- print stylesheet (fallback when 'print-pdf' class is absent) ---- */
   @page{ size:13.333in 8.333in; margin:0; }
   @media print{
-    html,body{ width:1280px !important; height:auto !important; margin:0 !important; padding:0 !important;
-               background:#ffffff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    .reveal{ background:#ffffff !important; position:static !important; }
-    .reveal .slides{ position:static !important; transform:none !important; width:1280px !important; height:auto !important;
-                     left:auto !important; top:auto !important; margin:0 !important; padding:0 !important; }
-    .reveal .slides > section{ display:block !important; position:static !important; transform:none !important;
-                               width:1280px !important; height:800px !important; margin:0 !important; padding:0 !important;
-                               page-break-after:always; break-after:page; break-inside:avoid; }
-    .reveal .slides > section:last-child{ page-break-after:auto; break-after:auto; }
-    .reveal .controls, .reveal .progress, .reveal .slide-number{ display:none !important; }
-    .fragment{ opacity:1 !important; visibility:visible !important; }
-    .reveal .backgrounds{ display:none !important; }
+    html:not(.print-pdf), html:not(.print-pdf) body{ width:1280px !important; height:auto !important; margin:0 !important;
+      padding:0 !important; background:#ffffff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    html:not(.print-pdf) .reveal{ background:#ffffff !important; position:static !important; }
+    html:not(.print-pdf) .reveal .slides{ position:static !important; transform:none !important; width:1280px !important;
+      height:auto !important; left:auto !important; top:auto !important; margin:0 !important; padding:0 !important; }
+    html:not(.print-pdf) .reveal .slides > section{ display:block !important; position:static !important; transform:none !important;
+      width:1280px !important; height:800px !important; margin:0 !important; padding:0 !important;
+      page-break-after:always; break-after:page; break-inside:avoid; }
+    html:not(.print-pdf) .reveal .slides > section:last-child{ page-break-after:auto; break-after:auto; }
+    html:not(.print-pdf) .reveal .controls, html:not(.print-pdf) .reveal .progress{ display:none !important; }
+    html:not(.print-pdf) .fragment{ opacity:1 !important; visibility:visible !important; }
+    html:not(.print-pdf) .reveal .backgrounds{ display:none !important; }
+    /* print-pdf class path (activated at print time) */
+    html.print-pdf .reveal .slides{ position:static !important; transform:none !important; width:1280px !important;
+      height:auto !important; left:auto !important; top:auto !important; margin:0 !important; padding:0 !important; }
+    html.print-pdf .reveal .slides > section{ display:block !important; visibility:visible !important; opacity:1 !important;
+      position:static !important; transform:none !important; width:1280px !important; height:800px !important;
+      margin:0 !important; padding:0 !important; page-break-after:always !important; break-after:page !important; break-inside:avoid !important; }
+    html.print-pdf .reveal .slides > section:last-child{ page-break-after:auto !important; break-after:auto !important; }
+    html.print-pdf .reveal .controls, html.print-pdf .reveal .progress, html.print-pdf .reveal .backgrounds{ display:none !important; }
+    html.print-pdf .fragment{ opacity:1 !important; visibility:visible !important; }
   }
 </style>
-<script>if(/pdfshot/.test(location.search)){document.documentElement.classList.add('pdfshot');}</script>
+<script>
+(function(){
+  var c = document.documentElement.classList;
+  if (/pdfshot/.test(location.search)) c.add('pdfshot');
+  if (/printpdf/.test(location.search)) c.add('print-pdf');   /* test hook */
+  var pp = function(){ c.add('print-pdf'); };                  /* real Ctrl+P */
+  window.addEventListener('beforeprint', pp);
+  if (window.matchMedia){ var mq = window.matchMedia('print');
+    var h = function(e){ if (e.matches) pp(); };
+    mq.addEventListener ? mq.addEventListener('change', h) : mq.addListener(h); }
+})();
+</script>
 </head>
 <body>
 <div class="reveal"><div class="slides">
@@ -108,7 +128,7 @@
     </div>
     <p class="cover-author">예수병원 가정의학과 R3 김현수</p>
   </div></div>
-  <div class="foot"><span>HCC 이중 출력 영상표지자</span><span>1 / 15</span></div>
+  <div class="foot"><span>HCC 이중 출력 영상표지자</span><span>1 / 17</span></div>
 </section>
 
 <!-- ============ 2. WHAT IS YOUR DIAGNOSIS? ============ -->
@@ -127,7 +147,7 @@
       <p style="font-size:.62em; color:var(--ink);"><b class="hcc">모두 간암(HCC)</b> — 혈관종처럼 보이지만 실제로는 HCC일 수 있다</p>
     </div>
   </div>
-  <div class="foot"><span>연구 배경 ①</span><span>2 / 15</span></div>
+  <div class="foot"><span>연구 배경 ①</span><span>2 / 17</span></div>
 </section>
 
 <!-- ============ 3. BACKGROUND (x / y numbers) ============ -->
@@ -154,7 +174,7 @@
     <p class="footnote" style="text-align:center;">그래서 실제로는 <b>조영증강 CT/MRI/CEUS</b>를 쓰고, 최근에는 <b>AI</b>를 보조로 쓴다. (meta-analysis: 비조영 US ML 민감도 81.7%·특이도 84.8%)</p>
     <p class="cite">Yang Q, et al. EBioMedicine 2020 [9] · Campello 2023 [18] · Tak 2026 [13]</p>
   </div>
-  <div class="foot"><span>연구 배경 ②</span><span>3 / 15</span></div>
+  <div class="foot"><span>연구 배경 ②</span><span>3 / 17</span></div>
 </section>
 
 <!-- ============ 4. BACKGROUND: spectrum + softmax problem ============ -->
@@ -172,7 +192,7 @@
     </div>
     <p class="cite">Guo 2017 [11] (calibration of modern neural networks)</p>
   </div>
-  <div class="foot"><span>연구 배경 ③</span><span>4 / 15</span></div>
+  <div class="foot"><span>연구 배경 ③</span><span>4 / 17</span></div>
 </section>
 
 <!-- ============ 5. EMBEDDING -> HYPERSPHERE ============ -->
@@ -183,7 +203,7 @@
     <img class="bigfig" src="figures/fig_embed_sphere.png" alt="embedding on hypersphere" style="max-height:62vh; object-fit:contain;">
     <p class="footnote" style="text-align:center;">영상은 인코더를 거쳐 <b>숫자의 나열(벡터)</b>이 되고, 정규화하면 <b>초구면</b> 위 한 점이 된다. 비슷한 병변일수록 각도(cosine)가 작다.</p>
   </div>
-  <div class="foot"><span>임베딩 ①</span><span>5 / 15</span></div>
+  <div class="foot"><span>임베딩 ①</span><span>5 / 17</span></div>
 </section>
 
 <!-- ============ 6. PROTOTYPE -> COSINE SCORE ============ -->
@@ -194,7 +214,7 @@
     <img class="bigfig" src="figures/fig_score_calc.png" alt="cosine score computation" style="max-height:62vh; object-fit:contain;">
     <p class="footnote" style="text-align:center;">클래스 임베딩의 <b>평균 = prototype</b>. 병변 z와 두 prototype의 각도로 <b class="hcc">HCC cosine</b>·<b class="hem">혈관종 cosine</b>을, 그 차이로 <b class="gold">Δscore</b>를 구한다.</p>
   </div>
-  <div class="foot"><span>임베딩 ②</span><span>6 / 15</span></div>
+  <div class="foot"><span>임베딩 ②</span><span>6 / 17</span></div>
 </section>
 
 <!-- ============ 7. ARCHITECTURE ============ -->
@@ -205,7 +225,7 @@
     <img class="bigfig" src="figures/fig_architecture.png" alt="architecture" style="max-height:64vh; object-fit:contain;">
     <p class="footnote" style="text-align:center;">EfficientNetV2B0(CNN) → 토큰화 → Transformer Encoder ×4. <b>Cross-Attention</b>(Q=CLS, K=V=패치). 하나의 CLS 임베딩에서 <b>분류 헤드(confidence)</b>와 <b>프로젝션 헤드(cosine)</b>를 동시 산출.</p>
   </div>
-  <div class="foot"><span>모델 구조</span><span>7 / 15</span></div>
+  <div class="foot"><span>모델 구조</span><span>7 / 17</span></div>
 </section>
 
 <!-- ============ 8. DATA ============ -->
@@ -237,7 +257,7 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>방법 ①</span><span>8 / 15</span></div>
+  <div class="foot"><span>방법 ①</span><span>8 / 17</span></div>
 </section>
 
 <!-- ============ 9. CE WITH SUPCON ============ -->
@@ -253,7 +273,29 @@
     <img class="bigfig" src="figures/fig_supcon_loss.png" alt="SupCon loss" style="max-height:26vh; object-fit:contain; margin-top:.5em;">
     <p class="footnote">384×384 · AdamW · Cosine Annealing. 임계값은 <b>검증 세트에서만</b> Youden's J → 테스트 고정. 통계: DeLong [15] · 영상 단위 95% CI · 대응 t/Wilcoxon/Pitman-Morgan.</p>
   </div>
-  <div class="foot"><span>방법 ②</span><span>9 / 15</span></div>
+  <div class="foot"><span>방법 ②</span><span>9 / 17</span></div>
+</section>
+
+<!-- ============ 10. SUPCON vs CE (batch 4) ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow">방법 ② · SupCon 원리</div>
+    <h2 class="stitle">batch 4로 보는 SupCon loss vs CE loss</h2>
+    <img class="bigfig" src="figures/fig_supcon_explain.png" alt="SupCon vs CE" style="max-height:64vh; object-fit:contain;">
+    <p class="footnote" style="text-align:center;">같은 클래스(H1·H2 · V1·V2)는 임베딩에서 <b>가깝게(pull)</b>, 다른 클래스는 <b>멀게(push)</b>. 분류 헤드의 <b>CE</b>는 각 케이스의 <b>정답 클래스 확률</b>을 높인다.</p>
+  </div>
+  <div class="foot"><span>방법 ②</span><span>10 / 17</span></div>
+</section>
+
+<!-- ============ 11. SUPCON CALC (batch 4) ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow">방법 ② · SupCon 구체 계산</div>
+    <h2 class="stitle">sim<sub>ij</sub> = z<sub>i</sub>·z<sub>j</sub>/τ 로 본 SupCon (batch = 4)</h2>
+    <img class="bigfig" src="figures/fig_supcon_calc.png" alt="SupCon 계산" style="max-height:66vh; object-fit:contain;">
+    <p class="footnote" style="text-align:center;">anchor마다 <b>positive는 분자</b>, <b>자기를 제외한 전체는 분모</b>. batch=4면 anchor 4개의 loss 평균이 SupCon loss가 된다.</p>
+  </div>
+  <div class="foot"><span>방법 ②</span><span>11 / 17</span></div>
 </section>
 
 <!-- ============ 10. THREE OUTPUTS (figure) ============ -->
@@ -264,7 +306,7 @@
     <img class="bigfig" src="figures/fig_three_outputs.png" alt="three outputs" style="max-height:60vh; object-fit:contain;">
     <p class="footnote" style="text-align:center;"><b>Confidence</b>(결정 강도) · <b>HCC/Hem cosine</b>(전형 소견과의 닮음, mean prototype) · <b>Δscore</b>(어느 쪽에 더 가까운가). prototype은 <b>훈련 세트에서만</b> 산출.</p>
   </div>
-  <div class="foot"><span>방법 ③</span><span>10 / 15</span></div>
+  <div class="foot"><span>방법 ③</span><span>12 / 17</span></div>
 </section>
 
 <!-- ============ 11. RESULT 1 ============ -->
@@ -294,7 +336,7 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>결과 ①</span><span>11 / 15</span></div>
+  <div class="foot"><span>결과 ①</span><span>13 / 17</span></div>
 </section>
 
 <!-- ============ 12. RESULT 2 ============ -->
@@ -318,7 +360,7 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>결과 ②</span><span>12 / 15</span></div>
+  <div class="foot"><span>결과 ②</span><span>14 / 17</span></div>
 </section>
 
 <!-- ============ 13. RESULT 3: SupCon before/after ============ -->
@@ -340,7 +382,7 @@
     </div>
     <p class="footnote" style="text-align:center;">HCC 중앙값 0.882→0.970 · 분산 −60.7% &nbsp;|&nbsp; Hemangioma 0.955→0.985 · −98.7% (p&lt;0.001)</p>
   </div>
-  <div class="foot"><span>결과 ③</span><span>13 / 15</span></div>
+  <div class="foot"><span>결과 ③</span><span>15 / 17</span></div>
 </section>
 
 <!-- ============ 14. CONCLUSION ============ -->
@@ -371,7 +413,7 @@
       <p style="font-size:.46em;">B-mode 초음파에서 confidence와 <b>임베딩 유사도(HCC cosine·Δscore)</b>를 함께 내는 이중 출력의 산출 가능성을 제시한 <b>탐색적 연구</b>. 실제 임상적 유용성은 <b>다기관 외부 검증</b>으로 평가되어야 한다.</p>
     </div>
   </div>
-  <div class="foot"><span>결론</span><span>14 / 15</span></div>
+  <div class="foot"><span>결론</span><span>16 / 17</span></div>
 </section>
 
 <!-- ============ 15. THANK YOU ============ -->
@@ -382,7 +424,7 @@
     <p class="cover-sub">질문과 토론을 환영합니다.</p>
     <p class="cover-author">예수병원 가정의학과 R3 김현수</p>
   </div></div>
-  <div class="foot"><span></span><span>15 / 15</span></div>
+  <div class="foot"><span></span><span>17 / 17</span></div>
 </section>
 
 </div></div>
