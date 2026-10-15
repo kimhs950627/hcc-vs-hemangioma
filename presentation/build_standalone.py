@@ -23,9 +23,18 @@ MIME = {
 REMOTE = ("http://", "https://", "data:", "//")
 
 
+_URI_CACHE: dict = {}
+
+
 def data_uri(path: pathlib.Path) -> str:
+    key = str(path)
+    hit = _URI_CACHE.get(key)
+    if hit is not None:
+        return hit
     mime = MIME.get(path.suffix.lower(), "application/octet-stream")
-    return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+    uri = f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+    _URI_CACHE[key] = uri
+    return uri
 
 
 def main() -> None:
@@ -46,6 +55,9 @@ def main() -> None:
             return m.group(0)
         return f"{prefix}{data_uri(fp)}{suffix}"
     html = re.sub(r'(<img[^>]*?\ssrc=")([^"]+)(")', img_repl, html)
+
+    # 1b) SVG <image href="..."> -> base64 data URI (inline SVG figures stay offline)
+    html = re.sub(r'(<image[^>]*?\s(?:xlink:)?href=")([^"]+)(")', img_repl, html)
 
     # 2) local stylesheets -> inline <style>
     def css_repl(m: re.Match) -> str:
@@ -71,7 +83,7 @@ def main() -> None:
         return f"<script>\n{fp.read_text(encoding='utf-8')}\n</script>"
     html = re.sub(r'<script[^>]*?\ssrc="([^"]+)"[^>]*>\s*</script>', js_repl, html)
 
-    out.write_text(html, encoding="utf-8")
+    out.write_text(html, encoding="utf-8", newline="\n")  # keep LF: avoid whole-file CRLF churn
     print(f"[build] wrote {out.name}  ({len(html):,} chars)")
     if missing:
         print(f"[build] WARNING missing: {missing}")

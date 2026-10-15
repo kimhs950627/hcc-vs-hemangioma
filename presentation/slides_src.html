@@ -65,6 +65,39 @@
   .badge-row{display:flex; gap:.4em; justify-content:center; flex-wrap:wrap; margin-bottom:.7em;}
   .reveal .progress{color:var(--navy);} .reveal .controls{color:var(--navy);}
   .footnote{font-size:.34em; color:var(--muted); margin-top:.45em; line-height:1.8;}
+
+  /* ================= looping explainer animations (inline · offline-safe) =================
+     All movement is pure CSS keyframes or a tiny inline rAF script.
+     No external libraries, no matplotlib, no network. */
+  .anim{width:100%; display:block; margin:0 auto; background:#fff; border:1px solid var(--line); border-radius:12px;}
+  .anim text{font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;}
+  .anim .t-s{font-size:13px; fill:var(--muted);}
+  .anim .t-b{font-size:15px; font-weight:700; fill:var(--ink);}
+  .anim .t-m{font-size:18px; font-weight:800; fill:var(--navyd); font-variant-numeric:tabular-nums;}
+  .anim .t-big{font-size:30px; font-weight:900; fill:var(--navyd); font-variant-numeric:tabular-nums;}
+  @keyframes aPulse{0%,100%{opacity:.28}50%{opacity:1}}
+  @keyframes aDash{to{stroke-dashoffset:-26}}
+  @keyframes aGrow{0%{transform:scaleY(.06); opacity:.22}26%,74%{transform:scaleY(1); opacity:1}100%{transform:scaleY(.06); opacity:.22}}
+  @keyframes aProject{0%,12%{transform:translate(0,0)}38%,72%{transform:translate(var(--dx),var(--dy))}88%,100%{transform:translate(0,0)}}
+  @keyframes aFloat{0%,100%{transform:translate(0,0)}45%,62%{transform:translate(var(--dx),var(--dy))}}
+  @keyframes aSweepX{0%,100%{transform:translate(-54px,0)}50%{transform:translate(54px,0)}}
+  @keyframes aWander{0%,100%{transform:translate(0,0)}50%{transform:translate(var(--wx),var(--wy))}}
+  /* slide 5 */
+  #s5fig .bar{transform-box:fill-box; transform-origin:50% 100%; animation:aGrow 6s ease-in-out infinite;}
+  #s5fig .qdot{animation:aProject 6s cubic-bezier(.55,0,.25,1) infinite;}
+  #s5fig .clu circle{animation:aPulse 3s ease-in-out infinite;}
+  #s5fig .clu circle:nth-child(2){animation-delay:-.4s}
+  #s5fig .clu circle:nth-child(3){animation-delay:-.8s}
+  #s5fig .clu circle:nth-child(4){animation-delay:-1.2s}
+  #s5fig .clu circle:nth-child(5){animation-delay:-1.6s}
+  #s5fig .flow{stroke-dasharray:6 7; animation:aDash 1.3s linear infinite;}
+  /* slide 9 */
+  #s9fig .dd{animation:aWander 5s ease-in-out infinite;}
+  #s9fig .clu9{animation:aPulse 4s ease-in-out infinite;}
+  /* slide 10 */
+  #s10fig .mv{animation:aFloat 7s ease-in-out infinite;}
+  #s10fig .bdry{animation:aSweepX 7s ease-in-out infinite;}
+
   html.pdfshot .fragment{ opacity:1 !important; visibility:visible !important; }
   html.pdfshot .reveal .controls, html.pdfshot .reveal .progress{ display:none !important; }
   /* ---- print stylesheet (fallback when 'print-pdf' class is absent) ---- */
@@ -91,6 +124,17 @@
     html.print-pdf .reveal .slides > section:last-child{ page-break-after:auto !important; break-after:auto !important; }
     html.print-pdf .reveal .controls, html.print-pdf .reveal .progress, html.print-pdf .reveal .backgrounds{ display:none !important; }
     html.print-pdf .fragment{ opacity:1 !important; visibility:visible !important; }
+  }
+  /* ---- freeze every loop at a representative frame when printing ---- */
+  @media print{
+    #s5fig .bar,#s5fig .qdot,#s5fig .clu circle,#s5fig .flow,
+    #s9fig .dd,#s9fig .clu9,
+    #s10fig .mv,#s10fig .bdry,#s12fig .pk{ animation:none !important; }
+    #s5fig .qdot{ transform:translate(-58px,-82px) !important; }
+    #s9fig .dd{ transform:translate(0,0) !important; }
+    #s10fig .mv{ transform:translate(var(--dx),var(--dy)) !important; }
+    #s10fig .bdry{ transform:translate(0,0) !important; }
+    #s12fig .pk{ opacity:0 !important; }
   }
 </style>
 <script>
@@ -200,8 +244,64 @@
   <div class="wrap">
     <div class="eyebrow">딥러닝 기초 ①</div>
     <h2 class="stitle">영상 → 인코더 → <span class="gold">숫자의 나열</span> → 초구면 위의 점</h2>
-    <img class="bigfig" src="figures/fig_embed_sphere.png" alt="embedding on hypersphere" style="max-height:62vh; object-fit:contain;">
-    <p class="footnote" style="text-align:center;">영상은 인코더를 거쳐 <b>숫자의 나열(벡터)</b>이 되고, 정규화하면 <b>초구면</b> 위 한 점이 된다. 비슷한 병변일수록 각도(cosine)가 작다.</p>
+    <svg class="anim" id="s5fig" viewBox="0 0 1040 300" preserveAspectRatio="xMidYMid meet" style="max-height:58vh;">
+      <defs>
+        <marker id="s5ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="#a9781a"/>
+        </marker>
+      </defs>
+
+      <!-- (A) image -->
+      <rect x="18" y="80" width="150" height="120" rx="10" fill="#f4f7fb" stroke="#dbe3ee"/>
+      <path d="M18 152 C56 128 84 154 112 138 C136 126 158 144 168 154 L168 200 L18 200 Z" fill="#c9d3e0" opacity=".5"/>
+      <ellipse cx="86" cy="128" rx="21" ry="15" fill="#8b98a8"/>
+      <ellipse cx="86" cy="128" rx="21" ry="15" fill="none" stroke="#4a5768" stroke-width="1.4"/>
+      <circle class="flow" cx="86" cy="128" r="30" fill="none" stroke="#0056b3" stroke-width="2"/>
+      <text class="t-s" x="93" y="224" text-anchor="middle">① B-mode 초음파</text>
+
+      <!-- arrow -->
+      <line x1="180" y1="140" x2="218" y2="140" stroke="#a9781a" stroke-width="2.4" marker-end="url(#s5ar)"/>
+      <text class="t-s" x="199" y="126" text-anchor="middle" style="fill:#a9781a">인코더</text>
+
+      <!-- (B) embedding vector -->
+      <g fill="#0056b3">
+        <rect class="bar" x="238" y="166" width="11" height="30" rx="3" style="animation-delay:-.00s"/>
+        <rect class="bar" x="258" y="142" width="11" height="54" rx="3" style="animation-delay:-.05s"/>
+        <rect class="bar" x="278" y="108" width="11" height="88" rx="3" style="animation-delay:-.10s"/>
+        <rect class="bar" x="298" y="130" width="11" height="66" rx="3" style="animation-delay:-.15s"/>
+        <rect class="bar" x="318" y="156" width="11" height="40" rx="3" style="animation-delay:-.20s"/>
+        <rect class="bar" x="338" y="94"  width="11" height="102" rx="3" style="animation-delay:-.25s"/>
+        <rect class="bar" x="358" y="138" width="11" height="58" rx="3" style="animation-delay:-.30s"/>
+        <rect class="bar" x="378" y="112" width="11" height="84" rx="3" style="animation-delay:-.35s"/>
+        <rect class="bar" x="398" y="148" width="11" height="48" rx="3" style="animation-delay:-.40s"/>
+        <rect class="bar" x="418" y="122" width="11" height="74" rx="3" style="animation-delay:-.45s"/>
+      </g>
+      <line x1="232" y1="196" x2="436" y2="196" stroke="#dbe3ee" stroke-width="2"/>
+      <text class="t-s" x="334" y="224" text-anchor="middle">② 숫자의 나열(임베딩 벡터)</text>
+
+      <!-- arrow -->
+      <line x1="456" y1="140" x2="494" y2="140" stroke="#a9781a" stroke-width="2.4" marker-end="url(#s5ar)"/>
+      <text class="t-s" x="475" y="126" text-anchor="middle" style="fill:#a9781a">L2 정규화</text>
+
+      <!-- (C) unit hypersphere -->
+      <circle cx="770" cy="140" r="105" fill="#f9fbfe" stroke="#dbe3ee" stroke-width="2"/>
+      <line x1="770" y1="140" x2="712" y2="58" stroke="#a9781a" stroke-width="1.6" stroke-dasharray="5 5" opacity=".85"/>
+      <text class="t-s" x="792" y="96" style="fill:#a9781a">cosine</text>
+      <g class="clu" style="fill:#c9403a">
+        <circle cx="710" cy="54" r="6"/><circle cx="700" cy="66" r="6"/><circle cx="720" cy="66" r="6"/>
+        <circle cx="706" cy="46" r="6"/><circle cx="718" cy="48" r="6"/>
+      </g>
+      <g class="clu" style="fill:#2f6fb3">
+        <circle cx="830" cy="226" r="6"/><circle cx="842" cy="218" r="6"/><circle cx="820" cy="218" r="6"/>
+        <circle cx="834" cy="236" r="6"/><circle cx="822" cy="238" r="6"/>
+      </g>
+      <text class="t-b" x="700" y="34" text-anchor="middle" style="fill:#c9403a">HCC</text>
+      <text class="t-b" x="844" y="264" text-anchor="middle" style="fill:#2f6fb3">혈관종</text>
+      <circle cx="770" cy="140" r="3.5" fill="#5b6b7d"/>
+      <circle class="qdot" cx="770" cy="140" r="9" fill="#a9781a" stroke="#fff" stroke-width="2.5" style="--dx:-58px;--dy:-82px"/>
+      <text class="t-s" x="770" y="290" text-anchor="middle">③ 초구면 위의 점 (‖z‖ = 1)</text>
+    </svg>
+    <p class="footnote" style="text-align:center;">영상은 인코더를 거쳐 <b>숫자의 나열(벡터)</b>이 되고, <b>정규화하면 초구면 위 한 점</b>이 된다. 비슷한 병변일수록 <b>각도(cosine)가 작다</b>. <span class="muted">(▲ 반복 재생)</span></p>
   </div>
   <div class="foot"><span>임베딩 ①</span><span>5 / 17</span></div>
 </section>
@@ -211,8 +311,46 @@
   <div class="wrap">
     <div class="eyebrow">딥러닝 기초 ②</div>
     <h2 class="stitle">prototype 계산 → cosine score · Δscore</h2>
-    <img class="bigfig" src="figures/fig_score_calc.png" alt="cosine score computation" style="max-height:62vh; object-fit:contain;">
-    <p class="footnote" style="text-align:center;">클래스 임베딩의 <b>평균 = prototype</b>. 병변 z와 두 prototype의 각도로 <b class="hcc">HCC cosine</b>·<b class="hem">혈관종 cosine</b>을, 그 차이로 <b class="gold">Δscore</b>를 구한다.</p>
+    <svg class="anim" id="s6fig" viewBox="0 0 1040 340" preserveAspectRatio="xMidYMid meet" style="max-height:58vh;">
+      <defs>
+        <marker id="s6ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="#5b6b7d"/>
+        </marker>
+      </defs>
+      <circle cx="250" cy="170" r="125" fill="#f9fbfe" stroke="#dbe3ee" stroke-width="2"/>
+      <path id="s6arc" d="M250 170 L159.6 94.2 A118 118 0 0 0 239.7 52.4 Z" fill="#a9781a" opacity=".12"/>
+      <line x1="250" y1="170" x2="159.6" y2="94.2" stroke="#2f6fb3" stroke-width="3"/>
+      <line x1="250" y1="170" x2="325.8" y2="79.6" stroke="#c9403a" stroke-width="3"/>
+      <line id="s6zline" x1="250" y1="170" x2="239.7" y2="52.4" stroke="#a9781a" stroke-width="2.4" stroke-dasharray="7 5"/>
+      <circle cx="159.6" cy="94.2" r="6" fill="#2f6fb3"/>
+      <circle cx="325.8" cy="79.6" r="6" fill="#c9403a"/>
+      <circle id="s6zdot" cx="239.7" cy="52.4" r="8" fill="#a9781a" stroke="#fff" stroke-width="2.5"/>
+      <circle cx="250" cy="170" r="3.5" fill="#5b6b7d"/>
+      <text class="t-b" x="146" y="72" text-anchor="middle" style="fill:#2f6fb3">혈관종 prototype</text>
+      <text class="t-b" x="352" y="64" text-anchor="middle" style="fill:#c9403a">HCC prototype</text>
+      <text class="t-m" id="s6theta" x="250" y="326" text-anchor="middle">θ = 95°</text>
+
+      <text class="t-b" x="610" y="58">cosine 기반 지표</text>
+      <text class="t-b" x="596" y="96" text-anchor="end" style="fill:#c9403a">HCC cosine</text>
+      <rect x="610" y="78" width="300" height="26" rx="13" fill="#eef3f9"/>
+      <rect id="s6barH" x="610" y="78" width="240" height="26" rx="13" fill="#c9403a"/>
+      <text class="t-m" id="s6valH" x="922" y="97" style="fill:#c9403a">0.819</text>
+
+      <text class="t-b" x="596" y="161" text-anchor="end" style="fill:#2f6fb3">혈관종 cosine</text>
+      <rect x="610" y="143" width="300" height="26" rx="13" fill="#eef3f9"/>
+      <rect id="s6barV" x="610" y="143" width="240" height="26" rx="13" fill="#2f6fb3"/>
+      <text class="t-m" id="s6valV" x="922" y="162" style="fill:#2f6fb3">0.819</text>
+
+      <text class="t-b" x="596" y="226" text-anchor="end" style="fill:#a9781a">Δscore = ① − ②</text>
+      <rect x="610" y="208" width="300" height="26" rx="13" fill="#eef3f9"/>
+      <line x1="760" y1="204" x2="760" y2="238" stroke="#dbe3ee" stroke-width="2"/>
+      <rect id="s6barD" x="760" y="208" width="0" height="26" rx="6" fill="#c9403a"/>
+      <text class="t-m" id="s6valD" x="922" y="227" style="fill:#a9781a">+0.000</text>
+
+      <text class="t-s" x="760" y="292" text-anchor="middle">z가 HCC prototype 쪽으로 갈수록 HCC cosine ↑ · Δscore ↑</text>
+      <text class="t-s" x="760" y="316" text-anchor="middle">prototype = 각 클래스 임베딩의 평균 (훈련 세트에서만 계산)</text>
+    </svg>
+    <p class="footnote" style="text-align:center;">클래스 임베딩의 <b>평균 = prototype</b>. 병변 z와 두 prototype의 각도로 <b class="hcc">HCC cosine</b>·<b class="hem">혈관종 cosine</b>을, 그 차이로 <b class="gold">Δscore</b>를 구한다. <span class="muted">(▲ 벡터가 왕복)</span></p>
   </div>
   <div class="foot"><span>임베딩 ②</span><span>6 / 17</span></div>
 </section>
@@ -270,8 +408,39 @@
       <div class="card" style="border-color:rgba(169,120,26,.5);"><span class="chip gold">CE + SupCon</span><p class="muted" style="font-size:.42em; margin:.35em 0 0;">임베딩 응집·분리</p></div>
       <div class="card"><span class="chip">NNCLR 2단계</span><p class="muted" style="font-size:.42em; margin:.35em 0 0;">SSL 사전학습 검증</p></div>
     </div>
-    <img class="bigfig" src="figures/fig_supcon_loss.png" alt="SupCon loss" style="max-height:26vh; object-fit:contain; margin-top:.5em;">
-    <p class="footnote">384×384 · AdamW · Cosine Annealing. 임계값은 <b>검증 세트에서만</b> Youden's J → 테스트 고정. 통계: DeLong [15] · 영상 단위 95% CI · 대응 t/Wilcoxon/Pitman-Morgan.</p>
+    <svg class="anim" id="s9fig" viewBox="0 0 1040 232" preserveAspectRatio="xMidYMid meet" style="max-height:42vh; margin-top:.5em;">
+      <g>
+        <rect x="4" y="6" width="336" height="220" rx="12" fill="#f9fbfe" stroke="#dbe3ee"/>
+        <text class="t-b" x="172" y="30" text-anchor="middle">CE only</text>
+        <text class="t-s" x="26" y="62" style="fill:#c9403a">HCC</text>
+        <text class="t-s" x="334" y="158" text-anchor="end" style="fill:#2f6fb3">혈관종</text>
+        <g id="s9g1"></g>
+        <rect x="62" y="176" width="228" height="12" rx="6" fill="#eef3f9"/>
+        <rect x="62" y="176" width="62" height="12" rx="6" fill="#c9403a"/>
+        <text class="t-s" x="172" y="210" text-anchor="middle">군집이 넓게 퍼짐 (compactness 낮음)</text>
+      </g>
+      <g>
+        <rect x="352" y="6" width="336" height="220" rx="12" fill="#fffaf0" stroke="#a9781a"/>
+        <text class="t-b" x="520" y="30" text-anchor="middle" style="fill:#a9781a">CE + SupCon</text>
+        <text class="t-s" x="374" y="62" style="fill:#c9403a">HCC</text>
+        <text class="t-s" x="682" y="158" text-anchor="end" style="fill:#2f6fb3">혈관종</text>
+        <g id="s9g2"></g>
+        <rect x="410" y="176" width="228" height="12" rx="6" fill="#eef3f9"/>
+        <rect x="410" y="176" width="204" height="12" rx="6" fill="#a9781a"/>
+        <text class="t-s" x="520" y="210" text-anchor="middle">같은 클래스가 단단하게 모임 (compactness 높음)</text>
+      </g>
+      <g>
+        <rect x="700" y="6" width="336" height="220" rx="12" fill="#f9fbfe" stroke="#dbe3ee"/>
+        <text class="t-b" x="868" y="30" text-anchor="middle">NNCLR 2단계</text>
+        <text class="t-s" x="722" y="62" style="fill:#c9403a">HCC</text>
+        <text class="t-s" x="1030" y="158" text-anchor="end" style="fill:#2f6fb3">혈관종</text>
+        <g id="s9g3"></g>
+        <rect x="758" y="176" width="228" height="12" rx="6" fill="#eef3f9"/>
+        <rect x="758" y="176" width="132" height="12" rx="6" fill="#c9403a"/>
+        <text class="t-s" x="868" y="210" text-anchor="middle">중간 정도 · 성능 이득 없음</text>
+      </g>
+    </svg>
+    <p class="footnote">384×384 · AdamW · Cosine Annealing. 임계값은 <b>검증 세트에서만</b> Youden's J → 테스트 고정. 통계: DeLong [15] · 영상 단위 95% CI · 대응 t/Wilcoxon/Pitman-Morgan. <span class="muted">(▲ 점이 흩날릴수록 군집이 불안정)</span></p>
   </div>
   <div class="foot"><span>방법 ②</span><span>9 / 17</span></div>
 </section>
@@ -280,9 +449,62 @@
 <section>
   <div class="wrap">
     <div class="eyebrow">방법 ② · SupCon 원리</div>
-    <h2 class="stitle">batch 4로 보는 SupCon loss vs CE loss</h2>
-    <img class="bigfig" src="figures/fig_supcon_explain.png" alt="SupCon vs CE" style="max-height:64vh; object-fit:contain;">
-    <p class="footnote" style="text-align:center;">같은 클래스(H1·H2 · V1·V2)는 임베딩에서 <b>가깝게(pull)</b>, 다른 클래스는 <b>멀게(push)</b>. 분류 헤드의 <b>CE</b>는 각 케이스의 <b>정답 클래스 확률</b>을 높인다.</p>
+    <h2 class="stitle">SupCon은 점을 움직이고, CE는 경계만 움직인다 (batch 4)</h2>
+    <svg class="anim" id="s10fig" viewBox="0 0 1040 320" preserveAspectRatio="xMidYMid meet" style="max-height:56vh;">
+      <defs>
+        <clipPath id="s10clipA"><rect x="14" y="16" width="498" height="288" rx="14"/></clipPath>
+        <clipPath id="s10clipB"><rect x="528" y="16" width="498" height="288" rx="14"/></clipPath>
+      </defs>
+
+      <!-- panel A : CE + SupCon -->
+      <rect x="14" y="16" width="498" height="288" rx="14" fill="#fffaf0" stroke="#a9781a"/>
+      <g clip-path="url(#s10clipA)">
+        <circle cx="149" cy="179" r="34" fill="none" stroke="#c9403a" stroke-width="1.6" stroke-dasharray="6 5" opacity=".7"/>
+        <circle cx="372" cy="189" r="36" fill="none" stroke="#2f6fb3" stroke-width="1.6" stroke-dasharray="6 5" opacity=".7"/>
+        <g class="mv" style="--dx:-48px;--dy:26px">
+          <circle cx="200" cy="140" r="10" fill="#c9403a"/>
+          <text class="t-s" x="216" y="145" style="fill:#c9403a">H1</text>
+        </g>
+        <g class="mv" style="--dx:-4px;--dy:-23px">
+          <circle cx="150" cy="215" r="10" fill="#c9403a"/>
+          <text class="t-s" x="166" y="220" style="fill:#c9403a">H2</text>
+        </g>
+        <g class="mv" style="--dx:111px;--dy:11px">
+          <circle cx="255" cy="165" r="10" fill="#2f6fb3"/>
+          <text class="t-s" x="271" y="170" style="fill:#2f6fb3">V1</text>
+        </g>
+        <g class="mv" style="--dx:43px;--dy:-33px">
+          <circle cx="335" cy="235" r="10" fill="#2f6fb3"/>
+          <text class="t-s" x="351" y="240" style="fill:#2f6fb3">V2</text>
+        </g>
+      </g>
+      <text class="t-b" x="263" y="46" text-anchor="middle" style="fill:#a9781a">CE + SupCon</text>
+      <text class="t-s" x="104" y="182" text-anchor="end" style="fill:#c9403a">HCC 군집</text>
+      <text class="t-s" x="416" y="192" style="fill:#2f6fb3">혈관종 군집</text>
+      <text class="t-s" x="263" y="290" text-anchor="middle">pull: 같은 클래스 / push: 다른 클래스</text>
+
+      <!-- panel B : CE only -->
+      <rect x="528" y="16" width="498" height="288" rx="14" fill="#f9fbfe" stroke="#dbe3ee"/>
+      <g clip-path="url(#s10clipB)">
+        <g class="bdry">
+          <rect x="300" y="16" width="477" height="288" fill="#2f6fb3" opacity=".05"/>
+          <rect x="777" y="16" width="600" height="288" fill="#c9403a" opacity=".05"/>
+          <line x1="777" y1="16" x2="777" y2="304" stroke="#0056b3" stroke-width="2.5" stroke-dasharray="8 6"/>
+        </g>
+      </g>
+      <circle cx="714" cy="140" r="10" fill="#c9403a"/>
+      <text class="t-s" x="714" y="124" text-anchor="middle" style="fill:#c9403a">H1</text>
+      <circle cx="664" cy="215" r="10" fill="#c9403a"/>
+      <text class="t-s" x="664" y="199" text-anchor="middle" style="fill:#c9403a">H2</text>
+      <circle cx="769" cy="165" r="10" fill="#2f6fb3"/>
+      <text class="t-s" x="769" y="149" text-anchor="middle" style="fill:#2f6fb3">V1</text>
+      <circle cx="849" cy="235" r="10" fill="#2f6fb3"/>
+      <text class="t-s" x="849" y="219" text-anchor="middle" style="fill:#2f6fb3">V2</text>
+      <text class="t-b" x="777" y="46" text-anchor="middle" style="fill:#0056b3">CE only</text>
+      <rect x="612" y="276" width="330" height="26" rx="6" fill="#ffffff" opacity=".92"/>
+      <text class="t-s" x="777" y="290" text-anchor="middle">임베딩은 그대로 · 경계만 이동 (닮음 정보 없음)</text>
+    </svg>
+    <p class="footnote" style="text-align:center;">같은 클래스(H1·H2 · V1·V2)는 임베딩에서 <b>가깝게(pull)</b>, 다른 클래스는 <b>멀게(push)</b>. 분류 헤드의 <b>CE</b>는 각 케이스의 <b>정답 클래스 확률</b>을 높인다. <span class="muted">(▲ 좌: 점이 이동 / 우: 경계만 이동)</span></p>
   </div>
   <div class="foot"><span>방법 ②</span><span>10 / 17</span></div>
 </section>
@@ -291,25 +513,164 @@
 <section>
   <div class="wrap">
     <div class="eyebrow">방법 ② · SupCon 구체 계산</div>
-    <h2 class="stitle">sim<sub>ij</sub> = z<sub>i</sub>·z<sub>j</sub>/τ 로 본 SupCon (batch = 4)</h2>
-    <img class="bigfig" src="figures/fig_supcon_calc.png" alt="SupCon 계산" style="max-height:66vh; object-fit:contain;">
-    <p class="footnote" style="text-align:center;">anchor마다 <b>positive는 분자</b>, <b>자기를 제외한 전체는 분모</b>. batch=4면 anchor 4개의 loss 평균이 SupCon loss가 된다.</p>
+    <h2 class="stitle">정렬되면 SupCon loss가 0으로 떨어진다 (batch = 4)</h2>
+    <svg class="anim" id="s11fig" viewBox="0 0 1040 340" preserveAspectRatio="xMidYMid meet" style="max-height:58vh;">
+      <!-- left : embedding geometry -->
+      <circle cx="250" cy="175" r="125" fill="#f9fbfe" stroke="#dbe3ee" stroke-width="2"/>
+      <line id="s11lhh" x1="207.2" y1="57.5" x2="358.3" y2="112.5" stroke="#c9403a" stroke-width="3"/>
+      <line id="s11lhv1" x1="207.2" y1="57.5" x2="292.8" y2="57.5" stroke="#2f6fb3" stroke-width="1.8" stroke-dasharray="5 5"/>
+      <line id="s11lhv2" x1="207.2" y1="57.5" x2="367.5" y2="217.8" stroke="#2f6fb3" stroke-width="1.8" stroke-dasharray="5 5"/>
+      <g id="s11gh1" transform="translate(207.2,57.5)">
+        <circle r="12" fill="#c9403a" stroke="#a9781a" stroke-width="3"/>
+        <text class="t-s" x="-26" y="5" text-anchor="end" style="fill:#c9403a">H1</text>
+      </g>
+      <g id="s11gh2" transform="translate(358.3,112.5)">
+        <circle r="10" fill="#c9403a"/>
+        <text class="t-s" x="0" y="-22" text-anchor="middle" style="fill:#c9403a">H2</text>
+      </g>
+      <g id="s11ghv1" transform="translate(292.8,57.5)">
+        <circle r="10" fill="#2f6fb3"/>
+        <text class="t-s" x="0" y="-22" text-anchor="middle" style="fill:#2f6fb3">V1</text>
+      </g>
+      <g id="s11ghv2" transform="translate(367.5,217.8)">
+        <circle r="10" fill="#2f6fb3"/>
+        <text class="t-s" x="0" y="-22" text-anchor="middle" style="fill:#2f6fb3">V2</text>
+      </g>
+      <text class="t-m" id="s11phase" x="24" y="28">정렬 전</text>
+      <text class="t-s" x="250" y="326" text-anchor="middle">H = HCC · V = 혈관종 · 노란 테 = anchor</text>
+
+      <!-- right : loss table -->
+      <text class="t-b" x="470" y="52">anchor H1 기준 SupCon loss (τ = 0.1)</text>
+      <line x1="470" y1="66" x2="1010" y2="66" stroke="#dbe3ee"/>
+      <text class="t-s" x="470" y="90">j</text>
+      <text class="t-s" x="660" y="90" text-anchor="middle">sim = z₁·z_j</text>
+      <text class="t-s" x="800" y="90" text-anchor="middle">exp(sim / τ)</text>
+      <text class="t-s" x="950" y="90" text-anchor="middle">weight</text>
+      <line x1="470" y1="100" x2="1010" y2="100" stroke="#dbe3ee"/>
+
+      <text class="t-b" x="470" y="128" style="fill:#c9403a">H2  (positive)</text>
+      <text class="t-m" id="s11r1s" x="660" y="128" text-anchor="middle">0.174</text>
+      <text class="t-m" id="s11r1e" x="800" y="128" text-anchor="middle">5.68</text>
+      <text class="t-m" id="s11r1w" x="950" y="128" text-anchor="middle">0.003</text>
+
+      <text class="t-b" x="470" y="162" style="fill:#2f6fb3">V1  (negative)</text>
+      <text class="t-m" id="s11r2s" x="660" y="162" text-anchor="middle">0.766</text>
+      <text class="t-m" id="s11r2e" x="800" y="162" text-anchor="middle">2124</text>
+      <text class="t-m" id="s11r2w" x="950" y="162" text-anchor="middle">0.997</text>
+
+      <text class="t-b" x="470" y="196" style="fill:#2f6fb3">V2  (negative)</text>
+      <text class="t-m" id="s11r3s" x="660" y="196" text-anchor="middle">-0.643</text>
+      <text class="t-m" id="s11r3e" x="800" y="196" text-anchor="middle">1.61e-3</text>
+      <text class="t-m" id="s11r3w" x="950" y="196" text-anchor="middle">0.000</text>
+
+      <line x1="470" y1="212" x2="1010" y2="212" stroke="#dbe3ee"/>
+      <text class="t-s" id="s11rsum" x="470" y="236">Σ weight = 1.000</text>
+
+      <text class="t-b" x="470" y="274">L_supcon(H1) =</text>
+      <text class="t-big" id="s11L1" x="688" y="278" style="fill:#c9403a">5.93</text>
+
+      <text class="t-b" x="470" y="312">batch(4) 평균 =</text>
+      <text class="t-big" id="s11Lm" x="688" y="316" style="fill:#0056b3">6.72</text>
+      <rect x="790" y="300" width="220" height="16" rx="8" fill="#eef3f9"/>
+      <rect id="s11bar" x="790" y="300" width="211" height="16" rx="8" fill="#0056b3"/>
+      <text class="t-s" x="790" y="332">0</text>
+      <text class="t-s" x="1010" y="332" text-anchor="end">6.7</text>
+    </svg>
+    <p class="footnote" style="text-align:center;">anchor마다 <b>positive는 분자</b>, <b>자기를 제외한 전체는 분모</b>. 정렬 전에는 negative가 weight를 독차지해 loss가 크고, 정렬되면 positive가 1.000을 차지해 <b>loss → 0</b>. batch=4면 anchor 4개의 loss 평균이 SupCon loss가 된다. <span class="muted">(▲ loss 감소)</span></p>
   </div>
   <div class="foot"><span>방법 ②</span><span>11 / 17</span></div>
 </section>
 
-<!-- ============ 10. THREE OUTPUTS (figure) ============ -->
+<!-- ============ 12. THREE OUTPUTS ============ -->
 <section>
   <div class="wrap">
     <div class="eyebrow">방법 ③ · 세 가지 출력</div>
     <h2 class="stitle">하나의 병변에서 세 가지 출력</h2>
-    <img class="bigfig" src="figures/fig_three_outputs.png" alt="three outputs" style="max-height:60vh; object-fit:contain;">
-    <p class="footnote" style="text-align:center;"><b>Confidence</b>(결정 강도) · <b>HCC/Hem cosine</b>(전형 소견과의 닮음, mean prototype) · <b>Δscore</b>(어느 쪽에 더 가까운가). prototype은 <b>훈련 세트에서만</b> 산출.</p>
+    <svg class="anim" id="s12fig" viewBox="0 0 1040 272" preserveAspectRatio="xMidYMid meet" style="max-height:58vh;">
+      <defs>
+        <marker id="s12ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="#5b6b7d"/>
+        </marker>
+      </defs>
+
+      <!-- ① image slot : placeholder stays, the real image slides out of it into ② -->
+      <rect x="30" y="68" width="150" height="150" rx="10" fill="#f4f7fb" stroke="#dbe3ee" stroke-dasharray="6 5"/>
+      <text class="t-b" x="105" y="240" text-anchor="middle">① 이미지</text>
+      <text class="t-s" x="105" y="260" text-anchor="middle">실제 B-mode 영상</text>
+
+      <!-- ② encoder -->
+      <rect id="s12encGlow" x="220" y="60" width="218" height="166" rx="16" fill="#0056b3" opacity=".10"/>
+      <rect x="228" y="68" width="202" height="150" rx="12" fill="#eaf2fb" stroke="#0056b3" stroke-width="2"/>
+      <text class="t-b" x="329" y="240" text-anchor="middle" style="fill:#0056b3">② 인코더</text>
+      <text class="t-s" x="329" y="260" text-anchor="middle">EfficientNetV2B0 + Cross-Attention</text>
+
+      <!-- the real image : drawn after the encoder so it visibly slides INTO it -->
+      <g id="s12imgG">
+        <rect x="30" y="68" width="150" height="150" rx="10" fill="#ffffff" stroke="#0056b3" stroke-width="2"/>
+        <image x="38" y="76" width="134" height="134" preserveAspectRatio="xMidYMid slice" href="figures/ex_hcc_new.jpg"/>
+      </g>
+
+      <!-- ③ embedding : the number vector is born here -->
+      <rect x="478" y="68" width="222" height="150" rx="12" fill="#fffaf0" stroke="#a9781a" stroke-width="2"/>
+      <g id="s12bars" transform="translate(505,198) scale(1,1)" fill="#a9781a">
+        <rect x="0"   y="-34" width="10" height="34" rx="2"/>
+        <rect x="16"  y="-58" width="10" height="58" rx="2"/>
+        <rect x="32"  y="-86" width="10" height="86" rx="2"/>
+        <rect x="48"  y="-62" width="10" height="62" rx="2"/>
+        <rect x="64"  y="-42" width="10" height="42" rx="2"/>
+        <rect x="80"  y="-98" width="10" height="98" rx="2"/>
+        <rect x="96"  y="-56" width="10" height="56" rx="2"/>
+        <rect x="112" y="-80" width="10" height="80" rx="2"/>
+        <rect x="128" y="-46" width="10" height="46" rx="2"/>
+        <rect x="144" y="-70" width="10" height="70" rx="2"/>
+        <rect x="160" y="-52" width="10" height="52" rx="2"/>
+        <rect x="176" y="-90" width="10" height="90" rx="2"/>
+      </g>
+      <text class="t-b" x="589" y="240" text-anchor="middle" style="fill:#a9781a">③ 임베딩</text>
+      <text class="t-s" x="589" y="260" text-anchor="middle">숫자의 나열 (벡터)</text>
+
+      <!-- flow arrows -->
+      <line x1="186" y1="143" x2="224" y2="143" stroke="#5b6b7d" stroke-width="2" marker-end="url(#s12ar)"/>
+      <line x1="432" y1="143" x2="474" y2="143" stroke="#5b6b7d" stroke-width="2" marker-end="url(#s12ar)"/>
+      <line x1="704" y1="143" x2="754" y2="65" stroke="#5b6b7d" stroke-width="1.6" marker-end="url(#s12ar)"/>
+      <line x1="704" y1="143" x2="754" y2="144" stroke="#5b6b7d" stroke-width="1.6" marker-end="url(#s12ar)"/>
+      <line x1="704" y1="143" x2="754" y2="223" stroke="#5b6b7d" stroke-width="1.6" marker-end="url(#s12ar)"/>
+
+      <!-- the vector leaves ③ and becomes a point inside each output -->
+      <circle id="s12pk0" cx="704" cy="143" r="6" fill="#a9781a" opacity="0"/>
+      <circle id="s12pk1" cx="704" cy="143" r="6" fill="#a9781a" opacity="0"/>
+      <circle id="s12pk2" cx="704" cy="143" r="6" fill="#a9781a" opacity="0"/>
+
+      <!-- ④ three outputs -->
+      <text class="t-b" x="885" y="24" text-anchor="middle" style="fill:#0056b3">④ 세 가지 출력</text>
+
+      <rect x="760" y="34" width="250" height="62" rx="12" fill="#fff" stroke="#dbe3ee"/>
+      <rect x="760" y="34" width="6" height="62" rx="3" fill="#0056b3"/>
+      <circle id="s12pt0" cx="792" cy="65" r="9" fill="#0056b3" opacity="1"/>
+      <text class="t-b" x="812" y="59">① Confidence</text>
+      <text class="t-s" x="812" y="81">결정 강도 (softmax)</text>
+      <text class="t-big" id="s12vt0" x="1000" y="75" text-anchor="end" style="fill:#0056b3">0.99</text>
+
+      <rect x="760" y="113" width="250" height="62" rx="12" fill="#fff" stroke="#dbe3ee"/>
+      <rect x="760" y="113" width="6" height="62" rx="3" fill="#c9403a"/>
+      <circle id="s12pt1" cx="792" cy="144" r="9" fill="#c9403a" opacity="1"/>
+      <text class="t-b" x="812" y="138">② HCC cosine</text>
+      <text class="t-s" x="812" y="160">전형 소견과의 닮음</text>
+      <text class="t-big" id="s12vt1" x="1000" y="154" text-anchor="end" style="fill:#c9403a">0.97</text>
+
+      <rect x="760" y="192" width="250" height="62" rx="12" fill="#fff" stroke="#dbe3ee"/>
+      <rect x="760" y="192" width="6" height="62" rx="3" fill="#a9781a"/>
+      <circle id="s12pt2" cx="792" cy="223" r="9" fill="#a9781a" opacity="1"/>
+      <text class="t-b" x="812" y="217">③ Δscore</text>
+      <text class="t-s" x="812" y="239">HCC − 혈관종</text>
+      <text class="t-big" id="s12vt2" x="1000" y="233" text-anchor="end" style="fill:#a9781a">+0.87</text>
+    </svg>
+    <p class="footnote" style="text-align:center;">실제 영상이 <b>인코더</b>로 들어가 <b>숫자 벡터</b>가 되고, 그 벡터가 <b>세 지표</b>로 분기해 각 지표의 <b>점(point)</b>이 된다. <b>Confidence</b>(결정 강도) · <b>HCC cosine</b>(전형 소견과의 닮음) · <b>Δscore</b>(어느 쪽에 가까운가). prototype은 <b>훈련 세트에서만</b> 산출. <span class="muted">(▲ 이미지가 흘러 들어가 점 3개로)</span></p>
   </div>
   <div class="foot"><span>방법 ③</span><span>12 / 17</span></div>
 </section>
 
-<!-- ============ 11. RESULT 1 ============ -->
+<!-- ============ 13. RESULT 1 ============ -->
 <section>
   <div class="wrap">
     <div class="eyebrow">결과 ① 주력 모델 성능</div>
@@ -339,7 +700,7 @@
   <div class="foot"><span>결과 ①</span><span>13 / 17</span></div>
 </section>
 
-<!-- ============ 12. RESULT 2 ============ -->
+<!-- ============ 14. RESULT 2 ============ -->
 <section>
   <div class="wrap">
     <div class="eyebrow">결과 ② 이중 출력 비교</div>
@@ -363,7 +724,7 @@
   <div class="foot"><span>결과 ②</span><span>14 / 17</span></div>
 </section>
 
-<!-- ============ 13. RESULT 3: SupCon before/after ============ -->
+<!-- ============ 15. RESULT 3: SupCon before/after ============ -->
 <section>
   <div class="wrap">
     <div class="eyebrow gold">결과 ③ · SupCon 전후 분석</div>
@@ -385,7 +746,7 @@
   <div class="foot"><span>결과 ③</span><span>15 / 17</span></div>
 </section>
 
-<!-- ============ 14. CONCLUSION ============ -->
+<!-- ============ 16. CONCLUSION ============ -->
 <section>
   <div class="wrap">
     <div class="eyebrow">고찰 · 한계 · 결론</div>
@@ -416,7 +777,7 @@
   <div class="foot"><span>결론</span><span>16 / 17</span></div>
 </section>
 
-<!-- ============ 15. THANK YOU ============ -->
+<!-- ============ 17. THANK YOU ============ -->
 <section class="cover">
   <div class="wrap"><div class="cover-inner">
     <div class="eyebrow gold">Thank you</div>
@@ -438,6 +799,262 @@
     pdfSeparateFragments:false,
     keyboard:{27:function(){return false;}}
   });
+</script>
+<script>
+/* ===================================================================
+   Inline, dependency-free animation drivers (offline-safe).
+   Everything here is plain DOM + SVG attribute updates, no libraries.
+   - slide 6 : prototype geometry -> live cosine / delta
+   - slide 9 : scatter clusters (compactness of CE / CE+SupCon / NNCLR)
+   - slide 11: SupCon loss while the 4-vector batch separates
+   Printing freezes each figure at a representative frame.
+   =================================================================== */
+(function(){
+  "use strict";
+  var root = document.documentElement;
+  function printMode(){ return root.classList.contains('print-pdf'); }
+  var DEG = Math.PI / 180;
+
+  /* ---------------- slide 6 : prototype -> cosine ---------------- */
+  (function(){
+    if(!document.getElementById('s6fig')) return;
+    var cx = 250, cy = 170, R = 118, HC = 50, HE = 140, W = 300, BHW = 150, BXC = 760;
+    var g = function(id){ return document.getElementById(id); };
+    var zl = g('s6zline'), zd = g('s6zdot'), arc = g('s6arc');
+    var bH = g('s6barH'), bV = g('s6barV'), bD = g('s6barD');
+    var vH = g('s6valH'), vV = g('s6valV'), vD = g('s6valD'), th = g('s6theta');
+    function pt(a, r){ return [cx + r * Math.cos(a * DEG), cy - r * Math.sin(a * DEG)]; }
+    function arcPath(a0, a1){
+      var p0 = pt(a0, R), p1 = pt(a1, R);
+      var large = Math.abs(a1 - a0) > 180 ? 1 : 0, sweep = a1 > a0 ? 1 : 0;
+      return 'M' + cx + ' ' + cy + ' L' + p0[0].toFixed(2) + ' ' + p0[1].toFixed(2) +
+             ' A' + R + ' ' + R + ' 0 ' + large + ' ' + sweep + ' ' + p1[0].toFixed(2) + ' ' + p1[1].toFixed(2) + ' Z';
+    }
+    function draw(theta){
+      var p = pt(theta, R);
+      zl.setAttribute('x2', p[0].toFixed(2));
+      zl.setAttribute('y2', p[1].toFixed(2));
+      zd.setAttribute('cx', p[0].toFixed(2));
+      zd.setAttribute('cy', p[1].toFixed(2));
+      arc.setAttribute('d', arcPath(HE, theta));
+      var cH = Math.cos((theta - HC) * DEG), cV = Math.cos((theta - HE) * DEG), d = cH - cV;
+      bH.setAttribute('width', (cH * W).toFixed(1));
+      bV.setAttribute('width', (cV * W).toFixed(1));
+      if(d >= 0){ bD.setAttribute('x', BXC); bD.setAttribute('fill', '#c9403a'); }
+      else { bD.setAttribute('x', (BXC + d * BHW).toFixed(1)); bD.setAttribute('fill', '#2f6fb3'); }
+      bD.setAttribute('width', (Math.abs(d) * BHW).toFixed(1));
+      vH.textContent = cH.toFixed(3);
+      vV.textContent = cV.toFixed(3);
+      vD.textContent = (d >= 0 ? '+' : '') + d.toFixed(3);
+      th.textContent = 'θ = ' + theta.toFixed(0) + '°';
+    }
+    var stop = false, t0 = null;
+    function frame(now){
+      if(stop) return;
+      if(t0 === null) t0 = now;
+      var t = ((now - t0) / 7000) % 1;
+      draw(HE + (HC - HE) * (0.5 - 0.5 * Math.cos(2 * Math.PI * t)));
+      requestAnimationFrame(frame);
+    }
+    if(printMode()){ draw(72); }
+    else { requestAnimationFrame(frame); }
+    window.addEventListener('beforeprint', function(){ stop = true; draw(72); });
+  })();
+
+  /* ---------------- slide 9 : cluster scatter ---------------- */
+  (function(){
+    var fig = document.getElementById('s9fig');
+    if(!fig) return;
+    var NS = 'http://www.w3.org/2000/svg';
+    var CFG = [
+      { g:'s9g1', hx:120, hy:88, vx:224, vy:126, spread:28, seed:11 },
+      { g:'s9g2', hx:468, hy:88, vx:572, vy:126, spread:11, seed:22 },
+      { g:'s9g3', hx:816, hy:88, vx:920, vy:126, spread:20, seed:33 }
+    ];
+    function rng(seed){
+      var s = seed >>> 0;
+      return function(){ s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    }
+    function gauss(r){
+      var u = 0, v = 0;
+      while(u === 0) u = r();
+      while(v === 0) v = r();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
+    CFG.forEach(function(c){
+      var host = document.getElementById(c.g);
+      if(!host) return;
+      var r = rng(c.seed);
+      var make = function(ccx, ccy, color){
+        for(var i = 0; i < 14; i++){
+          var dot = document.createElementNS(NS, 'circle');
+          var x = ccx + gauss(r) * c.spread * 0.75;
+          var y = ccy + gauss(r) * c.spread * 0.55;
+          dot.setAttribute('cx', x.toFixed(1));
+          dot.setAttribute('cy', y.toFixed(1));
+          dot.setAttribute('r', '5');
+          dot.setAttribute('fill', color);
+          dot.setAttribute('opacity', '.85');
+          dot.setAttribute('class', 'dd');
+          var ang = r() * 2 * Math.PI, amp = c.spread * 0.5 * (0.5 + r() * 0.7);
+          dot.style.setProperty('--wx', (Math.cos(ang) * amp).toFixed(1) + 'px');
+          dot.style.setProperty('--wy', (Math.sin(ang) * amp).toFixed(1) + 'px');
+          dot.style.animationDuration = (4.2 + r() * 2.4).toFixed(2) + 's';
+          dot.style.animationDelay = (-r() * 5).toFixed(2) + 's';
+          host.appendChild(dot);
+        }
+      };
+      make(c.hx, c.hy, '#c9403a');
+      make(c.vx, c.vy, '#2f6fb3');
+      var rr = (c.spread * 1.45).toFixed(0);
+      var ringH = document.createElementNS(NS, 'circle');
+      ringH.setAttribute('cx', c.hx); ringH.setAttribute('cy', c.hy);
+      ringH.setAttribute('r', rr);
+      ringH.setAttribute('fill', 'none'); ringH.setAttribute('stroke', '#c9403a');
+      ringH.setAttribute('stroke-width', '1.4'); ringH.setAttribute('stroke-dasharray', '5 5');
+      ringH.setAttribute('opacity', '.45'); ringH.setAttribute('class', 'clu9');
+      host.insertBefore(ringH, host.firstChild);
+      var ringV = document.createElementNS(NS, 'circle');
+      ringV.setAttribute('cx', c.vx); ringV.setAttribute('cy', c.vy);
+      ringV.setAttribute('r', rr);
+      ringV.setAttribute('fill', 'none'); ringV.setAttribute('stroke', '#2f6fb3');
+      ringV.setAttribute('stroke-width', '1.4'); ringV.setAttribute('stroke-dasharray', '5 5');
+      ringV.setAttribute('opacity', '.45'); ringV.setAttribute('class', 'clu9');
+      host.insertBefore(ringV, host.firstChild);
+    });
+  })();
+
+  /* ---------------- slide 11 : SupCon loss ---------------- */
+  (function(){
+    if(!document.getElementById('s11fig')) return;
+    var cx = 250, cy = 175, R = 125, TAU = 0.1;
+    var MIX = {h1:110, h2:30, v1:70, v2:-20};
+    var SEP = {h1:110, h2:80, v1:10, v2:-20};
+    var KEYS = ['h1','h2','v1','v2'];
+    var POS  = {h1:['h2'], h2:['h1'], v1:['v2'], v2:['v1']};
+    var g = function(id){ return document.getElementById(id); };
+    var nodes = {h1:g('s11gh1'), h2:g('s11gh2'), v1:g('s11ghv1'), v2:g('s11ghv2')};
+    var lines = {h2:g('s11lhh'), v1:g('s11lhv1'), v2:g('s11lhv2')};
+    var rows = [['s11r1s','s11r1e','s11r1w'], ['s11r2s','s11r2e','s11r2w'], ['s11r3s','s11r3e','s11r3w']];
+    var elL1 = g('s11L1'), elLm = g('s11Lm'), elBar = g('s11bar'), elSum = g('s11rsum'), elPhase = g('s11phase');
+    function fmtE(v){
+      if(v >= 100) return v.toFixed(0);
+      if(v >= 1) return v.toFixed(2);
+      return v.toExponential(2);
+    }
+    function px(a){ return cx + R * Math.cos(a * DEG); }
+    function py(a){ return cy - R * Math.sin(a * DEG); }
+    function draw(s){
+      var ang = {};
+      KEYS.forEach(function(k){ ang[k] = MIX[k] + s * (SEP[k] - MIX[k]); });
+      KEYS.forEach(function(k){
+        nodes[k].setAttribute('transform', 'translate(' + px(ang[k]).toFixed(1) + ',' + py(ang[k]).toFixed(1) + ')');
+      });
+      ['h2','v1','v2'].forEach(function(k){
+        lines[k].setAttribute('x1', px(ang.h1).toFixed(1));
+        lines[k].setAttribute('y1', py(ang.h1).toFixed(1));
+        lines[k].setAttribute('x2', px(ang[k]).toFixed(1));
+        lines[k].setAttribute('y2', py(ang[k]).toFixed(1));
+      });
+      function lossFor(a){
+        var num = 0, den = 0;
+        KEYS.forEach(function(k){
+          if(k === a) return;
+          var e = Math.exp(Math.cos((ang[a] - ang[k]) * DEG) / TAU);
+          den += e;
+          if(POS[a].indexOf(k) >= 0) num += e;
+        });
+        return { L: -Math.log(num / den), num: num, den: den, geom: Math.pow(num * den, 0.5) };
+      }
+      var all = KEYS.map(lossFor);
+      var mean = all.reduce(function(s2, o){ return s2 + o.L; }, 0) / KEYS.length;
+      var l1 = lossFor('h1');
+      rows.forEach(function(row, i){
+        var k = ['h2','v1','v2'][i];
+        var sim = Math.cos((ang.h1 - ang[k]) * DEG);
+        var e = Math.exp(sim / TAU);
+        var w = e / l1.den;
+        g(row[0]).textContent = sim.toFixed(3);
+        g(row[1]).textContent = fmtE(e);
+        g(row[2]).textContent = w.toFixed(3);
+      });
+      elSum.textContent = 'Σ weight = 1.000 · positive가 차지하는 비율이 클수록 loss ↓';
+      elL1.textContent = l1.L.toFixed(2);
+      elLm.textContent = mean.toFixed(2);
+      elBar.setAttribute('width', Math.max(0, Math.min(220, mean / 7 * 220)).toFixed(1));
+      elPhase.textContent = s < 0.15 ? '정렬 전 (섞임)' : (s > 0.85 ? '정렬 후 (분리)' : '정렬 중 …');
+    }
+    var stop = false, t0 = null;
+    function frame(now){
+      if(stop) return;
+      if(t0 === null) t0 = now;
+      var t = ((now - t0) / 8000) % 1;
+      draw(0.5 - 0.5 * Math.cos(2 * Math.PI * t));
+      requestAnimationFrame(frame);
+    }
+    if(printMode()){ draw(1); }
+    else { requestAnimationFrame(frame); }
+    window.addEventListener('beforeprint', function(){ stop = true; draw(1); });
+  })();
+
+  /* ------- slide 12 : image -> encoder -> embedding -> 3 outputs ------- */
+  (function(){
+    if(!document.getElementById('s12fig')) return;
+    var g = function(id){ return document.getElementById(id); };
+    var imgG = g('s12imgG'), enc = g('s12encGlow'), bars = g('s12bars');
+    var pk = [g('s12pk0'), g('s12pk1'), g('s12pk2')];
+    var pt = [g('s12pt0'), g('s12pt1'), g('s12pt2')];
+    var vt = [g('s12vt0'), g('s12vt1'), g('s12vt2')];
+    var CPTS = [65, 144, 223], STARTX = 704, ENDX = 792, MIDY = 143, IMGDX = 227;
+    function seg(a, b, t){ return b <= a ? (t >= b ? 1 : 0) : Math.max(0, Math.min(1, (t - a) / (b - a))); }
+    function ease(x){ return x * x * (3 - 2 * x); }
+    function lerp(a, b, p){ return a + (b - a) * p; }
+    function draw(t){
+      var mv = ease(seg(0.05, 0.26, t));                              /* image slides A -> encoder */
+      var io = seg(0.00, 0.04, t) * (1 - ease(seg(0.28, 0.38, t)));   /* then fades into it */
+      imgG.setAttribute('transform', 'translate(' + (mv * IMGDX).toFixed(1) + ',0)');
+      imgG.setAttribute('opacity', io.toFixed(3));
+      var gl = ease(seg(0.26, 0.36, t)) * (1 - ease(seg(0.42, 0.54, t)));
+      enc.setAttribute('opacity', (0.10 + 0.90 * gl).toFixed(3));      /* encoder pulses */
+      var bs = ease(seg(0.40, 0.54, t)) * (1 - ease(seg(0.92, 1.00, t)));
+      bars.setAttribute('transform', 'translate(505,198) scale(1,' + Math.max(0.002, bs).toFixed(3) + ')');
+      var out = 1 - ease(seg(0.93, 1.00, t));
+      for(var i = 0; i < 3; i++){
+        var s0 = 0.54 + i * 0.07, s1 = 0.72 + i * 0.07;
+        var p = ease(seg(s0, s1, t));                                  /* vector -> output */
+        pk[i].setAttribute('cx', lerp(STARTX, ENDX, p).toFixed(1));
+        pk[i].setAttribute('cy', lerp(MIDY, CPTS[i], p).toFixed(1));
+        pk[i].setAttribute('opacity', ((p > 0 && p < 1) ? out : 0).toFixed(3));
+        var pa = ease(seg(s1 - 0.05, s1 + 0.05, t)) * out;             /* becomes a point */
+        pt[i].setAttribute('r', (9 * pa).toFixed(2));
+        pt[i].setAttribute('opacity', pa.toFixed(3));
+        vt[i].setAttribute('opacity', pa.toFixed(3));
+      }
+    }
+    function drawPrint(){
+      imgG.setAttribute('transform', 'translate(0,0)');
+      imgG.setAttribute('opacity', '1');
+      enc.setAttribute('opacity', '0.5');
+      bars.setAttribute('transform', 'translate(505,198) scale(1,1)');
+      for(var i = 0; i < 3; i++){
+        pk[i].setAttribute('opacity', '0');
+        pt[i].setAttribute('r', '9');
+        pt[i].setAttribute('opacity', '1');
+        vt[i].setAttribute('opacity', '1');
+      }
+    }
+    var stop = false, t0 = null;
+    function frame(now){
+      if(stop) return;
+      if(t0 === null) t0 = now;
+      draw(((now - t0) / 10000) % 1);
+      requestAnimationFrame(frame);
+    }
+    if(printMode()){ drawPrint(); }
+    else { requestAnimationFrame(frame); }
+    window.addEventListener('beforeprint', function(){ stop = true; drawPrint(); });
+  })();
+})();
 </script>
 </body>
 </html>
