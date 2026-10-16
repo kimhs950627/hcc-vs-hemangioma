@@ -10,6 +10,10 @@ Output: hcc_dual_output_talk.html       (self-contained)
 import base64
 import pathlib
 import re
+import sys
+
+DEFAULT_SRC = "slides_src.html"
+DEFAULT_OUT = "hcc_dual_output_talk.html"
 
 MIME = {
     ".png": "image/png",
@@ -39,8 +43,9 @@ def data_uri(path: pathlib.Path) -> str:
 
 def main() -> None:
     base = pathlib.Path(__file__).resolve().parent
-    src = base / "slides_src.html"
-    out = base / "hcc_dual_output_talk.html"
+    argv = sys.argv[1:]
+    src = base / (argv[0] if len(argv) > 0 else DEFAULT_SRC)
+    out = base / (argv[1] if len(argv) > 1 else DEFAULT_OUT)
     html = src.read_text(encoding="utf-8")
     missing = []
 

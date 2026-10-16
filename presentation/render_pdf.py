@@ -11,6 +11,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -62,8 +63,10 @@ def trim_trailing_blank(pdf: pathlib.Path) -> None:
 
 def main() -> None:
     base = pathlib.Path(__file__).resolve().parent
-    html = base / "hcc_dual_output_talk.html"
-    pdf = base / "hcc_dual_output_talk.pdf"
+    argv = sys.argv[1:]
+    stem = argv[0] if argv else "hcc_dual_output_talk"
+    html = base / f"{stem}.html"
+    pdf = base / f"{stem}.pdf"
     profile = tempfile.mkdtemp(prefix="deck_print_")
 
     # 'printpdf' flips the deck into its reveal print layout deterministically
