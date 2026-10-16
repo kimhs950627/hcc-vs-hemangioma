@@ -32,6 +32,7 @@
   ul.clean{margin:0; list-style:none;}
   ul.clean li{position:relative; padding-left:.85em; margin:.42em 0; font-size:.5em; line-height:1.75;}
   ul.clean li::before{content:""; position:absolute; left:0; top:.55em; width:.3em; height:.3em; border-radius:2px; background:var(--navy);}
+  ul.clean.tight li{font-size:.4em; line-height:1.5; margin:.12em 0;}
   .stat-card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:.45em .3em; text-align:center;}
   .stat-num{font-size:.9em; font-weight:900; line-height:1;}
   .stat-lbl{font-size:.32em; color:var(--muted); margin-top:.25em;}
@@ -91,6 +92,8 @@
   #s5fig .clu circle:nth-child(4){animation-delay:-1.2s}
   #s5fig .clu circle:nth-child(5){animation-delay:-1.6s}
   #s5fig .flow{stroke-dasharray:6 7; animation:aDash 1.3s linear infinite;}
+  /* slide 8 */
+  #s8fig .halo8{animation:aPulse 3s ease-in-out infinite;}
   /* slide 9 */
   #s9fig .dd{animation:aWander 5s ease-in-out infinite;}
   #s9fig .clu9{animation:aPulse 4s ease-in-out infinite;}
@@ -127,7 +130,7 @@
   }
   /* ---- freeze every loop at a representative frame when printing ---- */
   @media print{
-    #s5fig .bar,#s5fig .qdot,#s5fig .clu circle,#s5fig .flow,
+    #s5fig .bar,#s5fig .qdot,#s5fig .clu circle,#s5fig .flow,#s8fig .halo8,
     #s9fig .dd,#s9fig .clu9,
     #s10fig .mv,#s10fig .bdry,#s12fig .pk{ animation:none !important; }
     #s5fig .qdot{ transform:translate(-58px,-82px) !important; }
@@ -172,7 +175,7 @@
     </div>
     <p class="cover-author">예수병원 가정의학과 R3 김현수</p>
   </div></div>
-  <div class="foot"><span>HCC 이중 출력 영상표지자</span><span>1 / 17</span></div>
+  <div class="foot"><span>HCC 이중 출력 영상표지자</span><span>1 / 18</span></div>
 </section>
 
 <!-- ============ 2. WHAT IS YOUR DIAGNOSIS? ============ -->
@@ -191,7 +194,7 @@
       <p style="font-size:.62em; color:var(--ink);"><b class="hcc">모두 간암(HCC)</b> — 혈관종처럼 보이지만 실제로는 HCC일 수 있다</p>
     </div>
   </div>
-  <div class="foot"><span>연구 배경 ①</span><span>2 / 17</span></div>
+  <div class="foot"><span>연구 배경 ①</span><span>2 / 18</span></div>
 </section>
 
 <!-- ============ 3. BACKGROUND (x / y numbers) ============ -->
@@ -218,7 +221,7 @@
     <p class="footnote" style="text-align:center;">그래서 실제로는 <b>조영증강 CT/MRI/CEUS</b>를 쓰고, 최근에는 <b>AI</b>를 보조로 쓴다. (meta-analysis: 비조영 US ML 민감도 81.7%·특이도 84.8%)</p>
     <p class="cite">Yang Q, et al. EBioMedicine 2020 [9] · Campello 2023 [18] · Tak 2026 [13]</p>
   </div>
-  <div class="foot"><span>연구 배경 ②</span><span>3 / 17</span></div>
+  <div class="foot"><span>연구 배경 ②</span><span>3 / 18</span></div>
 </section>
 
 <!-- ============ 4. BACKGROUND: spectrum + softmax problem ============ -->
@@ -236,7 +239,7 @@
     </div>
     <p class="cite">Guo 2017 [11] (calibration of modern neural networks)</p>
   </div>
-  <div class="foot"><span>연구 배경 ③</span><span>4 / 17</span></div>
+  <div class="foot"><span>연구 배경 ③</span><span>4 / 18</span></div>
 </section>
 
 <!-- ============ 5. EMBEDDING -> HYPERSPHERE ============ -->
@@ -303,7 +306,7 @@
     </svg>
     <p class="footnote" style="text-align:center;">영상은 인코더를 거쳐 <b>숫자의 나열(벡터)</b>이 되고, <b>정규화하면 초구면 위 한 점</b>이 된다. 비슷한 병변일수록 <b>각도(cosine)가 작다</b>. <span class="muted">(▲ 반복 재생)</span></p>
   </div>
-  <div class="foot"><span>임베딩 ①</span><span>5 / 17</span></div>
+  <div class="foot"><span>임베딩 ①</span><span>5 / 18</span></div>
 </section>
 
 <!-- ============ 6. PROTOTYPE -> COSINE SCORE ============ -->
@@ -352,21 +355,75 @@
     </svg>
     <p class="footnote" style="text-align:center;">클래스 임베딩의 <b>평균 = prototype</b>. 병변 z와 두 prototype의 각도로 <b class="hcc">HCC cosine</b>·<b class="hem">혈관종 cosine</b>을, 그 차이로 <b class="gold">Δscore</b>를 구한다. <span class="muted">(▲ 벡터가 왕복)</span></p>
   </div>
-  <div class="foot"><span>임베딩 ②</span><span>6 / 17</span></div>
+  <div class="foot"><span>임베딩 ②</span><span>6 / 18</span></div>
 </section>
 
 <!-- ============ 7. ARCHITECTURE ============ -->
 <section>
   <div class="wrap">
-    <div class="eyebrow">모델 구조</div>
+    <div class="eyebrow">모델 구조 ① · 전체</div>
     <h2 class="stitle">Hybrid ViT — CNN 인코더 + Cross-Attention</h2>
     <img class="bigfig" src="figures/fig_architecture.png" alt="architecture" style="max-height:64vh; object-fit:contain;">
     <p class="footnote" style="text-align:center;">EfficientNetV2B0(CNN) → 토큰화 → Transformer Encoder ×4. <b>Cross-Attention</b>(Q=CLS, K=V=패치). 하나의 CLS 임베딩에서 <b>분류 헤드(confidence)</b>와 <b>프로젝션 헤드(cosine)</b>를 동시 산출.</p>
   </div>
-  <div class="foot"><span>모델 구조</span><span>7 / 17</span></div>
+  <div class="foot"><span>모델 구조</span><span>7 / 18</span></div>
 </section>
 
-<!-- ============ 8. DATA ============ -->
+<!-- ============ 8. INSIDE THE ENCODER ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow">모델 구조 ② · 인코더</div>
+    <h2 class="stitle">인코더 내부 — 필터가 훑고, CLS가 패치를 본다</h2>
+    <svg class="anim" id="s8fig" viewBox="0 0 1040 320" preserveAspectRatio="xMidYMid meet" style="max-height:58vh;">
+      <defs>
+        <clipPath id="s8clip"><rect x="40" y="76" width="168" height="168" rx="8"/></clipPath>
+        <marker id="s8ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="#5b6b7d"/>
+        </marker>
+      </defs>
+
+      <!-- panel A : convolution -->
+      <rect x="14" y="16" width="498" height="288" rx="14" fill="#f9fbfe" stroke="#dbe3ee"/>
+      <text class="t-b" x="263" y="44" text-anchor="middle" style="fill:#0056b3">① 합성곱 — 필터가 영상을 훑는다</text>
+      <text class="t-s" x="263" y="64" text-anchor="middle" style="fill:#a9781a">노란 창 = 3×3 합성곱 필터</text>
+      <g clip-path="url(#s8clip)">
+        <image x="40" y="76" width="168" height="168" preserveAspectRatio="xMidYMid slice" href="figures/ex_hcc_new.jpg"/>
+      </g>
+      <g stroke="#ffffff" stroke-width="1" opacity=".4">
+        <line x1="68" y1="76" x2="68" y2="244"/><line x1="96" y1="76" x2="96" y2="244"/>
+        <line x1="124" y1="76" x2="124" y2="244"/><line x1="152" y1="76" x2="152" y2="244"/>
+        <line x1="180" y1="76" x2="180" y2="244"/>
+        <line x1="40" y1="104" x2="208" y2="104"/><line x1="40" y1="132" x2="208" y2="132"/>
+        <line x1="40" y1="160" x2="208" y2="160"/><line x1="40" y1="188" x2="208" y2="188"/>
+        <line x1="40" y1="216" x2="208" y2="216"/>
+      </g>
+      <rect x="40" y="76" width="168" height="168" rx="8" fill="none" stroke="#0056b3" stroke-width="2"/>
+      <rect id="s8kern" x="96" y="104" width="84" height="84" rx="5" fill="#a9781a" fill-opacity=".2" stroke="#a9781a" stroke-width="2.5"/>
+      <text class="t-s" x="124" y="266" text-anchor="middle">입력 영상 · 6×6 타일</text>
+      <line x1="218" y1="160" x2="322" y2="160" stroke="#5b6b7d" stroke-width="2" marker-end="url(#s8ar)"/>
+      <g id="s8out"></g>
+      <text class="t-s" x="370" y="266" text-anchor="middle">특징 맵 · 4×4</text>
+      <text class="t-s" x="263" y="290" text-anchor="middle">한 칸씩 미끄러지며 각 위치의 국소 특징을 뽑는다</text>
+
+      <!-- panel B : cross-attention -->
+      <rect x="528" y="16" width="498" height="288" rx="14" fill="#fffaf0" stroke="#a9781a"/>
+      <text class="t-b" x="777" y="44" text-anchor="middle" style="fill:#a9781a">② Cross-Attention — CLS가 패치를 본다</text>
+      <g id="s8attn"></g>
+      <g id="s8patch"></g>
+      <circle class="halo8" cx="630" cy="160" r="42" fill="#0056b3"/>
+      <circle cx="630" cy="160" r="28" fill="#0056b3"/>
+      <text class="t-b" x="630" y="165" text-anchor="middle" style="fill:#ffffff">CLS</text>
+      <text class="t-s" x="630" y="212" text-anchor="middle">질문하는 토큰</text>
+      <g id="s8pk"></g>
+      <text class="t-s" x="836" y="258" text-anchor="middle">패치 토큰 4×4 (실제 7×7 = 49개)</text>
+      <text class="t-s" x="777" y="290" text-anchor="middle">패치마다 가중치를 주며 훑고, 하나의 CLS 임베딩에 종합한다</text>
+    </svg>
+    <p class="footnote" style="text-align:center;"><b>합성곱</b>은 국소 패턴(에코·경계)을, <b>Cross-Attention</b>은 패치 사이의 전역 맥락을 담는다. 진단에 쓰이는 것은 이 <b>CLS 임베딩 하나</b>이며, 다음 슬라이드의 세 지표가 여기서 나온다.</p>
+  </div>
+  <div class="foot"><span>모델 구조</span><span>8 / 18</span></div>
+</section>
+
+<!-- ============ 9. DATA ============ -->
 <section>
   <div class="wrap">
     <div class="eyebrow">방법 ①</div>
@@ -395,7 +452,7 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>방법 ①</span><span>8 / 17</span></div>
+  <div class="foot"><span>방법 ①</span><span>9 / 18</span></div>
 </section>
 
 <!-- ============ 9. CE WITH SUPCON ============ -->
@@ -442,7 +499,7 @@
     </svg>
     <p class="footnote">384×384 · AdamW · Cosine Annealing. 임계값은 <b>검증 세트에서만</b> Youden's J → 테스트 고정. 통계: DeLong [15] · 영상 단위 95% CI · 대응 t/Wilcoxon/Pitman-Morgan. <span class="muted">(▲ 점이 흩날릴수록 군집이 불안정)</span></p>
   </div>
-  <div class="foot"><span>방법 ②</span><span>9 / 17</span></div>
+  <div class="foot"><span>방법 ②</span><span>10 / 18</span></div>
 </section>
 
 <!-- ============ 10. SUPCON vs CE (batch 4) ============ -->
@@ -506,7 +563,7 @@
     </svg>
     <p class="footnote" style="text-align:center;">같은 클래스(H1·H2 · V1·V2)는 임베딩에서 <b>가깝게(pull)</b>, 다른 클래스는 <b>멀게(push)</b>. 분류 헤드의 <b>CE</b>는 각 케이스의 <b>정답 클래스 확률</b>을 높인다. <span class="muted">(▲ 좌: 점이 이동 / 우: 경계만 이동)</span></p>
   </div>
-  <div class="foot"><span>방법 ②</span><span>10 / 17</span></div>
+  <div class="foot"><span>방법 ②</span><span>11 / 18</span></div>
 </section>
 
 <!-- ============ 11. SUPCON CALC (batch 4) ============ -->
@@ -578,7 +635,7 @@
     </svg>
     <p class="footnote" style="text-align:center;">anchor마다 <b>positive는 분자</b>, <b>자기를 제외한 전체는 분모</b>. 정렬 전에는 negative가 weight를 독차지해 loss가 크고, 정렬되면 positive가 1.000을 차지해 <b>loss → 0</b>. batch=4면 anchor 4개의 loss 평균이 SupCon loss가 된다. <span class="muted">(▲ loss 감소)</span></p>
   </div>
-  <div class="foot"><span>방법 ②</span><span>11 / 17</span></div>
+  <div class="foot"><span>방법 ②</span><span>12 / 18</span></div>
 </section>
 
 <!-- ============ 12. THREE OUTPUTS ============ -->
@@ -667,7 +724,7 @@
     </svg>
     <p class="footnote" style="text-align:center;">실제 영상이 <b>인코더</b>로 들어가 <b>숫자 벡터</b>가 되고, 그 벡터가 <b>세 지표</b>로 분기해 각 지표의 <b>점(point)</b>이 된다. <b>Confidence</b>(결정 강도) · <b>HCC cosine</b>(전형 소견과의 닮음) · <b>Δscore</b>(어느 쪽에 가까운가). prototype은 <b>훈련 세트에서만</b> 산출. <span class="muted">(▲ 이미지가 흘러 들어가 점 3개로)</span></p>
   </div>
-  <div class="foot"><span>방법 ③</span><span>12 / 17</span></div>
+  <div class="foot"><span>방법 ③</span><span>13 / 18</span></div>
 </section>
 
 <!-- ============ 13. RESULT 1 ============ -->
@@ -697,7 +754,7 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>결과 ①</span><span>13 / 17</span></div>
+  <div class="foot"><span>결과 ①</span><span>14 / 18</span></div>
 </section>
 
 <!-- ============ 14. RESULT 2 ============ -->
@@ -721,29 +778,35 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>결과 ②</span><span>14 / 17</span></div>
+  <div class="foot"><span>결과 ②</span><span>15 / 18</span></div>
 </section>
 
 <!-- ============ 15. RESULT 3: SupCon before/after ============ -->
 <section>
   <div class="wrap">
     <div class="eyebrow gold">결과 ③ · SupCon 전후 분석</div>
-    <h2 class="stitle">SupCon이 cosine score를 "의미 있는 지표"로 만든다</h2>
-    <div class="grid2" style="margin-top:.05em;">
-      <div><img src="figures/fig4_hcc_cosine.png" alt="HCC" style="width:100%; max-height:38vh; object-fit:contain; border:1px solid var(--line); border-radius:8px; background:#fff;"><div style="font-size:.3em; color:var(--muted); text-align:center; margin-top:.12em;">True HCC (n=417)</div></div>
-      <div><img src="figures/fig5_hem_cosine.png" alt="Hem" style="width:100%; max-height:38vh; object-fit:contain; border:1px solid var(--line); border-radius:8px; background:#fff;"><div style="font-size:.3em; color:var(--muted); text-align:center; margin-top:.12em;">True Hemangioma (n=381)</div></div>
+    <h2 class="stitle" style="margin-bottom:.28em;">SupCon이 cosine score를 "의미 있는 지표"로 만든다</h2>
+    <div class="grid2" style="margin-top:.02em;">
+      <div>
+        <img src="figures/fig4_hcc_cosine.png" alt="SupCon 전후 HCC cosine score 분포" style="width:100%; max-height:10.6em; object-fit:contain; border:1px solid var(--line); border-radius:8px; background:#fff; display:block;">
+        <div style="font-size:.28em; color:var(--muted); text-align:center; margin-top:.08em;">True HCC (n=417) · A 밀도분포 · B 쌍별 이동</div>
+      </div>
+      <div>
+        <img src="figures/fig5_hem_cosine.png" alt="SupCon 전후 Hemangioma cosine score 분포" style="width:100%; max-height:10.6em; object-fit:contain; border:1px solid var(--line); border-radius:8px; background:#fff; display:block;">
+        <div style="font-size:.28em; color:var(--muted); text-align:center; margin-top:.08em;">True Hemangioma (n=381) · A 밀도분포 · B 쌍별 이동</div>
+      </div>
     </div>
-    <div class="card tint" style="margin-top:.35em;">
-      <ul class="clean" style="margin:0;">
-        <li>목적은 <b>분류 성능 개선이 아니라 해석</b> — "얼마나 HCC/혈관종스러운가"의 <b>정량 지표</b>를 제공</li>
-        <li>SupCon 전: HCC 케이스인데도 HCC cosine score가 0~1에 <b>넓게 퍼짐</b> → radiologic marker로 기능하지 못함</li>
-        <li>SupCon 후: 0.9 근처로 <b>밀집</b> → <b>score가 높으면 HCC일 가능성이 높다</b>로 해석 가능</li>
-        <li>confidence도 비슷한 경향이지만 HCC 확률로 직접 해석되지 않아, 이를 보완하는 지표. 같은 변화가 <b>Hemangioma 케이스에서도</b> 관찰됨</li>
+    <div class="card tint" style="margin-top:.26em; padding:.3em .6em;">
+      <ul class="clean tight" style="margin:0;">
+        <li>목적은 성능 개선이 아니라 <b>해석</b> — "얼마나 HCC스러운가"의 <b>정량 지표</b></li>
+        <li>SupCon 전: HCC인데도 cosine이 0~1에 <b>넓게 퍼짐</b> → radiologic marker로 기능 못 함</li>
+        <li>SupCon 후: 0.9 근처로 <b>밀집</b> → <b>score가 높을수록 HCC 가능성↑</b> (혈관종도 동일)</li>
+        <li>confidence는 HCC 확률로 직접 해석되지 않아 이를 <b>보완</b>하는 지표</li>
       </ul>
     </div>
-    <p class="footnote" style="text-align:center;">HCC 중앙값 0.882→0.970 · 분산 −60.7% &nbsp;|&nbsp; Hemangioma 0.955→0.985 · −98.7% (p&lt;0.001)</p>
+    <p class="footnote" style="text-align:center; margin-top:.24em;">HCC 0.882→0.970 (분산 −60.7%) &nbsp;|&nbsp; Hemangioma 0.955→0.985 (−98.7%), p&lt;0.001</p>
   </div>
-  <div class="foot"><span>결과 ③</span><span>15 / 17</span></div>
+  <div class="foot"><span>결과 ③</span><span>16 / 18</span></div>
 </section>
 
 <!-- ============ 16. CONCLUSION ============ -->
@@ -774,7 +837,7 @@
       <p style="font-size:.46em;">B-mode 초음파에서 confidence와 <b>임베딩 유사도(HCC cosine·Δscore)</b>를 함께 내는 이중 출력의 산출 가능성을 제시한 <b>탐색적 연구</b>. 실제 임상적 유용성은 <b>다기관 외부 검증</b>으로 평가되어야 한다.</p>
     </div>
   </div>
-  <div class="foot"><span>결론</span><span>16 / 17</span></div>
+  <div class="foot"><span>결론</span><span>17 / 18</span></div>
 </section>
 
 <!-- ============ 17. THANK YOU ============ -->
@@ -785,7 +848,7 @@
     <p class="cover-sub">질문과 토론을 환영합니다.</p>
     <p class="cover-author">예수병원 가정의학과 R3 김현수</p>
   </div></div>
-  <div class="foot"><span></span><span>17 / 17</span></div>
+  <div class="foot"><span></span><span>18 / 18</span></div>
 </section>
 
 </div></div>
@@ -995,6 +1058,82 @@
     if(printMode()){ draw(1); }
     else { requestAnimationFrame(frame); }
     window.addEventListener('beforeprint', function(){ stop = true; draw(1); });
+  })();
+
+  /* ------- slide 8 : inside the encoder (conv filter + cross-attention) ------- */
+  (function(){
+    if(!document.getElementById('s8fig')) return;
+    var NS = 'http://www.w3.org/2000/svg';
+    var g = function(id){ return document.getElementById(id); };
+    var kern = g('s8kern'), outHost = g('s8out'), patchHost = g('s8patch');
+    var attnHost = g('s8attn'), pkHost = g('s8pk');
+    var IX = 40, IY = 76, IC = 28;          /* input: 6x6 tiles of 28 px    */
+    var OX = 330, OY = 120, OC = 20;        /* feature map: 4x4 cells       */
+    var PX = 760, PY = 84, PC = 38;         /* patch tokens: 4x4 cells      */
+    var CX = 630, CY = 160;                 /* CLS token centre             */
+    function mk(tag, attrs){
+      var e = document.createElementNS(NS, tag);
+      for(var k in attrs) e.setAttribute(k, attrs[k]);
+      return e;
+    }
+    var out = [], patches = [], packets = [], lines = [], pc = [];
+    var r, c, i;
+    for(r = 0; r < 4; r++) for(c = 0; c < 4; c++){
+      out.push(outHost.appendChild(mk('rect', { x: OX + c * OC + 1, y: OY + r * OC + 1,
+        width: OC - 2, height: OC - 2, rx: 3, fill: '#dbe3ee' })));
+    }
+    for(r = 0; r < 4; r++) for(c = 0; c < 4; c++){
+      var px = PX + c * PC, py = PY + r * PC, mx = px + PC / 2, my = py + PC / 2;
+      pc.push([mx, my]);
+      lines.push(attnHost.appendChild(mk('line', { x1: CX, y1: CY, x2: mx, y2: my,
+        stroke: '#a9781a', 'stroke-width': '1', opacity: '.12' })));
+      patches.push(patchHost.appendChild(mk('rect', { x: px + 2, y: py + 2,
+        width: PC - 4, height: PC - 4, rx: 5, fill: '#f1e4c9',
+        stroke: '#a9781a', 'stroke-width': '1' })));
+    }
+    for(i = 0; i < 16; i++){
+      packets.push(pkHost.appendChild(mk('circle', { cx: CX, cy: CY, r: 5,
+        fill: '#a9781a', opacity: 0 })));
+    }
+    function seg(a, b, t){ return b <= a ? (t >= b ? 1 : 0) : Math.max(0, Math.min(1, (t - a) / (b - a))); }
+    function draw(tA, tB){
+      /* A : the 3x3 filter walks the 6x6 tiles, filling the feature map */
+      var step = Math.max(0, Math.min(15, Math.floor(Math.min(tA / 0.82, 0.9999) * 16)));
+      kern.setAttribute('x', IX + (step % 4) * IC);
+      kern.setAttribute('y', IY + Math.floor(step / 4) * IC);
+      for(i = 0; i < 16; i++){
+        out[i].setAttribute('fill', i === step ? '#0056b3' : (i < step ? '#9cc0e6' : '#dbe3ee'));
+      }
+      /* B : CLS attends to each patch in turn */
+      for(i = 0; i < 16; i++){
+        var s0 = 0.02 + i * 0.045, p = seg(s0, s0 + 0.18, tB);
+        packets[i].setAttribute('cx', (CX + (pc[i][0] - CX) * p).toFixed(1));
+        packets[i].setAttribute('cy', (CY + (pc[i][1] - CY) * p).toFixed(1));
+        packets[i].setAttribute('opacity', (p > 0 && p < 1) ? 1 : 0);
+        patches[i].setAttribute('fill', p >= 1 ? '#a9781a' : '#f1e4c9');
+        lines[i].setAttribute('opacity', p >= 1 ? '.5' : (p > 0 ? '.35' : '.12'));
+      }
+    }
+    function drawPrint(){
+      kern.setAttribute('x', IX + 2 * IC);
+      kern.setAttribute('y', IY + 1 * IC);
+      for(i = 0; i < 16; i++){
+        out[i].setAttribute('fill', '#0056b3');
+        packets[i].setAttribute('opacity', 0);
+        patches[i].setAttribute('fill', '#a9781a');
+        lines[i].setAttribute('opacity', '.5');
+      }
+    }
+    var stop = false, t0 = null;
+    function frame(now){
+      if(stop) return;
+      if(t0 === null) t0 = now;
+      draw(((now - t0) / 5600) % 1, ((now - t0) / 4600) % 1);
+      requestAnimationFrame(frame);
+    }
+    if(printMode()){ drawPrint(); }
+    else { requestAnimationFrame(frame); }
+    window.addEventListener('beforeprint', function(){ stop = true; drawPrint(); });
   })();
 
   /* ------- slide 12 : image -> encoder -> embedding -> 3 outputs ------- */
