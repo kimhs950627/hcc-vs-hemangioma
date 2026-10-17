@@ -1,27 +1,25 @@
 <!DOCTYPE html>
 <!--
-  VERSION 2 deck (medical-first, 14 slides) — aligned to Revision 3 / Response to Reviewers v4.
-  Source   : slides_v2_src.html  ->  python build_standalone.py slides_v2_src.html hcc_dual_output_talk_v2.html
-  Rendered : hcc_dual_output_talk_v2.html / .pdf          (v1 files untouched)
+  VERSION 2 deck — keynote cut (11 slides, one claim per slide).
 
-  Claims retracted after the reviewer round and therefore removed from this deck:
-    - surveillance / early-detection scope  -> reduced to "differential diagnosis of an
-      already-detected focal lesion" (Reviewer A #1, accepted)
-    - DeLong p>0.05 used as non-inferiority / equivalence -> deleted (A#7, accepted)
-    - "SupCon is essential"                 -> withdrawn; CE only also hits the AUROC
-      ceiling, and dscore actually DECREASES with SupCon (A#8, accepted)
-    - the confidence 0.40-0.60 "salvage effect" slide -> the section was deleted from the
-      manuscript entirely (Reviewer A minor #1, accepted) and is gone from this deck
-    - generalization / deployment claims    -> deleted (A#3, accepted)
-    - n=381 figure label error              -> true HCC is n=417 (A#6)
-    - 'poor echo window'                    -> 'no caliper annotation artifact' (minor #2)
-  Every remaining number was recomputed from the per-case CSVs (scratch/verify_v2_numbers.py).
+  Cut from 14 to 11: the quiz and the 76% problem merged into one slide; the
+  dataset tables folded into a single line on the method slide; the performance
+  and three-output slides merged (ROC kept, AUROC table and t-SNE dropped).
+
+  Facts are unchanged and nothing retracted by the reviewer round is
+  re-introduced (no surveillance scope, no non-inferiority, no "SupCon is
+  essential", no dscore validity claim, no 0.40-0.60 salvage claim).
+  Two single-line qualifiers are kept because the slide would otherwise be false:
+    slide 5 dscore down, slide 6 no ranking possible.
+
+  Source   : slides_v2_src.html  ->  python build_standalone.py slides_v2_src.html hcc_dual_output_talk_v2.html
+  Rendered : hcc_dual_output_talk_v2.html / .pdf
 -->
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>v2 · B-mode 초음파에서 HCC–혈관종 감별 이중 출력 지표 (탐색적)</title>
+<title>v2 · AI가 예측한 간암, 확률을 넘어 유사도 점수까지</title>
 <link rel="stylesheet" href="vendor/reset.css">
 <link rel="stylesheet" href="vendor/reveal.css">
 <style>
@@ -39,55 +37,48 @@
   .reveal .slides section{height:100%;}
   .wrap{height:100%; display:flex; flex-direction:column; justify-content:center; padding:.5em .65em 1.3em;}
   .eyebrow{font-size:.4em; letter-spacing:.16em; text-transform:uppercase; color:var(--navy); font-weight:800;}
-  .stitle{font-size:.72em; margin:.26em 0 .45em; border-bottom:3px solid var(--navy); padding-bottom:.2em;}
-  .lead{font-size:.5em; color:var(--muted);}
+  .stitle{font-size:.78em; margin:.3em 0 .5em; border-bottom:3px solid var(--navy); padding-bottom:.2em;}
+  .claim{font-size:.86em; font-weight:900; line-height:1.3; letter-spacing:-.015em;}
+  .sub{font-size:.44em; color:var(--muted);}
   .muted{color:var(--muted);} .navy{color:var(--navy);} .hcc{color:var(--hcc);} .hem{color:var(--hem);} .gold{color:var(--gold);}
-  .card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:.5em .7em; box-shadow:0 2px 10px rgba(20,32,46,.04);}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:.6em .8em; box-shadow:0 2px 10px rgba(20,32,46,.04);}
   .card.tint{background:var(--bg2);}
-  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:.7em; align-items:start;}
-  .grid3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:.6em; align-items:stretch;}
-  .grid4{display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:.55em; align-items:end;}
-  .grid5{display:grid; grid-template-columns:repeat(5,1fr); gap:.4em; align-items:start;}
-  ul.clean{margin:0; list-style:none;}
-  ul.clean li{position:relative; padding-left:.85em; margin:.42em 0; font-size:.5em; line-height:1.75;}
-  ul.clean li::before{content:""; position:absolute; left:0; top:.55em; width:.3em; height:.3em; border-radius:2px; background:var(--navy);}
-  ul.clean.tight li{font-size:.4em; line-height:1.5; margin:.12em 0;}
-  ul.clean.small li{font-size:.44em; line-height:1.6; margin:.22em 0;}
-  ul.clean.xs li{font-size:.36em; line-height:1.45; margin:.1em 0;}
-  .stat-card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:.45em .3em; text-align:center;}
-  .stat-num{font-size:.9em; font-weight:900; line-height:1;}
-  .stat-lbl{font-size:.32em; color:var(--muted); margin-top:.25em;}
-  .tbl{width:100%; border-collapse:collapse; font-size:.42em;}
-  .tbl th,.tbl td{padding:.32em .45em; text-align:center; border-bottom:1px solid var(--line);}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:.8em; align-items:start;}
+  .grid3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:.7em; align-items:stretch;}
+  .grid4{display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:.6em; align-items:end;}
+  ul.big{margin:0; list-style:none;}
+  ul.big li{position:relative; padding-left:.75em; margin:.5em 0; font-size:.5em; line-height:1.6; font-weight:600;}
+  ul.big li::before{content:""; position:absolute; left:0; top:.6em; width:.26em; height:.26em; border-radius:2px; background:var(--navy);}
+  .stat-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:.6em .3em; text-align:center;}
+  .stat-num{font-size:1.15em; font-weight:900; line-height:1;}
+  .stat-lbl{font-size:.34em; color:var(--muted); margin-top:.3em;}
+  .tbl{width:100%; border-collapse:collapse; font-size:.46em;}
+  .tbl th,.tbl td{padding:.4em .5em; text-align:center; border-bottom:1px solid var(--line);}
   .tbl th{color:var(--navyd); font-weight:800; background:var(--bg2);}
   .tbl td.l{text-align:left;}
-  .tbl.sm{font-size:.36em;}
-  .tbl.sm th,.tbl.sm td{padding:.24em .35em;}
-  .tbl tr.hl td{background:rgba(0,86,179,.08); color:var(--navyd); font-weight:800;}
-  .chip{display:inline-block; padding:.16em .65em; border-radius:999px; font-size:.34em; font-weight:800; border:1px solid var(--line); color:var(--muted);}
+  .tbl.sm{font-size:.4em;}
+  .cm{border-collapse:collapse; font-size:.5em; margin:0 auto;}
+  .cm th,.cm td{border:1px solid var(--line); padding:.5em .7em; text-align:center; min-width:3.4em;}
+  .cm th{background:var(--bg2); color:var(--navyd); font-weight:800;}
+  .cm td.a{background:rgba(0,86,179,.08); font-weight:800; color:var(--navyd);}
+  .chip{display:inline-block; padding:.18em .7em; border-radius:999px; font-size:.36em; font-weight:800; border:1px solid var(--line); color:var(--muted);}
   .chip.navy{background:rgba(0,86,179,.09); color:var(--navy); border-color:rgba(0,86,179,.25);}
   .chip.gold{background:rgba(169,120,26,.1); color:var(--gold); border-color:rgba(169,120,26,.3);}
-  .chip.hem{background:rgba(47,111,179,.09); color:var(--hem); border-color:rgba(47,111,179,.3);}
-  .chip.hcc{background:rgba(201,64,58,.09); color:var(--hcc); border-color:rgba(201,64,58,.3);}
-  .cite{font-style:italic; color:var(--muted); font-size:.34em; margin-top:.45em;}
   .foot{position:absolute; bottom:.35em; left:.6em; right:.6em; font-size:.28em; color:var(--muted); display:flex; justify-content:space-between; border-top:1px solid var(--line); padding-top:.35em;}
-  .tile{position:relative; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#000; aspect-ratio:1/1;}
+  .tile{position:relative; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#000; aspect-ratio:1/1;}
   .tile img{width:100%; height:100%; object-fit:cover; display:block;}
-  .tile .tag{position:absolute; left:0; bottom:0; right:0; background:rgba(10,20,32,.62); color:#fff; font-size:.26em; padding:.3em .45em; line-height:1.25;}
-  .bigfig{width:100%; border:1px solid var(--line); border-radius:10px; background:#fff; display:block; margin:0 auto;}
-  .concl{background:linear-gradient(180deg,#eaf2fb,#ffffff); border-left:.32em solid var(--navy); border-radius:12px; padding:.5em .7em;}
-  .warn{background:linear-gradient(180deg,#fdf6e7,#ffffff); border-left:.32em solid var(--gold); border-radius:12px; padding:.5em .7em;}
+  .tile .tag{position:absolute; left:0; bottom:0; right:0; background:rgba(10,20,32,.62); color:#fff; font-size:.28em; padding:.35em .5em; line-height:1.25;}
+  .concl{background:linear-gradient(180deg,#eaf2fb,#ffffff); border-left:.32em solid var(--navy); border-radius:14px; padding:.6em .8em;}
   section.cover .cover-inner{height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; padding:0 .8em;}
-  .cover-title{font-size:1.05em; line-height:1.35; margin:.35em 0 .25em; max-width:20em; font-weight:900;}
-  .cover-sub{font-size:.46em; color:var(--muted); margin-bottom:.8em;}
-  .cover-stats{display:grid; grid-template-columns:repeat(4,1fr); gap:.6em; max-width:32em; margin:0 auto .8em;}
+  .cover-title{font-size:1.15em; line-height:1.3; margin:.4em 0 .3em; max-width:20em; font-weight:900;}
+  .cover-sub{font-size:.52em; color:var(--muted); margin-bottom:.9em;}
+  .cover-stats{display:grid; grid-template-columns:repeat(4,1fr); gap:.7em; max-width:34em; margin:0 auto .9em;}
   .cover-author{font-size:.5em; font-weight:800; color:var(--ink);}
-  .badge-row{display:flex; gap:.4em; justify-content:center; flex-wrap:wrap; margin-bottom:.7em;}
+  .badge-row{display:flex; gap:.5em; justify-content:center; flex-wrap:wrap; margin-bottom:.8em;}
   .reveal .progress{color:var(--navy);} .reveal .controls{color:var(--navy);}
-  .footnote{font-size:.34em; color:var(--muted); margin-top:.45em; line-height:1.8;}
 
   /* ================= looping explainer animations (inline · offline-safe) ================= */
-  .anim{width:100%; display:block; margin:0 auto; background:#fff; border:1px solid var(--line); border-radius:12px;}
+  .anim{width:100%; display:block; margin:0 auto; background:#fff; border:1px solid var(--line); border-radius:14px;}
   .anim text{font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;}
   .anim .t-s{font-size:13px; fill:var(--muted);}
   .anim .t-b{font-size:15px; font-weight:700; fill:var(--ink);}
@@ -149,124 +140,55 @@
 <!-- ============ 1. COVER ============ -->
 <section class="cover">
   <div class="wrap"><div class="cover-inner">
-    <div class="eyebrow">B-mode 복부 초음파 · 발견된 국소 병변의 감별</div>
+    <div class="eyebrow">B-mode 복부 초음파 · HCC vs 간혈관종</div>
     <h1 class="cover-title">AI가 예측한 간암,<br><span class="navy">확률</span>을 넘어 <span class="gold">유사도 점수</span>까지</h1>
-    <p class="cover-sub" style="max-width:34em;">B-mode 초음파에서 <b>발견된 국소 병변</b>의 간세포암–간혈관종 감별을 위한 이중 출력 지표(Confidence · HCC cosine · Δscore)의 <b>방법론적 타당성</b>: 단일기관 공개 데이터셋을 이용한 <b>탐색적 연구</b></p>
+    <p class="cover-sub" style="max-width:30em;">B-mode 초음파에서 HCC–혈관종 감별을 위한 이중 출력 지표의 탐색적 연구</p>
     <div class="badge-row">
       <span class="chip navy">HCC vs Hemangioma</span>
       <span class="chip gold">CE + SupCon</span>
       <span class="chip">Hybrid ViT</span>
-      <span class="chip hcc">탐색적 · 단일기관</span>
     </div>
     <div class="cover-stats">
-      <div class="stat-card"><div class="stat-num navy">1.000</div><div class="stat-lbl">AUROC (내부검증)</div></div>
-      <div class="stat-card"><div class="stat-num hem">99.2%</div><div class="stat-lbl">특이도 · Test</div></div>
+      <div class="stat-card"><div class="stat-num navy">1.000</div><div class="stat-lbl">AUROC</div></div>
+      <div class="stat-card"><div class="stat-num hem">99.2%</div><div class="stat-lbl">특이도</div></div>
       <div class="stat-card"><div class="stat-num hcc">0</div><div class="stat-lbl">HCC 위음성</div></div>
-      <div class="stat-card"><div class="stat-num">2,656</div><div class="stat-lbl">영상(clean)</div></div>
+      <div class="stat-card"><div class="stat-num">2,656</div><div class="stat-lbl">영상</div></div>
     </div>
     <p class="cover-author">예수병원 가정의학과 R3 김현수</p>
   </div></div>
-  <div class="foot"><span>v2 · 이중 출력 지표 (탐색적)</span><span>1 / 14</span></div>
+  <div class="foot"><span>v2</span><span>1 / 11</span></div>
 </section>
 
 <!-- ============ 2. WHAT IS YOUR DIAGNOSIS? ============ -->
 <section>
   <div class="wrap">
-    <div class="eyebrow gold">임상 배경 ① · 왜 어려운가</div>
-    <h2 class="stitle">What is your diagnosis?</h2>
-    <div class="grid4" style="margin-top:.05em;">
+    <div class="eyebrow gold">임상 배경</div>
+    <h2 class="stitle" style="margin-bottom:.35em;">What is your diagnosis?</h2>
+    <div class="grid4">
       <div class="tile"><img src="figures/ex_hcc_new.jpg" alt="HCC"><div class="tag">고에코 HCC</div></div>
       <div class="tile"><img src="figures/ex_hcc_02.png" alt="HCC"><div class="tag">Hyperechoic HCC</div></div>
-      <div class="tile"><img src="figures/ex_hcc_04.png" alt="HCC"><div class="tag">Posterior enhancement 동반</div></div>
-      <div class="tile"><img src="figures/ex_hcc_05.png" alt="HCC"><div class="tag">혈관종과 나란히 비교</div></div>
+      <div class="tile"><img src="figures/ex_hcc_04.png" alt="HCC"><div class="tag">Posterior enhancement</div></div>
+      <div class="tile"><img src="figures/ex_hcc_05.png" alt="HCC"><div class="tag">혈관종과 나란히</div></div>
     </div>
-    <div class="fragment card tint" style="margin-top:.35em; text-align:center;">
-      <p style="font-size:.58em; color:var(--ink);"><b class="hcc">모두 간암(HCC)</b> — 혈관종처럼 보이지만 실제로는 HCC</p>
+    <div class="fragment card tint" style="margin-top:.4em; text-align:center;">
+      <p class="claim hcc">모두 간암(HCC)이다 — 혈관종처럼 보이지만</p>
     </div>
-    <p class="footnote" style="text-align:center;">혈관종의 전형은 <b>고에코·경계 명확·후방음영 증가</b>다. 그러나 <b>HCC의 10–15%는 비전형</b> 소견이고 <b>고분화 HCC가 고에코 혈관종 패턴을 모사</b>할 수 있다 [5]. 반대로 <b>비전형 혈관종</b>은 악성을 모사한다 [6,7].</p>
+    <div class="grid3" style="margin-top:.5em;">
+      <div class="stat-card" style="border-color:rgba(201,64,58,.4);"><div class="stat-num hcc" style="font-size:.9em;">76.0%</div><div class="stat-lbl">정확도</div></div>
+      <div class="stat-card"><div class="stat-num" style="font-size:.9em;">76.1%</div><div class="stat-lbl">민감도</div></div>
+      <div class="stat-card"><div class="stat-num" style="font-size:.9em;">76.9%</div><div class="stat-lbl">특이도</div></div>
+    </div>
+    <p class="sub" style="margin-top:.4em; text-align:center;">B-mode US로 악성/양성 국소 병변 감별 — 15년 경력 초음파 판독자 <b>236명</b>(임상정보 제공). Yang Q, et al. <i>EBioMedicine</i> 2020;56:102777</p>
   </div>
-  <div class="foot"><span>임상 배경 ①</span><span>2 / 14</span></div>
+  <div class="foot"><span>임상 배경</span><span>2 / 11</span></div>
 </section>
 
-<!-- ============ 3. WHY IT IS HARD ============ -->
+<!-- ============ 3. WHAT WE OUTPUT ============ -->
 <section>
   <div class="wrap">
-    <div class="eyebrow hcc">임상 배경 ② · 연구 범위</div>
-    <h2 class="stitle">이미 발견된 국소 병변에서 — HCC인가, 혈관종인가</h2>
-    <div class="grid3" style="margin-top:.08em;">
-      <div class="card" style="border-color:rgba(201,64,58,.45);">
-        <p style="font-size:.44em; font-weight:800; color:var(--hcc);">1. 범위를 좁혀 둔다</p>
-        <p style="font-size:.4em; margin-top:.25em;">이 연구는 <b>간암 감시(surveillance)나 선별 검사가 아니다</b>. 초음파에서 <b>이미 발견된 국소 병변</b>을 HCC와 혈관종으로 가르는 <b>감별 진단 보조</b>를 다룬다. 감시 민감도 향상은 주장하지 않는다.</p>
-        <p class="muted" style="font-size:.32em;">"감시 민감도 47%"는 배경 설명이며 이 연구의 성능 근거가 아니다</p>
-      </div>
-      <div class="card">
-        <p style="font-size:.44em; font-weight:800; color:var(--navy);">2. B-mode 단독은 부족하다</p>
-        <p style="font-size:.4em; margin-top:.25em;">경력 15년 판독자 236명의 B-mode 단독 판독 — 정확도 <b>76.0%</b> · 민감도 <b>76.1%</b> · 특이도 <b>76.9%</b></p>
-        <p class="muted" style="font-size:.32em;">비조영 US 딥러닝 meta-analysis: 민감도 81.7% · 특이도 84.8% → 개선 여지가 남아 있다</p>
-      </div>
-      <div class="card" style="border-color:rgba(169,120,26,.5);">
-        <p style="font-size:.44em; font-weight:800; color:var(--gold);">3. 두 클래스 안쪽이 넓다</p>
-        <p style="font-size:.4em; margin-top:.25em;">HCC·혈관종 <b>모두 전형–비전형 스펙트럼</b>을 가진다. 기존 AI는 이 스펙트럼을 <b>단일 이진 출력</b>으로 압축해, 병변이 전형 군집의 <b>핵심부인지 주변부인지</b>를 알려주지 않는다.</p>
-        <p class="muted" style="font-size:.32em;">판독자는 "전형 HCC와 얼마나 닮았는가"로 판단한다 — LI-RADS 계층 구조가 그 예</p>
-      </div>
-    </div>
-    <div class="concl" style="margin-top:.4em;">
-      <p style="font-size:.44em;">그래서 우리는 <b>분류 성능</b>이 아니라, 판독자가 이미 하는 <b>"닮음" 판단을 숫자로 남기는 지표</b>를 만들고 <b>그 방법론적 타당성</b>만 평가한다.</p>
-    </div>
-    <p class="cite">Minami 2023 [5] · Chou 2017 [6] · Sirli 2015 [7] · Yang 2020 [9] · Campello 2023 [18]</p>
-  </div>
-  <div class="foot"><span>임상 배경 ②</span><span>3 / 14</span></div>
-</section>
-
-<!-- ============ 4. PATIENTS & DATA ============ -->
-<section>
-  <div class="wrap">
-    <div class="eyebrow">방법 ① · 대상과 데이터</div>
-    <h2 class="stitle">대상 환자와 데이터 — SMC-LUD clean subset (n=744)</h2>
-    <div class="grid2" style="margin-top:.02em;">
-      <div>
-        <table class="tbl">
-          <tr><th></th><th>환자</th><th>영상</th><th>Train</th><th>Val</th><th>Test</th></tr>
-          <tr><td class="l hem">혈관종</td><td>323</td><td>1,267</td><td>886</td><td>253</td><td>128</td></tr>
-          <tr><td class="l hcc">HCC</td><td>421</td><td>1,389</td><td>972</td><td>277</td><td>140</td></tr>
-          <tr class="hl"><td class="l">합계</td><td>744</td><td>2,656</td><td>1,858</td><td>530</td><td>268</td></tr>
-        </table>
-        <ul class="clean tight" style="margin-top:.4em;">
-          <li>제외 기준은 <b>caliper 등 주석 인공음영이 없는 clean 영상</b> (원저 기준)</li>
-          <li>분할은 <b>원저가 보고한 환자 단위 분할을 그대로 사용</b>했다</li>
-          <li>단, 공개 파일에 <b>환자 ID 매핑이 없어 우리가 재검증하지는 못했다</b> — 근접 중복 프레임도 독립 감사 불가</li>
-          <li>임계값은 <b>검증 세트에서만</b> Youden's J로 정하고 테스트에 고정</li>
-        </ul>
-      </div>
-      <div>
-        <div class="card">
-          <p class="muted" style="font-size:.34em; margin-bottom:.3em;">환자 특성 — <b>전체 코호트(n=1,021)</b> 기준. clean subset(744명)의 특성은 별도로 제공되지 않았다.</p>
-          <table class="tbl sm">
-            <tr><th>특성</th><th class="hcc">HCC</th><th class="hem">혈관종</th></tr>
-            <tr><td class="l">나이 (평균±SD)</td><td>66.7 ± 11.0</td><td>55.5 ± 12.8</td></tr>
-            <tr><td class="l">남성</td><td>81.8%</td><td>41.3%</td></tr>
-            <tr><td class="l">병변 최대지름 (중앙값)</td><td>2.90 cm</td><td>— (미제공)</td></tr>
-            <tr><td class="l">진단 근거</td><td>병리확진</td><td>영상 판독</td></tr>
-          </table>
-        </div>
-        <ul class="clean tight" style="margin-top:.4em;">
-          <li><b>참조표준이 비대칭</b>: HCC는 병리확진, 혈관종은 영상 판독 → 혈관종 라벨 오류 가능성</li>
-          <li>두 군의 <b>나이·성별 구성이 크게 다르다</b> — 배경 간질환 분포가 다를 것으로 예상되나 정보가 없다</li>
-          <li>원저의 <b>대표영상 선별</b>과 clean subset 자체가 선택 편향 원천일 수 있다</li>
-        </ul>
-      </div>
-    </div>
-    <p class="footnote" style="text-align:center;">SMC-LUD(공개 데이터셋)[12] clean subset. HCC와 혈관종 비율은 세트 간 균형 유지(약 52% vs 48%).</p>
-  </div>
-  <div class="foot"><span>방법 ①</span><span>4 / 14</span></div>
-</section>
-
-<!-- ============ 5. WHAT WE OUTPUT ============ -->
-<section>
-  <div class="wrap">
-    <div class="eyebrow gold">방법 ② · 우리가 내는 것</div>
-    <h2 class="stitle">확률 하나가 아니라 — "전형 소견과 얼마나 닮았는가"</h2>
-    <svg class="anim" id="s12fig" viewBox="0 0 1040 272" preserveAspectRatio="xMidYMid meet" style="max-height:50vh;">
+    <div class="eyebrow gold">방법</div>
+    <p class="claim">확률 하나가 아니라,<br>“전형 소견과 얼마나 닮았는가”</p>
+    <svg class="anim" id="s12fig" viewBox="0 0 1040 272" preserveAspectRatio="xMidYMid meet" style="max-height:46vh; margin-top:.45em;">
       <defs>
         <marker id="s12ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
           <path d="M0 0 L10 5 L0 10 z" fill="#5b6b7d"/>
@@ -328,32 +250,22 @@
       <text class="t-s" x="812" y="239">HCC − 혈관종</text>
       <text class="t-big" id="s12vt2" x="1000" y="233" text-anchor="end" style="fill:#a9781a">+0.87</text>
     </svg>
-    <div class="grid3" style="margin-top:.35em;">
-      <div class="card">
-        <p style="font-size:.42em; font-weight:800; color:var(--navy);">① Confidence</p>
-        <p style="font-size:.36em; margin-top:.15em;">HCC 클래스의 softmax 값. 보정된 사후확률이 아니므로 이 연구에서는 <b>확률이 아니라 결정 강도</b>로 부른다.</p>
-      </div>
-      <div class="card">
-        <p style="font-size:.42em; font-weight:800; color:var(--hcc);">② HCC cosine</p>
-        <p style="font-size:.36em; margin-top:.15em;">훈련 세트 HCC 임베딩의 <b>평균 위치(prototype)</b>와 병변 임베딩의 <b>각도(cosine)</b>. "전형 HCC와 얼마나 닮았는가". k-means(k=4) 다중 prototype은 <b>보완 민감도 분석</b>.</p>
-      </div>
-      <div class="card">
-        <p style="font-size:.42em; font-weight:800; color:var(--gold);">③ Δscore</p>
-        <p style="font-size:.36em; margin-top:.15em;">HCC cosine − 혈관종 cosine. 두 클래스 중 <b>어느 쪽에 더 가까운가</b>만 말하는 상대 위치 지표다. <b>이 지표의 검증 결과는 슬라이드 10에서 정직하게 다룬다.</b></p>
-      </div>
+    <div class="grid3" style="margin-top:.45em;">
+      <p class="sub" style="text-align:center;"><b class="navy">Confidence</b> — 결정 강도</p>
+      <p class="sub" style="text-align:center;"><b class="hcc">HCC cosine</b> — 전형 HCC와의 각도</p>
+      <p class="sub" style="text-align:center;"><b class="gold">Δscore</b> — 어느 쪽에 더 가까운가</p>
     </div>
-    <p class="footnote" style="text-align:center;">판독자가 전형 소견과 비교하며 위험도를 나누는 사고(LI-RADS 계층)와 <b>구조적으로 대응</b>한다고 본다 — 임상적 유용성을 주장하는 근거는 아니다.</p>
+    <p class="sub" style="margin-top:.4em; text-align:center;">744명 · 2,656장 (Train 1,858 / Val 530 / Test 268) · 환자 단위 분할</p>
   </div>
-  <div class="foot"><span>방법 ②</span><span>5 / 14</span></div>
+  <div class="foot"><span>방법</span><span>3 / 11</span></div>
 </section>
 
-<!-- ============ 6. MODEL ============ -->
+<!-- ============ 4. MODEL ============ -->
 <section>
   <div class="wrap">
-    <div class="eyebrow">방법 ③ · 모델</div>
-    <h2 class="stitle">인코더 내부 — 필터가 훑고, CLS가 패치를 본다</h2>
-    <img class="bigfig" src="figures/fig_architecture.png" alt="architecture" style="max-height:4.6em; object-fit:contain;">
-    <svg class="anim" id="s8fig" viewBox="0 0 1040 320" preserveAspectRatio="xMidYMid meet" style="max-height:9.4em; margin-top:.28em;">
+    <div class="eyebrow">방법</div>
+    <p class="claim">인코더 내부 — 필터가 훑고, CLS가 패치를 본다</p>
+    <svg class="anim" id="s8fig" viewBox="0 0 1040 320" preserveAspectRatio="xMidYMid meet" style="max-height:11.6em; margin-top:.45em;">
       <defs>
         <clipPath id="s8clip"><rect x="40" y="76" width="168" height="168" rx="8"/></clipPath>
         <marker id="s8ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
@@ -380,7 +292,7 @@
       <line x1="218" y1="160" x2="322" y2="160" stroke="#5b6b7d" stroke-width="2" marker-end="url(#s8ar)"/>
       <g id="s8out"></g>
       <text class="t-s" x="370" y="266" text-anchor="middle">특징 맵 · 4×4</text>
-      <text class="t-s" x="263" y="290" text-anchor="middle">한 칸씩 미끄러지며 각 위치의 국소 특징을 뽑는다</text>
+      <text class="t-s" x="263" y="290" text-anchor="middle">한 칸씩 미끄러지며 국소 특징을 뽑는다</text>
       <rect x="528" y="16" width="498" height="288" rx="14" fill="#fffaf0" stroke="#a9781a"/>
       <text class="t-b" x="777" y="44" text-anchor="middle" style="fill:#a9781a">② Cross-Attention — CLS가 패치를 본다</text>
       <g id="s8attn"></g>
@@ -391,19 +303,19 @@
       <text class="t-s" x="630" y="212" text-anchor="middle">질문하는 토큰</text>
       <g id="s8pk"></g>
       <text class="t-s" x="836" y="258" text-anchor="middle">패치 토큰 4×4 (실제 7×7 = 49개)</text>
-      <text class="t-s" x="777" y="290" text-anchor="middle">패치마다 가중치를 주며 훑고, 하나의 CLS 임베딩에 종합한다</text>
+      <text class="t-s" x="777" y="290" text-anchor="middle">패치마다 가중치를 주며 하나의 CLS에 종합한다</text>
     </svg>
-    <p class="footnote" style="text-align:center;">흐름: 384×384×3 → CNN 특징 7×7×1280 → 패치 토큰 49개 → CLS 384차원. <b>세 지표는 모두 이 CLS 임베딩 하나에서 나온다.</b> EfficientNetV2B0(7.1M)를 쓴 이유는 ResNet50V2(23.6M)와 동등한 AUROC를 더 가벼운 모델로 냈기 때문이다.</p>
+    <p class="sub" style="margin-top:.45em; text-align:center;">EfficientNetV2B0 <b>7.1M</b> — ResNet50V2(23.6M)와 같은 AUROC를 더 가벼운 모델로</p>
   </div>
-  <div class="foot"><span>방법 ③</span><span>6 / 14</span></div>
+  <div class="foot"><span>방법</span><span>4 / 11</span></div>
 </section>
 
-<!-- ============ 7. TRAINING STRATEGY ============ -->
+<!-- ============ 5. TRAINING ============ -->
 <section>
   <div class="wrap">
-    <div class="eyebrow gold">방법 ④ · 학습 전략</div>
-    <h2 class="stitle">SupCon은 분류 성능이 아니라 임베딩 기하를 바꾼다</h2>
-    <svg class="anim" id="s10fig" viewBox="0 0 1040 320" preserveAspectRatio="xMidYMid meet" style="max-height:9em;">
+    <div class="eyebrow gold">방법</div>
+    <p class="claim">SupCon은 분류 성능이 아니라<br>임베딩의 모양을 바꾼다</p>
+    <svg class="anim" id="s10fig" viewBox="0 0 1040 320" preserveAspectRatio="xMidYMid meet" style="max-height:9.4em; margin-top:.45em;">
       <defs>
         <clipPath id="s10clipA"><rect x="14" y="16" width="498" height="288" rx="14"/></clipPath>
         <clipPath id="s10clipB"><rect x="528" y="16" width="498" height="288" rx="14"/></clipPath>
@@ -451,244 +363,168 @@
       <text class="t-s" x="849" y="219" text-anchor="middle" style="fill:#2f6fb3">V2</text>
       <text class="t-b" x="777" y="46" text-anchor="middle" style="fill:#0056b3">CE only</text>
       <rect x="612" y="276" width="330" height="26" rx="6" fill="#ffffff" opacity=".92"/>
-      <text class="t-s" x="777" y="290" text-anchor="middle">임베딩은 그대로 · 경계만 이동 (닮음 정보 없음)</text>
+      <text class="t-s" x="777" y="290" text-anchor="middle">경계만 이동 (닮음 정보 없음)</text>
     </svg>
-    <div class="grid3" style="margin-top:.3em;">
+    <div class="grid2" style="margin-top:.45em;">
       <div class="stat-card" style="border-color:rgba(201,64,58,.4);">
-        <div class="stat-num hcc" style="font-size:.62em;">0.882 → 0.970</div>
-        <div class="stat-lbl">true HCC(n=417)의 HCC cosine <b>중앙값</b> · 대응분석 <b>p&lt;0.001</b> (증가)</div>
+        <div class="stat-num hcc" style="font-size:.72em;">0.882 → 0.970</div>
+        <div class="stat-lbl">HCC cosine 중앙값 <b>상승</b> (p&lt;0.001)</div>
       </div>
       <div class="stat-card" style="border-color:rgba(0,86,179,.4);">
-        <div class="stat-num navy" style="font-size:.62em;">+1.508 → +1.076</div>
-        <div class="stat-lbl">같은 케이스의 <b>Δscore 중앙값</b> · 대응분석 <b>p&lt;0.001</b> (오히려 <b>감소</b>)</div>
-      </div>
-      <div class="stat-card" style="border-color:rgba(169,120,26,.5);">
-        <div class="stat-num gold" style="font-size:.62em;">CE only도 천장</div>
-        <div class="stat-lbl">CE 단독에서도 cosine·Δ AUROC 1.000에 근접 → <b>"SupCon 필수"는 주장하지 않는다</b></div>
+        <div class="stat-num navy" style="font-size:.72em;">1.508 → 1.076</div>
+        <div class="stat-lbl">Δscore 중앙값 <b>감소</b> (p&lt;0.001)</div>
       </div>
     </div>
-    <p class="footnote" style="text-align:center;">SupCon은 같은 클래스를 모으고 HCC cosine을 올린다. 그러나 <b>Δscore는 유의하게 낮아졌다</b> — 즉 이 연구는 Δscore의 타당성을 입증하지 못했다. SupCon의 남는 기여는 <b>분류 성능이 아니라 표상 기하</b>에 대한 것이다.</p>
   </div>
-  <div class="foot"><span>방법 ④</span><span>7 / 14</span></div>
+  <div class="foot"><span>방법</span><span>5 / 11</span></div>
 </section>
 
-<!-- ============ 8. RESULT 1 ============ -->
+<!-- ============ 6. RESULT — PERFORMANCE + THREE OUTPUTS ============ -->
 <section>
   <div class="wrap">
-    <div class="eyebrow">결과 ① 주력 모델 성능</div>
-    <h2 class="stitle">테스트 세트 — 위음성 0건, 위양성 1건</h2>
+    <div class="eyebrow">결과</div>
+    <p class="claim">테스트 268장 — 위음성 0건, 위양성 1건</p>
+    <div class="grid4" style="margin:.45em 0;">
+      <div class="stat-card"><div class="stat-num navy">1.000</div><div class="stat-lbl">AUROC</div></div>
+      <div class="stat-card"><div class="stat-num hcc">100%</div><div class="stat-lbl">민감도</div></div>
+      <div class="stat-card"><div class="stat-num hem">99.2%</div><div class="stat-lbl">특이도</div></div>
+      <div class="stat-card"><div class="stat-num">99.63%</div><div class="stat-lbl">정확도</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <table class="cm">
+          <tr><th></th><th>예측 혈관종</th><th>예측 HCC</th></tr>
+          <tr><th>실제 혈관종</th><td class="a">TN 127</td><td>FP 1</td></tr>
+          <tr><th>실제 HCC</th><td>FN 0</td><td class="a">TP 140</td></tr>
+        </table>
+        <p class="sub" style="text-align:center; margin-top:.4em;">세 출력 모두 <b>AUROC 1.000</b> — 우열은 판정할 수 없다</p>
+      </div>
+      <div><img src="figures/fig3b_roc_test.jpg" alt="ROC" style="width:100%; max-height:30vh; object-fit:contain; border:1px solid var(--line); border-radius:12px; background:#fff;"></div>
+    </div>
+  </div>
+  <div class="foot"><span>결과</span><span>6 / 11</span></div>
+</section>
+
+<!-- ============ 7. RESULT — DISTRIBUTIONS ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow gold">결과</div>
+    <p class="claim">닮음 점수가 실제로 움직였다</p>
+    <div class="grid2" style="margin-top:.45em;">
+      <div>
+        <img src="figures/fig4_hcc_cosine.png" alt="SupCon 전후 HCC cosine 분포" style="width:100%; max-height:10.4em; object-fit:contain; border:1px solid var(--line); border-radius:12px; background:#fff; display:block;">
+        <p class="sub" style="text-align:center; margin-top:.15em;">true HCC (n=417)</p>
+      </div>
+      <div>
+        <img src="figures/fig5_hem_cosine.png" alt="SupCon 전후 Hemangioma cosine 분포" style="width:100%; max-height:10.4em; object-fit:contain; border:1px solid var(--line); border-radius:12px; background:#fff; display:block;">
+        <p class="sub" style="text-align:center; margin-top:.15em;">true 혈관종 (n=381)</p>
+      </div>
+    </div>
+    <div class="grid3" style="margin-top:.4em;">
+      <p class="sub" style="text-align:center;">HCC cosine <b class="hcc">0.882 → 0.970</b> · 분산 −60.7%</p>
+      <p class="sub" style="text-align:center;">혈관종 cosine <b class="hem">0.955 → 0.985</b> · 분산 −98.7%</p>
+      <p class="sub" style="text-align:center;">Δscore <b class="gold">1.508 → 1.076 (감소)</b></p>
+    </div>
+  </div>
+  <div class="foot"><span>결과</span><span>7 / 11</span></div>
+</section>
+
+<!-- ============ 8. HEMANGIOMA-LIKE HCC ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow hcc">결과</div>
+    <p class="claim">혈관종처럼 보이는 HCC — 4예 모두 HCC로 분류</p>
+    <div class="grid4" style="margin-top:.5em;">
+      <div>
+        <div style="height:6em; border:1px solid var(--line); border-radius:12px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+          <img src="../example_images_hcc_case/hcc_mimicking_hemangioma_web/images/02_jmat2013_fig4_hyperechoic_HCC.png" alt="case1" style="max-width:100%; max-height:100%; object-fit:contain;">
+        </div>
+        <p class="sub" style="text-align:center; margin-top:.2em;">① 고에코 HCC · Fig 4</p>
+      </div>
+      <div>
+        <div style="height:6em; border:1px solid var(--line); border-radius:12px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+          <img src="../example_images_hcc_case/hcc_mimicking_hemangioma_web/images/03_jmat2013_fig10_two_hyperechoic_HCC_with_halo.png" alt="case2" style="max-width:100%; max-height:100%; object-fit:contain;">
+        </div>
+        <p class="sub" style="text-align:center; margin-top:.2em;">② halo 동반 · Fig 10</p>
+      </div>
+      <div>
+        <div style="height:6em; border:1px solid var(--line); border-radius:12px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+          <img src="../example_images_hcc_case/hcc_mimicking_hemangioma_web/images/04_jmat2013_fig11B_hyperechoic_HCC.png" alt="case3" style="max-width:100%; max-height:100%; object-fit:contain;">
+        </div>
+        <p class="sub" style="text-align:center; margin-top:.2em;">③ 후방강화 동반 · Fig 11B</p>
+      </div>
+      <div>
+        <div style="height:6em; border:1px solid var(--line); border-radius:12px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+          <img src="../example_images_hcc_case/hcc_mimicking_hemangioma_web/images/05_jmat2013_fig12C_hyperechoic_HCC.png" alt="case4" style="max-width:100%; max-height:100%; object-fit:contain;">
+        </div>
+        <p class="sub" style="text-align:center; margin-top:.2em;">④ 혈관종과 나란히 · Fig 12C</p>
+      </div>
+    </div>
+    <div class="grid3" style="margin-top:.5em;">
+      <p class="sub" style="text-align:center;">Confidence <b>4/4</b> (0.989–1.000)</p>
+      <p class="sub" style="text-align:center;">HCC cosine <b>4/4</b> (0.849–0.989)</p>
+      <p class="sub" style="text-align:center;">Δscore <b>4/4</b> (0.651–1.221)</p>
+    </div>
+    <p class="sub" style="margin-top:.5em; text-align:center;">Proof-of-Concept demonstration (n=4) — 민감도 추정치로 읽을 수는 없다 · <i>J Med Assoc Thai</i> 2013;96(7):829-838</p>
+  </div>
+  <div class="foot"><span>결과</span><span>8 / 11</span></div>
+</section>
+
+<!-- ============ 9. NO INCREMENTAL GAIN ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow gold">고찰 ①</div>
+    <p class="claim">증분 이득은 없었다</p>
+    <div class="grid2" style="margin-top:.6em; align-items:center;">
+      <div class="card">
+        <table class="tbl sm">
+          <tr><th>테스트 오분류 1건 (실제 혈관종)</th><th>값</th></tr>
+          <tr><td class="l">confidence (임계값 0.0011)</td><td class="hcc">0.0014 → HCC</td></tr>
+          <tr><td class="l">HCC cosine (임계값 −0.0048)</td><td class="hcc">0.0325 → HCC</td></tr>
+          <tr><td class="l">Δscore (임계값 −0.9585)</td><td class="hcc">−0.8879 → HCC</td></tr>
+        </table>
+      </div>
+      <div>
+        <p style="font-size:.6em; line-height:1.5;">세 출력이 <b>같은 1장</b>을 똑같이 틀렸다.</p>
+        <p style="font-size:.6em; line-height:1.5; margin-top:.5em;">혼동행렬이 출력마다 동일 — <b>TP140 / FP1 / FN0 / TN127</b>.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>고찰 ①</span><span>9 / 11</span></div>
+</section>
+
+<!-- ============ 10. NOVELTY + LIMITATIONS ============ -->
+<section>
+  <div class="wrap">
+    <div class="eyebrow navy">고찰 ②</div>
+    <h2 class="stitle">Novelty와 한계</h2>
     <div class="grid2" style="margin-top:.05em;">
-      <div>
-        <table class="tbl">
-          <tr><th>지표 (confidence 기준)</th><th>검증 n=530</th><th>테스트 n=268</th></tr>
-          <tr><td class="l">AUROC</td><td>1.000</td><td>1.000</td></tr>
-          <tr><td class="l">민감도 (95% CI)</td><td>100.0% [98.7–100]</td><td>100.0% [97.4–100]</td></tr>
-          <tr><td class="l">특이도 (95% CI)</td><td>100.0% [98.6–100]</td><td>99.2% [95.7–100]</td></tr>
-          <tr><td class="l">정확도 (95% CI)</td><td>100.0% [99.3–100]</td><td>99.63% [97.9–100]</td></tr>
-          <tr class="hl"><td class="l">TP / FP / FN / TN</td><td>277 / 0 / 0 / 253</td><td>140 / 1 / 0 / 127</td></tr>
-        </table>
-        <ul class="clean tight" style="margin-top:.3em;">
-          <li>검증 세트는 <b>출력에 따라 다르다</b>: confidence·Δscore 100.0%, <b>HCC cosine 99.81%</b>(TP276/FN1)</li>
-          <li>신뢰구간은 <b>영상 단위(image-level) Clopper-Pearson</b>이다 — 환자 내 상관 때문에 실제보다 좁게 추정됐을 수 있다</li>
+      <div class="card">
+        <p class="navy" style="font-size:.5em; font-weight:800; margin-bottom:.2em;">Novelty</p>
+        <ul class="big">
+          <li>한 모델에서 <b>confidence와 닮음 점수를 동시에</b> 낸다</li>
+          <li>판독자의 <b>"닮음" 판단을 숫자로</b> 남긴다</li>
+          <li>SupCon이 <b>HCC cosine을 전형 HCC 쪽으로 정렬</b>한다 (p&lt;0.001)</li>
         </ul>
-      </div>
-      <div>
-        <img src="figures/fig1_tsne.jpg" alt="t-SNE 임베딩" style="width:100%; max-height:24vh; object-fit:contain; border:1px solid var(--line); border-radius:8px; background:#fff;">
-        <p class="footnote">임베딩 공간 시각화(t-SNE) — 두 클래스 클러스터가 분리된다. 그림 자체는 모델의 변별력 근거가 아니다.</p>
-      </div>
-    </div>
-    <p class="footnote" style="text-align:center;">세 출력이 테스트에서 <b>정확히 같은 1장</b>(실제 혈관종)을 위양성으로 판정했다 — 즉 cosine 지표의 <b>증분 이득은 입증되지 않았다</b>.</p>
-  </div>
-  <div class="foot"><span>결과 ①</span><span>8 / 14</span></div>
-</section>
-
-<!-- ============ 9. RESULT 2 ============ -->
-<section>
-  <div class="wrap">
-    <div class="eyebrow">결과 ② 세 출력 비교</div>
-    <h2 class="stitle">세 출력 모두 AUROC 1.000 — 이 숫자는 우열을 말해주지 않는다</h2>
-    <div class="grid2" style="margin-top:.1em;">
-      <div><img src="figures/fig3b_roc_test.jpg" alt="ROC" style="width:100%; max-height:42vh; object-fit:contain; border:1px solid var(--line); border-radius:8px; background:#fff;"></div>
-      <div>
-        <table class="tbl">
-          <tr><th>출력</th><th>AUROC (Test)</th><th>Test 오류 (FP/FN)</th></tr>
-          <tr><td class="l">① Confidence</td><td>1.000</td><td>1 / 0</td></tr>
-          <tr><td class="l">② HCC cosine (mean)</td><td>1.000</td><td>1 / 0</td></tr>
-          <tr><td class="l">③ Δscore (mean)</td><td>1.000</td><td>1 / 0</td></tr>
-          <tr><td class="l">②③ k-means k=4</td><td>1.000</td><td>1 / 0</td></tr>
-        </table>
-        <div class="card" style="margin-top:.4em; border-left:.3em solid var(--gold);">
-          <p style="font-size:.4em; margin:0;"><b class="gold">천장효과 ▸</b> AUROC가 모두 1.000이면 DeLong 검정은 <b>실질적 비교 정보를 주지 못한다</b>. 이 연구는 <b>비열등성·동등성 주장을 하지 않는다</b>. 5개 출력이 같은 1장을 오분류했으므로 <b>증분 이득도 미입증</b>이다.</p>
-        </div>
-        <ul class="clean tight" style="margin-top:.35em;">
-          <li>따라서 주장은 "더 잘 맞힌다"가 아니라 <b>"같은 모델에서 판독 가능한 두 번째 숫자를 함께 낼 수 있다"</b>까지다</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-  <div class="foot"><span>결과 ②</span><span>9 / 14</span></div>
-</section>
-
-<!-- ============ 10. RESULT 3 ============ -->
-<section>
-  <div class="wrap">
-    <div class="eyebrow gold">결과 ③ · SupCon 전후 분포</div>
-    <h2 class="stitle" style="margin-bottom:.28em;">닮음 점수의 분포는 바뀐다 — 단, 모든 지표가 같은 방향은 아니다</h2>
-    <div class="grid2" style="margin-top:.02em;">
-      <div>
-        <img src="figures/fig4_hcc_cosine.png" alt="SupCon 전후 HCC cosine score 분포" style="width:100%; max-height:10em; object-fit:contain; border:1px solid var(--line); border-radius:8px; background:#fff; display:block;">
-        <div style="font-size:.28em; color:var(--muted); text-align:center; margin-top:.08em;">true HCC (n=417) · HCC cosine · A 밀도분포 · B 쌍별 이동</div>
-      </div>
-      <div>
-        <img src="figures/fig5_hem_cosine.png" alt="SupCon 전후 Hemangioma cosine score 분포" style="width:100%; max-height:10em; object-fit:contain; border:1px solid var(--line); border-radius:8px; background:#fff; display:block;">
-        <div style="font-size:.28em; color:var(--muted); text-align:center; margin-top:.08em;">true 혈관종 (n=381) · hemangioma cosine · A 밀도분포 · B 쌍별 이동</div>
-      </div>
-    </div>
-    <div class="card tint" style="margin-top:.24em; padding:.3em .6em;">
-      <ul class="clean tight" style="margin:0;">
-        <li><b>HCC cosine는 상승</b>: 중앙값 0.882 → 0.970, 분산 −60.7% (대응분석 p&lt;0.001) — 전형 HCC 쪽으로 정렬됐다</li>
-        <li><b>혈관종 cosine도 상승</b>: 0.955 → 0.985, 분산 −98.7% — 같은 방향의 변화</li>
-        <li><b>그러나 Δscore는 유의하게 감소</b>했다 (+1.508 → +1.076, p&lt;0.001). 즉 <b>Δscore의 임상적 타당성은 이 데이터로 지지되지 않는다</b></li>
-        <li>이 분포 변화는 <b>해석</b>의 근거이지 <b>분류 성능 개선</b>의 근거가 아니다</li>
-      </ul>
-    </div>
-    <p class="footnote" style="text-align:center;">전부 true HCC(Val+Test) · true 혈관종 기준의 기술적 분포 비교다. 그림의 분산 감소율은 각 그림 캡션 값과 일치한다.</p>
-  </div>
-  <div class="foot"><span>결과 ③</span><span>10 / 14</span></div>
-</section>
-
-<!-- ============ 11. HEMANGIOMA-LIKE HCC (exploratory) ============ -->
-<section>
-  <div class="wrap">
-    <div class="eyebrow hcc">결과 ④ · 탐색적 점검</div>
-    <h2 class="stitle">혈관종처럼 보이는 HCC — 문헌 증례로 본 탐색적 점검</h2>
-    <p style="font-size:.36em; color:var(--muted); margin-bottom:.2em;">초음파에서 혈관종과 구별이 어렵다고 문헌에 보고된 고에코 HCC 5예(공개 figure에서 수집)를 넣어 보았다. <b>외부 검증이 아니다.</b></p>
-    <div class="grid5">
-      <div>
-        <div style="height:4.9em; border:1px solid var(--line); border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-          <img src="../example_images_hcc_case/hcc_mimicking_hemangioma_web/images/01_jcth2024_fig1b_type2a_homogeneous_hyperechoic_HCC.png" alt="case1" style="max-width:100%; max-height:100%; object-fit:contain;">
-        </div>
-        <p style="font-size:.24em; color:var(--muted); margin-top:.1em; line-height:1.4;">① &lt;3 cm 균질 고에코 HCC<br>JCTH 2024 Fig 1B (CC BY-NC 4.0)</p>
-      </div>
-      <div>
-        <div style="height:4.9em; border:1px solid var(--line); border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-          <img src="../example_images_hcc_case/hcc_mimicking_hemangioma_web/images/02_jmat2013_fig4_hyperechoic_HCC.png" alt="case2" style="max-width:100%; max-height:100%; object-fit:contain;">
-        </div>
-        <p style="font-size:.24em; color:var(--muted); margin-top:.1em; line-height:1.4;">② 고에코 HCC 결절<br>J Med Assoc Thai 2013 Fig 4</p>
-      </div>
-      <div>
-        <div style="height:4.9em; border:1px solid var(--line); border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-          <img src="../example_images_hcc_case/hcc_mimicking_hemangioma_web/images/03_jmat2013_fig10_two_hyperechoic_HCC_with_halo.png" alt="case3" style="max-width:100%; max-height:100%; object-fit:contain;">
-        </div>
-        <p style="font-size:.24em; color:var(--muted); margin-top:.1em; line-height:1.4;">③ halo + 후방강화 동반<br>동일 논문 Fig 10</p>
-      </div>
-      <div>
-        <div style="height:4.9em; border:1px solid var(--line); border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-          <img src="../example_images_hcc_case/hcc_mimicking_hemangioma_web/images/04_jmat2013_fig11B_hyperechoic_HCC.png" alt="case4" style="max-width:100%; max-height:100%; object-fit:contain;">
-        </div>
-        <p style="font-size:.24em; color:var(--muted); margin-top:.1em; line-height:1.4;">④ 후방강화 동반 고에코 HCC<br>동일 논문 Fig 11B</p>
-      </div>
-      <div>
-        <div style="height:4.9em; border:1px solid var(--line); border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-          <img src="../example_images_hcc_case/hcc_mimicking_hemangioma_web/images/05_jmat2013_fig12C_hyperechoic_HCC.png" alt="case5" style="max-width:100%; max-height:100%; object-fit:contain;">
-        </div>
-        <p style="font-size:.24em; color:var(--muted); margin-top:.1em; line-height:1.4;">⑤ 혈관종과 나란히 비교<br>동일 논문 Fig 12C</p>
-      </div>
-    </div>
-    <div class="grid2" style="margin-top:.3em; align-items:stretch;">
-      <div class="card" style="border-color:rgba(0,86,179,.35);">
-        <p style="font-size:.42em; font-weight:800; color:var(--navy);">모델 출력 — 5예 모두 HCC로 분류</p>
-        <ul class="clean tight" style="margin-top:.2em;">
-          <li>Confidence 5/5 (P(HCC) 0.989–1.000)</li>
-          <li>HCC cosine 5/5 (0.849–0.989) · Δscore 5/5 (0.651–1.228)</li>
-        </ul>
-      </div>
-      <div class="card" style="border-left:.3em solid var(--gold);">
-        <p style="font-size:.42em; font-weight:800; color:var(--gold);">그래서 무엇을 말할 수 있나</p>
-        <ul class="clean tight" style="margin-top:.2em;">
-          <li><b>n=5</b>, 출판 figure 유래 저해상도·다른 장비 → domain shift 큼</li>
-          <li><b>파이프라인 동결 전</b>의 평가다. "외부 검증"이 아니라 <b>탐색적 sanity check</b>이며, 민감도 추정치로 읽으면 안 된다</li>
-          <li>출처 표기 필요: JCTH 2024 (CC BY-NC 4.0) · J Med Assoc Thai 2013</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-  <div class="foot"><span>결과 ④</span><span>11 / 14</span></div>
-</section>
-
-<!-- ============ 12. THE ONE FAILURE + LIMITS ============ -->
-<section>
-  <div class="wrap">
-    <div class="eyebrow gold">고찰 ① · 실패와 한계</div>
-    <h2 class="stitle">위양성 1건과, 이 연구가 아직 말할 수 없는 것</h2>
-    <div class="grid2" style="margin-top:.05em;">
-      <div class="card" style="border-left:.3em solid var(--hcc);">
-        <p style="font-size:.42em; font-weight:800; color:var(--hcc);">테스트 오분류 1건의 정체</p>
-        <table class="tbl sm" style="margin-top:.2em;">
-          <tr><th>항목</th><th>값</th></tr>
-          <tr><td class="l">실제 진단</td><td>혈관종</td></tr>
-          <tr><td class="l">confidence (임계값 0.0011)</td><td class="hcc">0.0014 → HCC로 오판</td></tr>
-          <tr><td class="l">혈관종 cosine</td><td>0.920 (혈관종 쪽)</td></tr>
-          <tr><td class="l">Δscore</td><td class="hcc">−0.888 → 역시 HCC로 오판</td></tr>
-        </table>
-        <p style="font-size:.35em; margin-top:.2em;">세 출력이 <b>같은 방향으로 함께 틀렸다</b>. cosine이 confidence를 구제한 사례는 이 데이터에 없다 — 이것이 <b>증분 이득 미입증</b>의 실체다.</p>
       </div>
       <div class="card tint">
-        <p style="font-size:.42em; font-weight:800; color:var(--gold);">한계 — 임상 적용 전에 넘어야 할 것</p>
-        <ul class="clean xs" style="margin-top:.15em;">
-          <li><b>참조표준 비대칭</b>: HCC는 병리확진, 혈관종은 영상 판독 → 혈관종 라벨 오류 가능</li>
-          <li><b>선택 편향</b>: 원저의 대표영상 선별 + 정제된 clean subset → 높은 정확도가 데이터 조건에서 기인했을 수 있음</li>
-          <li><b>단일기관·단일 데이터셋</b> → 일반화·배포 주장을 하지 않는다. 장비 게인·탐촉자·검사자 변동 미평가</li>
-          <li><b>환자 ID 없음</b> → 환자 단위 집계·cluster bootstrap 불가, CI는 image-level이라 좁게 추정됐을 수 있고, 근접 중복 프레임 감사도 불가</li>
-          <li><b>배경 간 층화 미시행</b>(B/C형 간염·간경변·지방간 정보 없음) → 모델이 배경 간 실질을 <b>shortcut</b>으로 학습했을 가능성을 배제할 수 없다</li>
-          <li><b>Grad-CAM 미제시</b>: 배경 간 라벨이 없어 heatmap의 국소병변/배경 반응을 구분할 수 없어 오히려 오용 위험이 크다</li>
-          <li><b>천장효과</b>: 출력 간 우열 구분 불가 · <b>Δscore는 SupCon에서 감소</b> → Δscore 타당성 지지 근거 없음</li>
-          <li><b>미수행</b>: AFP 대비 증분 기여, decision curve analysis(net benefit), 부트스트랩 CI, SSL 하이퍼파라미터 민감도</li>
+        <p class="gold" style="font-size:.5em; font-weight:800; margin-bottom:.2em;">한계</p>
+        <ul class="big">
+          <li><b>단일기관</b> · 외부 검증 없음</li>
+          <li><b>천장효과</b> — 증분 이득을 측정할 수 없다</li>
+          <li><b>Δscore는 감소</b> — 타당성 근거 없음</li>
+          <li>배경 간 층화 불가 · shortcut 배제 불가</li>
         </ul>
       </div>
     </div>
-    <div class="warn" style="margin-top:.3em;">
-      <p style="font-size:.42em;">정리: 이 연구는 <b>"이런 지표를 산출할 수 있다"</b>는 방법론적 실현과 <b>정직한 음성 결과</b>를 보고한 탐색적 연구다. 임상적 유용성은 다기관 외부 검증과 판독자 대상 연구로만 판단될 수 있다.</p>
+    <div class="concl" style="margin-top:.5em;">
+      <p style="font-size:.5em;">다음 단계 — 다기관 외부 검증 · 판독자 대상 전향적 비교 · AFP 및 조영증강 영상과의 비교.</p>
     </div>
   </div>
-  <div class="foot"><span>고찰 ①</span><span>12 / 14</span></div>
+  <div class="foot"><span>고찰 ②</span><span>10 / 11</span></div>
 </section>
 
-<!-- ============ 13. WHAT WE CLAIM / DO NOT CLAIM ============ -->
-<section>
-  <div class="wrap">
-    <div class="eyebrow navy">고찰 ② · 주장의 경계</div>
-    <h2 class="stitle">말하는 것과, 말하지 않는 것</h2>
-    <div class="grid2" style="margin-top:.05em; align-items:stretch;">
-      <div class="card">
-        <p class="navy" style="font-size:.44em; font-weight:800; margin-bottom:.2em;">말하는 것</p>
-        <ul class="clean small">
-          <li>같은 모델 하나에서 <b>confidence와 임베딩 유사도(HCC cosine·Δscore)를 동시에 산출</b>하는 방법을 구현했다</li>
-          <li>SupCon 학습이 <b>HCC cosine 분포를 전형 HCC 쪽으로 정렬</b>한다 (p&lt;0.001)</li>
-          <li>공개 데이터로 <b>모든 수치를 재현 가능</b>하게 산출했다</li>
-          <li><b>증분 이득이 없다는 결과를 포함해</b> 정직하게 보고했다</li>
-        </ul>
-      </div>
-      <div class="card" style="border-left:.3em solid var(--hcc);">
-        <p class="hcc" style="font-size:.44em; font-weight:800; margin-bottom:.2em;">말하지 않는 것</p>
-        <ul class="clean small">
-          <li><b>분류 성능이 우월하다</b> — 세 출력 AUROC가 같은 천장이라 비교 자체가 불가</li>
-          <li><b>감시·선별에 쓰일 수 있다</b> — 범위는 이미 발견된 병변의 감별 보조</li>
-          <li><b>일반화·즉시 적용 가능</b> — 단일기관, 외부 검증 없음</li>
-          <li><b>임상적 이득·순편익</b> — decision curve analysis도 하지 않았다</li>
-          <li><b>Δscore의 임상적 타당성</b> — SupCon에서 오히려 감소했다</li>
-        </ul>
-      </div>
-    </div>
-    <div class="concl" style="margin-top:.35em;">
-      <p style="font-size:.44em;">다음 단계는 이 순서다: ① 다기관·타 장비 외부 검증 → ② 조영증강 CT/MRI·CEUS 및 AFP와의 비교 → ③ 판독자 대상 전향적 비교로 <b>실제 판단 변화와 환자 결과</b> 확인 → ④ decision curve analysis로 순편익 평가.</p>
-    </div>
-    <p class="cite">모든 수치는 per-case 점수 CSV에서 재계산했다 (scratch/verify_v2_numbers.py).</p>
-  </div>
-  <div class="foot"><span>고찰 ②</span><span>13 / 14</span></div>
-</section>
-
-<!-- ============ 14. THANK YOU ============ -->
+<!-- ============ 11. THANK YOU ============ -->
 <section class="cover">
   <div class="wrap"><div class="cover-inner">
     <div class="eyebrow gold">Thank you</div>
@@ -696,7 +532,7 @@
     <p class="cover-sub">질문과 토론을 환영합니다.</p>
     <p class="cover-author">예수병원 가정의학과 R3 김현수</p>
   </div></div>
-  <div class="foot"><span>v2</span><span>14 / 14</span></div>
+  <div class="foot"><span>v2</span><span>11 / 11</span></div>
 </section>
 
 </div></div>
@@ -712,18 +548,16 @@
   });
 </script>
 <script>
-/* ===================================================================
-   Inline, dependency-free animation drivers (offline-safe).
-   - slide 5 : image -> encoder -> embedding -> three metrics
-   - slide 6 : convolution filter + CLS cross-attention
-   Printing freezes each figure at a representative frame.
-   =================================================================== */
+/* Inline, dependency-free animation drivers (offline-safe).
+   slide 3 : image -> encoder -> embedding -> three metrics
+   slide 4 : convolution filter + CLS cross-attention
+   Printing freezes each figure at a representative frame. */
 (function(){
   "use strict";
   var root = document.documentElement;
   function printMode(){ return root.classList.contains('print-pdf'); }
 
-  /* ------- slide 5 : image -> encoder -> embedding -> 3 metrics ------- */
+  /* ------- slide 3 : image -> encoder -> embedding -> 3 metrics ------- */
   (function(){
     if(!document.getElementById('s12fig')) return;
     var g = function(id){ return document.getElementById(id); };
@@ -781,7 +615,7 @@
     window.addEventListener('beforeprint', function(){ stop = true; drawPrint(); });
   })();
 
-  /* ------- slide 6 : inside the encoder (conv filter + cross-attention) ------- */
+  /* ------- slide 4 : inside the encoder (conv filter + cross-attention) ------- */
   (function(){
     if(!document.getElementById('s8fig')) return;
     var NS = 'http://www.w3.org/2000/svg';
