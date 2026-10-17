@@ -1,0 +1,55 @@
+/* v3 design tokens — single source of truth for colour, type, space, surface.
+   Slides must not hardcode hex or px outside this file (except geometry of inline SVG). */
+:root{
+  /* ---- colour ---- */
+  --paper:#FAF9F5;
+  --paper-2:#F3F1EA;
+  --ink:#16202A;
+  --ink-soft:#3A4750;
+  --muted:#5A666F;
+  --line:#D9D5C9;
+  --line-strong:#B9B4A5;
+  --accent:#0F6E63;
+  --accent-weak:rgba(15,110,99,.10);
+  --hcc:#9E3B2F;
+  --hcc-weak:rgba(158,59,47,.10);
+  --hem:#2A6076;
+  --hem-weak:rgba(42,96,118,.10);
+  --caution:#8A6A2A;
+  --caution-weak:rgba(138,106,42,.10);
+  --mat:#FFFFFF;            /* image mat / panel fill — kept separate from paper */
+
+  /* ---- type ---- */
+  --font-display:"Batang","바탕","HANBatang",Georgia,serif;
+  --font-body:"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo",sans-serif;
+  --fs-eyebrow:15px;
+  --fs-cover:56px;
+  --fs-claim:42px;
+  --fs-title:40px;
+  --fs-body:25px;
+  --fs-sub:21px;
+  --fs-foot:18px;
+  --fs-stat:54px;
+  --fs-stat-lbl:19px;
+  --fs-table:20px;
+  --lh-tight:1.28;
+  --lh-body:1.55;
+
+  /* ---- space ---- */
+  --pad-x:64px;
+  --pad-top:52px;
+  --pad-bottom:44px;
+  --sp-1:8px;
+  --sp-2:12px;
+  --sp-3:16px;
+  --sp-4:24px;
+  --sp-5:40px;
+  --sp-4b:32px;
+  --sp-6:64px;
+
+  /* ---- surface ---- */
+  --radius:2px;
+  --rule:1px;
+  --rule-2:2px;
+  --rule-3:3px;
+}
