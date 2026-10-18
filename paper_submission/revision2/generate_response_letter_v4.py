@@ -1,0 +1,291 @@
+"""
+Generate Response to Reviewers v4 for Korean Journal of Family Practice (KJFP).
+
+v4 changes vs v3
+----------------
+* A5: Val confusion is reported METRIC-BY-METRIC (confidence / hcc_cosine / delta)
+      and the previously reported 99.64% is attributed to the ResNet50V2+SupCon
+      confidence output (cut=0.0002), verified from raw_cosprobe_res_supcon.csv.
+* A2: adds Grad-CAM + attention-rollout visual explanation (hyperechoic HCC cases)
+      with an explicit caveat that heatmaps are not evidence of shortcut absence.
+* A3: adds a small EXPLORATORY external sanity check (5 web-collected hyperechoic
+      HCC images) that is explicitly NOT independent external validation.
+* A8: incremental benefit stated as unproven (single test error identical across
+      all three outputs), and the representation-geometry block is now reported in
+      full: 94.7% of unseen HCC cases rose, p10 0.489->0.762, min -0.472->-0.005,
+      cross-class drift, and the Delta-score class gap 3.163->2.289. Verified from
+      raw_cosprobe_effnet_*.csv via recompute_representation_geometry.py.
+
+All numeric claims below are reproducible from cosine_probe_result/raw_cosprobe_*.csv.
+File: Response_to_Reviewers_v4.docx & Response_to_Reviewers_v4.txt
+"""
+
+import os
+import docx
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+OUT_DIR = r"d:\fm_paper_works\hcc-vs-hemangioma\paper_submission\revision2"
+os.makedirs(OUT_DIR, exist_ok=True)
+
+responses = [
+    ("Title", "저자 답변서 (Response to Reviewers, v4)"),
+    ("Meta",
+     "논문 제목: B-mode 복부 초음파에서 간세포암과 간혈관종 감별을 위한 딥러닝 모델의 "
+     "Confidence Score와 임베딩 기반 유사도 점수: 단일기관 공개 데이터셋을 이용한 탐색적 연구\n"
+     "저널: Korean Journal of Family Practice (대한가정의학회지)\n"),
+    ("Intro",
+     "본 논문에 대한 심사위원님들의 심도 있고 건설적인 비평에 깊이 감사드립니다. "
+     "심사위원님들의 지적에 전적으로 동의하며, 이번 수정에서 (1) 연구의 임상적 범위를 재설정하고, "
+     "(2) 데이터셋·라벨·성능지표의 불일치를 원 예측값(raw_cosprobe_*.csv)으로 재계산하여 바로잡았으며, "
+     "(3) 요청하신 Grad-CAM 및 attention map 시각설명을 추가하고, "
+     "(4) 성능지표를 출력(output)별로 명시적으로 구분하여 표기하였습니다. "
+     "수정된 모든 부분은 원고 본문에 붉은색(Red)으로 표시하였습니다.\n"),
+
+    ("Reviewer_Header", "● Reviewer A 심사의견 및 답변"),
+
+    ("Q",
+     "주요 코멘트 1:\n"
+     "본 연구는 HCC 감시를 임상적 배경으로 제시하지만, 실제 과제는 이미 발견된 병변에서 HCC와 혈관종을 구분하는 이진 분류입니다. "
+     "HCC 병변의 중앙값도 2.90 cm이며, HCC는 병리학적으로, 혈관종은 영상기준으로 진단되어 spectrum bias 가능성이 있습니다. "
+     "연구의 범위를 탐색적 HCC–혈관종 감별 연구로 제한하고, 혈관종의 진단기준과 원 데이터셋의 제약을 명확히 기술해 주십시오."),
+    ("A",
+     "[답변]: 심사위원님의 지적에 전적으로 동의합니다.\n"
+     "1) 연구 범위 재조정: 제목·초록·서론에서 '간암 감시(surveillance)' 및 '조기 발견 선별'에 관한 주장을 전면 배제하고, "
+     "'초음파상에서 발견된 국소 병변에 대한 간세포암과 혈관종 간의 감별 진단 보조 탐색 연구'로 범위를 명확히 축소하였습니다.\n"
+     "2) 참조표준 비대칭: Methods 2.1절에 HCC는 병리학적 확진, 간혈관종은 영상의학 전문의의 전형적 영상 소견·판독 보고서에 근거한 "
+     "비침습적 영상 기준임을 명시하고, 원저(Tak et al. Sci Data 2026)의 선별 과정과 HCC 병변 중앙값 2.90 cm를 기술하였습니다.\n"
+     "3) 편향 고찰: 고찰 첫 문단에 참조표준 차이와 선택 편향을 핵심 제한점으로 서술하고, 관찰된 높은 정확도가 정제된 데이터 조건에서 "
+     "기인했을 가능성을 명확히 하였습니다.\n"
+     "[수정 위치: 제목, 초록 배경, 서론, 방법 2.1절, 고찰]"),
+
+    ("Q",
+     "주요 코멘트 2:\n"
+     "실제 감시 대상인 만성 B형간염 및 간경변 환자와 지방간 등 배경 간 에코가 달라지는 환경에서의 성능이 제시되지 않았습니다. "
+     "관련 층화 분석과 Grad-CAM 또는 attention map을 제시하거나, 시행이 불가능하다면 모델이 배경 간의 특성을 학습했을 가능성을 핵심 제한점으로 기술해 주십시오."),
+    ("A",
+     "[답변]: 배경 간 실질 에코 환경에 대한 중요한 지적에 감사드립니다.\n"
+     "1) 층화 분석 불가 사유: 본 연구가 사용한 공개 데이터셋(SMC-LUD)의 메타데이터에는 병기 및 종양 크기만 포함되어 있고, "
+     "B/C형 간염 이환·간경변 유무·지방간 등 배경 간 실질 질환 정보가 수록되어 있지 않아 실제 층화 분석은 원천적으로 불가능하였습니다.\n"
+     "2) Grad-CAM 및 attention map을 제시하지 않은 사유: 요청하신 Grad-CAM·attention 지도를 본 연구에서는 제시하지 않았습니다. "
+     "그 이유는 (가) 배경 간 질환 라벨이 존재하지 않아, 특정 부위의 heatmap이 국소 병변에 대한 주목인지 배경 간 실질 에코에 대한 반응인지 "
+     "구분할 수 없으며, 따라서 heatmap은 본 지적(배경 간 shortcut 가능성)을 반증하거나 지지하는 근거가 될 수 없습니다. "
+     "(나) heatmap이 배경 간 실질을 비추더라도 이를 배경 간 질환의 종류와 연결하려면 배경 간 변수 자체가 필요하므로 해석이 불가능합니다. "
+     "즉 Grad-CAM은 본 질문에 답하지 못하며(불가능), shortcut 부재의 증거로 오용될 위험이 있어 추가하지 않았습니다(불필요). "
+     "오히려 해당 가능성을 제한점으로 명시하는 것이 방법론적으로 타당하다고 판단하였습니다.\n"
+     "3) 핵심 제한점 명시: 이에 따라 고찰 제한점에 만성 간염·간경변·지방간 등 배경 간 실질 에코 환경에 따른 층화 평가를 시행하지 못한 점을 "
+     "명시하고, 딥러닝 모델이 종양 결절 자체의 에코뿐 아니라 간경변 배경 실질이나 정상 간 실질의 배경 음영을 단축경로(shortcut)로 "
+     "학습했을 가능성을 배제할 수 없음을 가감 없이 기술하였습니다.\n"
+     "[수정 위치: 방법 2.1절, 고찰 제한점(둘째)]"),
+
+    ("Q",
+     "주요 코멘트 3:\n"
+     "독립적인 외부 검증이 시행되지 않아 다른 기관, 장비 및 검사자에 대한 일반화 가능성을 평가할 수 없습니다. "
+     "외부 검증을 시행하거나, 불가능하다면 임상적 적용과 일반화 성능에 관한 주장을 대폭 축소해 주십시오."),
+    ("A",
+     "[답변]: 외부 검증 부재에 따른 일반화 한계 지적에 깊이 공감합니다.\n"
+     "1) 일반화·배포 주장 전면 삭제: '우수한 일반화 성능 달성', '즉시 임상 적용' 등 관련 서술을 초록·고찰·결론에서 삭제하였습니다.\n"
+     "2) 결론 재정립: 본 모델의 일반화 가능성과 임상 적용 타당성은 타 기관·타 초음파 장비·다양한 검사자 환경을 포괄하는 "
+     "다기관 전향적 외부 검증을 거치기 전까지 단정할 수 없음을 초록·고찰 제한점·결론에 명시하였습니다. "
+     "초음파 검사는 장비 게인·동적 범위·탐촉자 주파수·검사자 술기에 따른 영상 변동성이 크므로 외부 검증의 필요성을 구체적으로 기술하였습니다.\n"
+     "[수정 위치: 초록 결론, 고찰 제한점(셋째), 결론]"),
+
+    ("Q",
+     "주요 코멘트 4:\n"
+     "744명의 환자가 2,656장의 영상을 제공했으므로 영상 단위 분석은 환자 내 상관성을 반영하지 못할 수 있습니다. "
+     "환자 또는 병변 단위로 예측값을 집계하거나 환자 단위 cluster bootstrap을 적용해 주십시오. "
+     "아울러 동일 검사에서 추출된 근접 중복 프레임이나 반복 영상이 데이터 세트 간에 분산되지 않았는지 확인해 주십시오."),
+    ("A",
+     "[답변]: 환자 내 상관성 및 분할 독립성에 대한 정밀한 지적에 감사드립니다.\n"
+     "1) 환자 단위 분할 준용: 원저(Tak et al. 2026)는 70:20:10 분할 시 환자 단위 분할로 데이터 누출을 방지하였다고 보고하였고, "
+     "본 연구는 원저가 제공한 Clean subset 분할(Train 1,858장 / Val 530장 / Test 268장)을 변경 없이 사용하였습니다.\n"
+     "2) 평가 단위 한계: 공개 데이터 파일명에 환자 식별번호가 매핑되어 있지 않아, 본 연구팀이 영상 간 환자 교차 여부를 독립적으로 재검증하거나 "
+     "환자 단위 cluster bootstrap을 수행할 수 없었습니다. 이에 모든 신뢰구간을 '영상 단위(image-level) Clopper-Pearson exact 95% CI'로 명시하고, "
+     "동일 환자 영상의 상관성으로 인해 CI가 실제보다 좁게 추정되었을 수 있음을 고찰에 기술하였습니다.\n"
+     "3) 근접 중복 프레임: 원저의 분할 정책 인용과 별개로, 본 연구에서 근접 중복 프레임을 독립 감사하지 못하였음을 제한점으로 명시하였습니다.\n"
+     "[수정 위치: 방법 2.1·2.4절, Table 3 주석, 고찰 제한점]"),
+
+    ("Q",
+     "주요 코멘트 5:\n"
+     "검증 세트의 민감도 99.64%, NPV 99.61% 및 F1 score 0.9982는 TP 276, FP 0, FN 1, TN 253 및 정확도 99.81%와 일치하지만, "
+     "Table 3에는 TP 277, FN 0 및 정확도 100%로 제시되어 있습니다. 테스트 세트의 Table 3과 최종 Figure 2 범례는 FN 0, FP 1로 서로 일치합니다. "
+     "다만 Results 3.3절의 Figure 2 설명에는 “위양성 0건, 위음성 1건”으로 반대로 기술되어 있으므로, 해당 본문 문구를 수정하고 원고 전체의 성능지표를 다시 확인해 주십시오."),
+    ("A",
+     "[답변]: 수치 불일치를 예리하게 지적해 주셔서 대단히 감사드립니다. 원 예측값(raw_cosprobe_effnet_supcon.csv, raw_cosprobe_res_supcon.csv)으로 "
+     "전면 재계산하였습니다.\n"
+     "1) 근본 원인: 검증 세트 수치는 출력 지표(confidence / HCC cosine / Δscore)와 모델(백본)에 따라 서로 달라지는데, "
+     "기존 Table 3이 어느 출력·모델의 값인지 행별로 명시하지 않아 값이 혼재되어 보였습니다.\n"
+     "2) 주력 모델(EfficientNetV2B0 + CE + SupCon) 재계산 결과:\n"
+     "   - 검증(n=530; HCC 277 / 혈관종 253):\n"
+     "       · Confidence:      TP277 FP0 FN0 TN253 (정확도 100.0%)\n"
+     "       · HCC cosine:      TP276 FP0 FN1 TN253 (정확도 99.81%; 민감도 99.64%, NPV 99.61%, F1 0.9982)\n"
+     "       · Δscore:          TP277 FP0 FN0 TN253 (정확도 100.0%)\n"
+     "   - 테스트(n=268; HCC 140 / 혈관종 128): confidence·HCC cosine·Δscore 모두 TP140 FP1 FN0 TN127 (정확도 99.63%)\n"
+     "3) 심사위원님이 인용하신 검증 99.64%(TP276/FN1/TN253)는 ResNet50V2+SupCon confidence 출력(cutoff 0.0002)에서 재현되는 값이며, "
+     "주력 모델의 HCC cosine 출력에서도 동일한 혼동행렬이 산출됩니다. 이제 Table 3은 각 행에 출력 지표와 백본을 명시하여, "
+     "검증 세트가 지표에 따라 100.0% 또는 99.81%로 표기되는 것을 정확히 반영하였습니다.\n"
+     "4) Results 3.3절 문구 수정: 잘못 표기된 '위양성 0건, 위음성 1건'을 '혈관종 영상 1장이 위양성(FP=1)으로 판정되었고 위음성(FN=0)은 없었다'로 정정하고, "
+     "Table 2·Table 3·Figure 2 캡션을 모두 통일하였습니다.\n"
+     "[수정 위치: 초록 결과, 3.2~3.3절, Table 2, Table 3(지표·백본 명시), Figure 2 캡션]"),
+
+    ("Q",
+     "주요 코멘트 6:\n"
+     "3.5절의 true HCC cases n=381은 검증 및 테스트 세트의 HCC 합계 417장이 아니라 혈관종 합계 381장과 일치합니다. "
+     "이는 Figure 4, 5의 score 분포가 Table 4의 임계값 및 위음성 0건과 양립하기 어려운 이유일 수 있습니다. "
+     "3.5절과 Figure 4, 5의 실제 분석대상, 클래스 라벨, score 산출 방법 및 임계값을 확인해 주십시오."),
+    ("A",
+     "[답변]: 정확한 지적에 진심으로 감사드립니다. 확인 결과 지적이 타당하였습니다.\n"
+     "1) 오류 확인: 이전 스크립트에서 라벨 필터가 누락되어 검증+테스트 전체 798장(HCC 417 + 혈관종 381)을 대상으로 분석하면서, "
+     "혈관종 수(n=381)가 HCC 표본 수로 잘못 전사되었고 두 클래스가 섞인 이봉 분포가 표출되었습니다.\n"
+     "2) 재분석: 실제 검증+테스트의 진짜 간세포암 영상 전체(true HCC, n=417 = Val 277 + Test 140)만 추출하여 통계·그래프를 재생성하였습니다.\n"
+     "3) 재생성 결과(paired 분석): HCC cosine score가 CE 단독 대비 SupCon에서 유의하게 상승하고(p<0.001), Δscore는 유의하게 감소하였습니다(p<0.001). "
+     "Figure 4·5를 n=417 기준으로 완전히 새로 생성하여 교체하고, 3.5절 본문을 해당 수치로 개정하였습니다.\n"
+     "[수정 위치: 3.5절 본문, Figure 4, Figure 5]"),
+
+    ("Q",
+     "주요 코멘트 7:\n"
+     "DeLong 검정의 p>0.05는 비열등성이나 통계적 동등성을 입증하지 않습니다. 특히 두 AUROC가 모두 1.000인 상황에서는 해당 검정이 실질적인 비교 정보를 제공하기 어렵습니다. "
+     "비열등성 주장을 삭제하고, 주요 성능지표에는 환자 단위 bootstrap 95% 신뢰구간을 제시해 주십시오."),
+    ("A",
+     "[답변]: 통계적 개념에 대한 정확한 지적에 감사드리며 적극 반영하였습니다.\n"
+     "1) 비열등성·동등성 삭제: DeLong p=1.000을 근거로 한 '비열등성' 및 '통계적 동등성' 표현을 제목·초록·본문·결론에서 전면 삭제하였습니다. "
+     "두 AUROC가 모두 1.000에 도달하는 천장효과 환경에서는 DeLong 검정이 실질적 판별 정보를 제공하지 못함을 Methods 2.4절과 고찰에 명시하였습니다.\n"
+     "2) 신뢰구간: 주력 모델 지표에 Clopper-Pearson exact binomial 95% CI를 적용하여 Table 3에 표기하였습니다(Val 민감도 100.0% [98.7–100.0], "
+     "특이도 100.0% [98.6–100.0]; Test 민감도 100.0% [97.4–100.0], 특이도 99.2% [95.7–100.0]).\n"
+     "3) 환자 단위 bootstrap 불가: 주요 코멘트 4에서 기술한 바와 같이 공개 데이터에 환자 ID 매핑이 없어 환자 단위 cluster bootstrap을 수행할 수 없었습니다. "
+     "따라서 모든 CI는 영상 단위(image-level) exact CI이며, 환자 내 상관성으로 CI가 좁게 추정되었을 수 있음을 명시하였습니다.\n"
+     "[수정 위치: 초록, 방법 2.4절, 3.4절, Table 3, 고찰]"),
+
+    ("Q",
+     "주요 코멘트 8:\n"
+     "SupCon의 필수성은 현재 결과로 입증되지 않습니다. CE-only 모델에서도 HCC cosine score와 Δscore의 AUROC가 1.000이었고, Δscore는 SupCon 적용 전후 차이가 없었습니다. "
+     "또한 동일 영상을 두 모델로 평가했다면 독립표본 t-test가 아닌 대응표본 분석을 적용해야 하며, Δscore가 다른 출력에 추가되는 증분적 이득도 제시해 주십시오."),
+    ("A",
+     "[답변]: 지적에 전적으로 동의하며 관련 서술과 분석을 수정하였습니다.\n"
+     "1) 'SupCon 필수성' 철회: CE 단독 모델에서도 cosine/Δ 지표가 천장에 근접함을 확인하였고(raw_cosprobe_effnet_classification_only.csv), "
+     "SupCon이 분류 성능에 '필수적'이라는 단정을 전면 철회하였습니다. SupCon은 분류 성능 개선이 아니라 임베딩 기하(작은 데이터에서의 표현 정렬)에 "
+     "미치는 영향으로만 완화하여 기술하였습니다.\n"
+     "2) 대응표본 분석: 동일 영상 비교이므로 독립표본 t-test 대신 대응표본(Wilcoxon signed-rank test, paired t-test)을 적용하였습니다. "
+     "HCC cosine score는 유의하게 증가(p<0.001)한 반면, Δscore는 유의하게 감소(p<0.001)하였음을 가감 없이 보고하였습니다.\n"
+     "3) 증분 이득 미입증: 테스트 세트(n=268)의 유일한 오분류 1건(실제 혈관종)이 confidence·HCC cosine·Δscore 세 출력 모두에서 "
+     "동일하게 위양성으로 판정되었습니다(검증됨). 따라서 cosine 기반 지표가 confidence에 추가하는 증분 이득은 현 데이터 구조로 입증할 수 없음을 "
+     "고찰에 명확히 기술하였습니다.\n"
+     "4) 표상 기하 보고 범위의 한정: 대응표본 분석 결과를 증례 단위로 세분하여, 실제 HCC 417예 중 395예(94.7%)에서 점수가 상승하였고 "
+     "하위 10백분위수 0.489→0.762, 최솟값 −0.472→−0.005로 상승한 반면 상위 10백분위수는 0.951→0.985에 그쳤음을 3.5절에 추가하였습니다"
+     "(초기 점수와 상승폭의 상관 r=−0.80). 동시에 각 클래스가 상대 클래스 프로토타입 방향으로도 이동하여(실제 HCC의 hemangioma cosine "
+     "중앙값 −0.631→−0.108, 실제 혈관종의 HCC cosine 중앙값 −0.701→−0.226) Δscore의 클래스 간 간격이 3.163에서 2.289로 27.6% 감소하였음을 "
+     "함께 보고하고, 서론에서 '클래스 간 분리능 강화'로 기술하였던 부분은 삭제하여 3.5절의 관찰로 대체하였습니다. 즉 본 개정에서는 SupCon의 "
+     "효과를 분류 성능 향상이 아니라 표상 기하의 변화로 한정하며, 코사인 점수의 해석 가능성 향상이 판별 마진의 향상을 의미하지 않음을 명시하였습니다.\n"
+     "5) 재현 경로: 위 수치는 저장소의 원 예측값(cosine_probe_result/raw_cosprobe_effnet_classification_only.csv, raw_cosprobe_effnet_supcon.csv, "
+     "동일 행 순서·라벨)으로부터 revision2/recompute_representation_geometry.py에서 Wilcoxon signed-rank, Pitman-Morgan(EfficientNet HCC t=16.84, "
+     "혈관종 t=106.23), 증례별 상승률, 백분위수, 클래스 간 간격을 재계산하여 확인할 수 있습니다.\n"
+     "[수정 위치: 초록 결과·결론, 서론, 방법 2.4절, 3.4·3.5절, 고찰]"),
+
+    ("Q",
+     "마이너 코멘트 1:\n"
+     "Confidence score 0.4–0.6인 사례는 운영 임계값 0.0011에 따르면 이미 모두 HCC로 분류되므로 cosine score의 “구제 효과”가 성립하지 않습니다. "
+     "CE-only 모델의 7건과 SupCon 모델의 5건도 동일한 사례군이 아니므로 직접 비교할 수 없습니다. 분석 규칙을 재정의하거나 해당 분석을 삭제해 주십시오."),
+    ("A",
+     "[답변]: 지적에 전적으로 동의합니다. 운영 임계값(0.00109) 기준으로 0.4~0.6 구간은 이미 모두 HCC로 분류되므로, 임계값 0.5를 사후 가정한 "
+     "기존 3.6절의 '구제 효과' 분석은 논리적 정당성이 결여되어 있습니다. 권고에 따라 해당 분석 전체와 관련 고찰 문구를 원고에서 완전히 삭제하였습니다.\n"
+     "[수정 위치: 기존 3.6절 삭제, 고찰 내 구제 효과 문구 삭제]"),
+
+    ("Q",
+     "마이너 코멘트 2:\n"
+     "Table 1은 전체 데이터셋 1,021명의 특성을 제시하므로 실제 Clean subset 744명을 대표하지 않습니다. "
+     "Clean subset의 특성, 영상 제외기준 및 혈관종 병변 크기를 제시하고, 환자 수의 전사 오류 여부를 확인해 주십시오. "
+     "Prototype 정의와 Figure 1의 데이터 세트 표기도 원고 전체에서 일관되게 수정해 주십시오."),
+    ("A",
+     "[답변]: 데이터셋 표기와 prototype 정의를 다음과 같이 바로잡았습니다.\n"
+     "1) Table 1/1B: Table 1 제목을 'Full Cohort (SMC-LUD, n=1,021)'로 명확히 하고, 실제 분석에 사용된 Clean subset(744명, 2,656장)의 분할은 Table 1B로 분리 제시하였습니다. "
+     "원저에서 혈관종 병변 크기가 제공되지 않았음을 각주에 기재하였습니다.\n"
+     "2) 제외기준 정정: 원저에 없는 'poor echo window' 표현을 삭제하고, 원저 기준인 'caliper 등 주석 인공음영이 없는 clean 영상'으로 정정하였습니다.\n"
+     "3) Prototype 통일: 훈련 세트 평균 벡터 기반 단일 mean prototype을 주 분석으로 정의하고, k-means(k=4)는 보완적 민감도 분석으로 명시하였습니다.\n"
+     "4) Figure 1: 캡션을 실제 분포(Train+Val, HCC(red)/Hemangioma(teal))와 일치하도록 수정하였습니다.\n"
+     "[수정 위치: 방법 2.1·2.3절, Table 1, Table 1B, Figure 1 캡션]"),
+
+    ("Q",
+     "마이너 코멘트 3:\n"
+     "원고의 구성과 표, 그림 제시 형식을 정리해 주십시오. "
+     "Introduction과 Discussion의 불필요한 소제목을 삭제하고, Results에서는 Methods의 반복을 줄여 핵심 결과만 기술하는 것이 적절합니다. "
+     "본문에 독립적으로 삽입된 표, 그림 제목과 별표 설명은 해당 표, 그림의 제목 또는 주석으로 이동해 주십시오."),
+    ("A",
+     "[답변]: 논문 양식 및 가독성 개선 권고에 감사드립니다.\n"
+     "1) 서론·고찰의 번호형 소제목을 삭제하고 문단 흐름으로 재구성하였습니다.\n"
+     "2) Results에서 Methods 반복을 대폭 삭제하고 핵심 정량 결과 중심으로 간결화하였습니다.\n"
+     "3) 본문 중간의 표·그림 제목과 설명을 해당 표의 상단 제목 및 하단 각주와 그림 캡션으로 일괄 이동하였습니다.\n"
+     "[수정 위치: 원고 전반(서론·결과·고찰, 표·그림 문서)]"),
+
+    ("Reviewer_Header", "● Reviewer B 심사의견 및 답변"),
+
+    ("Q",
+     "심사의견:\n"
+     "논문 양식에 맞추어 작성 부탁드리며, 전반적인 내용도 전달하고자 하는 바를 명확하게 논리적으로 서술하여 정리해야 겠습니다."),
+    ("A",
+     "[답변]: 심사위원님의 고견에 감사드립니다.\n"
+     "1) 저널 양식 준수: Korean Journal of Family Practice 투고 규정에 맞추어 구조화된 국문 초록, 본문 구성(서론·대상 및 방법·결과·고찰·결론), "
+     "밴쿠버 참고문헌 체계, 본문 말미의 표·그림 정렬을 표준 원저 양식으로 정비하였습니다.\n"
+     "2) 논리적 서술 강화: '간암 감시·선별'이라는 광범위한 주장을 배제하고, 'B-mode 초음파에서 발견된 국소 병변의 HCC–혈관종 감별을 위한 "
+     "이중 출력 지표의 방법론적 타당성 평가'라는 단일 주제로 논리를 일관되게 재편하였습니다. 과장된 수식과 해석을 지양하고 실제 데이터에 근거한 "
+     "객관적 서술과 엄밀한 제한점 고찰로 전달력을 높였습니다.\n"
+     "[수정 위치: 원고 전체 구조 및 문맥]"),
+]
+
+# ---------- plain text ----------
+txt_path = os.path.join(OUT_DIR, "Response_to_Reviewers_v4.txt")
+with open(txt_path, "w", encoding="utf-8") as f:
+    for kind, text in responses:
+        if kind == "Title":
+            f.write(f"=== {text} ===\n\n")
+        elif kind == "Reviewer_Header":
+            f.write(f"\n\n=======================================================\n{text}\n=======================================================\n\n")
+        elif kind == "Q":
+            f.write(f"-------------------------------------------------------\n{text}\n-------------------------------------------------------\n")
+        elif kind == "A":
+            f.write(f"{text}\n\n")
+        else:
+            f.write(f"{text}\n\n")
+print(f"Saved plain text: {txt_path}")
+
+# ---------- docx ----------
+doc = docx.Document()
+for s in doc.sections:
+    s.top_margin = Inches(1.0)
+    s.bottom_margin = Inches(1.0)
+    s.left_margin = Inches(1.0)
+    s.right_margin = Inches(1.0)
+
+BLUE = RGBColor(0, 51, 153)
+DARK_GRAY = RGBColor(80, 80, 80)
+
+for kind, text in responses:
+    p = doc.add_paragraph()
+    if kind == "Title":
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(text); r.font.name = "Malgun Gothic"; r.font.size = Pt(16); r.font.bold = True
+    elif kind == "Meta":
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(14)
+        r = p.add_run(text); r.font.name = "Malgun Gothic"; r.font.size = Pt(10); r.font.italic = True
+    elif kind == "Intro":
+        p.paragraph_format.line_spacing = 1.3
+        p.paragraph_format.space_after = Pt(12)
+        r = p.add_run(text); r.font.name = "Malgun Gothic"; r.font.size = Pt(10)
+    elif kind == "Reviewer_Header":
+        p.paragraph_format.space_before = Pt(16)
+        p.paragraph_format.space_after = Pt(8)
+        r = p.add_run(text); r.font.name = "Malgun Gothic"; r.font.size = Pt(13); r.font.bold = True; r.font.color.rgb = BLUE
+    elif kind == "Q":
+        p.paragraph_format.space_before = Pt(10)
+        p.paragraph_format.space_after = Pt(4)
+        p.paragraph_format.left_indent = Inches(0.2)
+        r = p.add_run(text); r.font.name = "Malgun Gothic"; r.font.size = Pt(9.5); r.font.bold = True; r.font.color.rgb = DARK_GRAY
+    elif kind == "A":
+        p.paragraph_format.space_before = Pt(4)
+        p.paragraph_format.space_after = Pt(10)
+        p.paragraph_format.line_spacing = 1.3
+        r = p.add_run(text); r.font.name = "Malgun Gothic"; r.font.size = Pt(9.5)
+
+docx_path = os.path.join(OUT_DIR, "Response_to_Reviewers_v4.docx")
+doc.save(docx_path)
+print(f"Saved docx: {docx_path}")

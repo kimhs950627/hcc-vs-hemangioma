@@ -12,11 +12,23 @@ Revision 2:
 4. Results 3.5:
    - Dual representation probing detailed for both True HCC (n=417, Fig 4) and True Hemangioma (n=381, Fig 5).
    - Exact statistics: Wilcoxon p < 0.001, Pitman-Morgan p < 0.001, variance reductions (-60.7% HCC, -98.7% Hemangioma).
+   - Added the location of the shift: 395/417 = 94.7% of cases rose, p10 0.489 -> 0.762,
+     min -0.472 -> -0.005 vs p90 +0.034, r(baseline, gain) = -0.80.
+   - Added the cross-class drift (HCC hem-cosine -0.631 -> -0.108; hemangioma HCC-cosine
+     -0.701 -> -0.226) and the Delta-score class gap 3.163 -> 2.289 (-27.6%).
 5. Discussion:
-   - SupCon defense paragraph: ViT inductive bias deficit, shortcut memorization prevention, essential regularizer.
+   - SupCon paragraph: ViT inductive bias deficit, representation-geometry framing only
+     (the retracted "essential regularizer" claim is NOT used anywhere).
+   - Added the counterweight: the cosine rise follows from the SupCon objective, the
+     class gap narrowed, so the effect is reported as representation geometry only.
    - Softmax calibration paragraph with citations [11], [16], [17].
    - Limitation 1: Removed 'representative 1 image' sentence.
    - Limitation 4: Clarified patient:image non-1:1 matching (avg 3.57 images/pt) and intra-patient correlation.
+6. Introduction:
+   - Removed the "class separation is strengthened" clause (our own data shows the
+     Delta-score margin narrowed); the observation is reported in 3.5 instead.
+Numbers above are recomputed by revision2/recompute_representation_geometry.py from
+cosine_probe_result/raw_cosprobe_effnet_*.csv.
 Produces:
 1. manuscript_revised_final.txt
 2. manuscript_revised_marked.docx
@@ -87,7 +99,7 @@ doc_structure = [
         ("최근 인공지능 및 딥러닝 기술의 발전으로 B-mode 초음파 영상을 이용한 간 국소 병변 분류 연구들이 활발히 진행되고 있다.[9,10] 그러나 기존 연구들은 대부분 소프트맥스(softmax) 함수의 최종 확률값인 단일 'confidence score'만을 출력 지표로 활용한다. 이러한 단일 출력 체계는 두 가지 방법론적 한계를 지닌다. 첫째, 딥러닝 모델의 소프트맥스 출력은 과잉 확신(overconfidence) 성향을 보이며, 잘 보정(calibrated)되지 않은 경우 실제 임상적 유병 확률과 일치하지 않는 결정 강도(decision strength)만을 나타낸다.[11] 둘째, 임상의가 실제로 병변을 판독할 때 '이 병변이 전형적인 간세포암의 영상 특징과 얼마나 기하학적으로 유사한가'를 평가하는 사례 기반 추론(similarity-based reasoning) 정보를 제공하지 못한다.", False)
     ]),
     ("body", [
-        ("임베딩 공간(embedding space)에서 지도 대조학습(supervised contrastive learning, SupCon)을 적용하면 클래스 내 응집성과 클래스 간 분리능을 강화할 수 있으며,[12] 훈련 세트의 질환별 중심 벡터(prototype)와의 cosine 유사도를 통해 연속형 유사도 점수를 산출할 수 있다. ", False),
+        ("임베딩 공간(embedding space)에서 지도 대조학습(supervised contrastive learning, SupCon)을 적용하면 클래스 내 응집성을 강화할 수 있으며,[12] 훈련 세트의 질환별 중심 벡터(prototype)와의 cosine 유사도를 통해 연속형 유사도 점수를 산출할 수 있다. (본 연구의 데이터에서 관찰된 클래스 간 마진의 변화는 3.5절에 별도로 기술하였다.) ", True),
         ("본 연구는 대규모 공개 초음파 데이터셋(SMC-LUD)의 정제 서브셋을 활용하여, B-mode 초음파에서 간세포암과 혈관종을 감별하는 딥러닝 모델을 구축하고, 단일 confidence score와 함께 임베딩 기반 유사도 점수(HCC cosine score 및 Δscore)를 산출하는 이중 출력 체계의 기술적 타당성을 내부 검증 세트에서 탐색적으로 평가하고자 하였다.", True)
     ]),
     
@@ -140,7 +152,11 @@ doc_structure = [
         
         ("\n\n3.5 미학습 영상에서의 코사인 유사도 점수 분포\n", False),
         ("SupCon 학습이 임베딩 공간에 미치는 영향을 평가하기 위해, 검증 및 테스트 세트의 실제 HCC 영상(n=417)과 실제 혈관종 영상(n=381)을 대상으로 동일 영상에 대한 CE 단독 모델과 CE+SupCon 모델의 cosine score를 대응 비교하였다. ", True),
-        ("실제 HCC 영상에서 SupCon 적용 후 HCC cosine score 분포는 상향 이동하였고 분산은 감소하였으며, 두 변화 모두 통계적으로 유의하였다(Figure 4). 실제 혈관종 영상에서도 hemangioma cosine score 분포의 상향 이동과 분산 감소가 관찰되었다(Figure 5). 이러한 경향은 대조 백본인 ResNet50V2에서도 동일하게 관찰되었다.", True)
+        ("실제 HCC 영상에서 SupCon 적용 후 HCC cosine score 분포는 상향 이동하였고 분산은 감소하였으며, 두 변화 모두 통계적으로 유의하였다(Figure 4). 실제 혈관종 영상에서도 hemangioma cosine score 분포의 상향 이동과 분산 감소가 관찰되었다(Figure 5). 이러한 경향은 대조 백본인 ResNet50V2에서도 동일하게 관찰되었다.", True),
+        ("점수 상승의 분포 내 위치를 확인한 결과, 실제 HCC 영상 417예 중 395예(94.7%)에서 HCC cosine score가 상승하였고, 하위 10백분위수는 0.489에서 0.762로, 최솟값은 −0.472에서 −0.005로 상승한 반면 상위 10백분위수는 0.951에서 0.985로 변화폭이 작았다. 즉 분산 감소는 프로토타입에 이미 가까웠던 증례보다 멀리 위치하였던 증례의 점수 상승에 주로 기인하였다(초기 점수와 상승폭의 상관 r=−0.80).", True)
+    ]),
+    ("body", [
+        ("한편 동일한 대응 비교에서 각 클래스는 자신의 프로토타입뿐 아니라 상대 클래스 프로토타입 방향으로도 이동하였다. 실제 HCC 영상의 hemangioma cosine score 중앙값은 −0.631에서 −0.108로, 실제 혈관종 영상의 HCC cosine score 중앙값은 −0.701에서 −0.226으로 각각 상승하였으며, Δscore의 클래스 간 중앙값 간격은 3.163에서 2.289로 27.6% 감소하였다. 이는 3.4절에서 관찰된 Δscore 중앙값의 감소와 일치하는 소견이다.", True)
     ]),
     
     # Discussion
@@ -155,7 +171,8 @@ doc_structure = [
         ("임상 판독 환경에서 초음파 의사는 국소 병변을 대할 때 단순한 이진 확률뿐만 아니라 '병변이 전형적인 간세포암의 소견을 얼마나 닮았는가'를 연속적으로 고찰한다. 본 연구에서 제안한 HCC cosine score는 모델의 임베딩 벡터와 훈련 세트 전형적 간세포암 프로토타입 간의 기하학적 유사도를 정량화함으로써, 기존 딥러닝 분류기가 제공하지 못했던 사례 기반 유사성 정보를 보완적으로 제시할 수 있는 가능성을 보여주었다.", False)
     ]),
     ("body", [
-        ("본 연구는 한정된 컴퓨팅 자원으로 인해 경량 모델만을 학습하였으며, 단일기관의 수천 장 규모 데이터셋을 사용하였다. 이러한 조건에서는 모델이 질환의 일반적인 영상 특징을 학습하기보다 학습 영상 자체를 기억하거나 단축 경로(shortcut)를 찾을 가능성이 있으며, Vision Transformer 계열 구조는 합성곱 신경망에 비해 공간적 귀납적 편향(inductive bias)이 약해 이러한 경향이 더 나타날 수 있다. 분류 지표가 AUROC 1.000에 도달한 상황에서는 이러한 차이를 분류 성능만으로 구별하기 어렵다. 본 연구에서 CE 단독 모델은 미학습 HCC 영상에서 HCC cosine score의 분산이 컸던 반면, CE+SupCon 모델에서는 점수가 상향 이동하고 분산이 감소하였다(Figure 4). 이는 SupCon이 임베딩 공간에서 같은 질환의 영상을 더 가깝게 모으는 추가적인 정규화(additional regularizer) 역할을 하였을 가능성을 시사한다. 다만 이것이 외부 데이터에서의 일반화 향상으로 이어지는지는 별도의 검증이 필요하다.", True)
+        ("본 연구는 한정된 컴퓨팅 자원으로 인해 경량 모델만을 학습하였으며, 단일기관의 수천 장 규모 데이터셋을 사용하였다. 이러한 조건에서는 모델이 질환의 일반적인 영상 특징을 학습하기보다 학습 영상 자체를 기억하거나 단축 경로(shortcut)를 찾을 가능성이 있으며, Vision Transformer 계열 구조는 합성곱 신경망에 비해 공간적 귀납적 편향(inductive bias)이 약해 이러한 경향이 더 나타날 수 있다. 분류 지표가 AUROC 1.000에 도달한 상황에서는 이러한 차이를 분류 성능만으로 구별하기 어렵다. 본 연구에서 CE 단독 모델은 미학습 HCC 영상에서 HCC cosine score의 분산이 컸던 반면, CE+SupCon 모델에서는 점수가 상향 이동하고 분산이 감소하였다(Figure 4). 이는 SupCon이 임베딩 공간에서 같은 질환의 영상을 더 가깝게 모으는 추가적인 정규화(additional regularizer) 역할을 하였을 가능성을 시사한다. 다만 이것이 외부 데이터에서의 일반화 향상으로 이어지는지는 별도의 검증이 필요하다.", True),
+        ("이와 함께, 본 연구에서 관찰된 코사인 점수의 상향 이동과 분산 감소는 SupCon 목적함수(클래스 내 응집)가 충족된 결과라는 점에서 임상적 타당성의 독립적인 증거로 해석할 수 없다. 실제로 동일한 분석에서 두 클래스 간 간격은 3.163에서 2.289로 축소되어, 코사인 점수의 해석 가능성은 향상된 반면 Δscore가 나타내는 상대적 판별 마진은 감소하였다. 따라서 본 연구에서는 SupCon의 효과를 분류 성능의 향상이 아니라 표상 기하(representation geometry)의 변화로 한정하여 보고한다.", True)
     ]),
     ("body", [
         ("그러나 본 연구의 결과는 다음과 같은 중대한 임상적·방법론적 제한점의 맥락에서 매우 신중하게 해석되어야 한다. 첫째, 본 연구의 과제는 무증상 고위험군을 대상으로 미세 병변을 조기에 찾아내는 '간암 감시(surveillance) 또는 선별 검사'가 아니라, 이미 초음파상에서 명확히 발견된 결절에 대한 '간세포암과 혈관종 간의 2진 감별 진단'에 국한된다. 더욱이 원 데이터셋(SMC-LUD)에서 간세포암은 수술이나 생검으로 확진된 반면 간혈관종은 영상의학적 판독 소견으로 진단되었고, HCC 병변의 직경 중앙값도 2.90 cm로 비교적 컸다. 이러한 참조표준(reference standard)의 비대칭성과 전형적 증례 중심의 선정 과정은 불가피하게 스펙트럼 편향(spectrum bias) 및 선택 편향(selection bias)을 수반하며, 내부 검증 세트에서 관찰된 99.6% 이상의 극단적으로 높은 정확도는 이러한 이상적인 데이터 정제 환경이 반영된 결과일 가능성이 높다.", True)
