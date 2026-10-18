@@ -152,7 +152,7 @@
   .fig text{font-family:var(--font-body);}
   .fig .t-s{font-size:18px; fill:var(--muted);}
   .fig .t-b{font-size:19px; font-weight:700; fill:var(--ink);}
-  .fig .t-big{font-family:var(--font-display); font-size:30px; font-weight:700; fill:var(--ink); font-variant-numeric:tabular-nums;}
+  .fig .t-big{font-family:var(--font-display); font-size:28px; font-weight:700; fill:var(--ink); font-variant-numeric:tabular-nums;}
   .fig .t-num{font-family:var(--font-display); font-size:18px; fill:var(--ink); font-variant-numeric:tabular-nums;}
   @keyframes aPulse{0%,100%{opacity:.28}50%{opacity:1}}
   @keyframes aFloat{0%,100%{transform:translate(0,0)}45%,62%{transform:translate(var(--dx),var(--dy))}}
@@ -370,21 +370,21 @@
         <rect x="760" y="34" width="250" height="62" rx="2" fill="var(--mat)" stroke="var(--line)"/>
         <rect x="760" y="34" width="4" height="62" fill="var(--accent)"/>
         <circle id="s12pt0" cx="792" cy="65" r="9" fill="var(--accent)" opacity="1"/>
-        <text class="t-b" x="812" y="59">① Confidence</text>
-        <text class="t-s" x="812" y="81">결정 강도 (softmax)</text>
-        <text class="t-big" id="s12vt0" x="1000" y="75" text-anchor="end">0.99</text>
+        <text class="t-b" x="804" y="59">① Confidence</text>
+        <text class="t-s" x="804" y="86">결정 강도 (softmax)</text>
+        <text class="t-big" id="s12vt0" x="1000" y="62" text-anchor="end">0.99</text>
         <rect x="760" y="113" width="250" height="62" rx="2" fill="var(--mat)" stroke="var(--line)"/>
         <rect x="760" y="113" width="4" height="62" fill="var(--hcc)"/>
         <circle id="s12pt1" cx="792" cy="144" r="9" fill="var(--hcc)" opacity="1"/>
-        <text class="t-b" x="812" y="138">② HCC cosine</text>
-        <text class="t-s" x="812" y="160">전형 소견과의 닮음</text>
-        <text class="t-big" id="s12vt1" x="1000" y="154" text-anchor="end">0.97</text>
+        <text class="t-b" x="804" y="138">② HCC cosine</text>
+        <text class="t-s" x="804" y="165">전형 소견과의 닮음</text>
+        <text class="t-big" id="s12vt1" x="1000" y="141" text-anchor="end">0.97</text>
         <rect x="760" y="192" width="250" height="62" rx="2" fill="var(--mat)" stroke="var(--line)"/>
         <rect x="760" y="192" width="4" height="62" fill="var(--caution)"/>
         <circle id="s12pt2" cx="792" cy="223" r="9" fill="var(--caution)" opacity="1"/>
-        <text class="t-b" x="812" y="217">③ Δscore</text>
-        <text class="t-s" x="812" y="239">HCC − 혈관종</text>
-        <text class="t-big" id="s12vt2" x="1000" y="233" text-anchor="end">+0.87</text>
+        <text class="t-b" x="804" y="217">③ Δscore</text>
+        <text class="t-s" x="804" y="244">HCC − 혈관종</text>
+        <text class="t-big" id="s12vt2" x="1000" y="220" text-anchor="end">+0.87</text>
       </svg>
       <div class="row c3" style="margin-top:var(--sp-4);">
         <p class="sub"><b class="accent">Confidence</b> — 결정 강도</p>
