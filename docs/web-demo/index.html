@@ -38,6 +38,11 @@
     font-family: "SG", ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
     font-size: 15px;
     line-height: 1.5;
+    /* Korean words must not be split mid-word ("독일" -> "독/일"). */
+    word-break: keep-all;
+    line-break: strict;
+    overflow-wrap: break-word;
+    hyphens: none;
     -webkit-text-size-adjust: 100%;
   }
   main { max-width: 720px; margin: 0 auto; padding: var(--gutter) var(--gutter) 64px; }
