@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="index, follow" />
+<title>HCC vs Hemangioma · B-mode 초음파 추론 데모</title>
+<meta name="description" content="B-mode 간초음파 영상에서 HCC(간세포암)와 혈관종을 구분하는 하이브리드 ViT의 브라우저 내 추론 데모. 사진은 기기 밖으로 나가지 않습니다." />
+<style>
+  /* Design tokens — the single place colours, type and spacing are defined. */
+  :root {
+    --ink: #070A0F;
+    --surface: #0F151D;
+    --surface-high: #17202B;
+    --hairline: #243141;
+    --text-primary: #EAF1F8;
+    --text-secondary: #93A6B8;
+    --text-muted: #5E7386;
+    --malignant: #FF3D5A;
+    --benign: #22D3A6;
+    --caution: #F5B544;
+    --gutter: 16px;
+    --tight: 8px;
+    --card-radius: 6px;
+    --control-radius: 4px;
+    --hairline-width: 1px;
+  }
+
+  @font-face { font-family: "SG"; src: url("fonts/space_grotesk_400.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+  @font-face { font-family: "SG"; src: url("fonts/space_grotesk_500.ttf") format("truetype"); font-weight: 500; font-display: swap; }
+  @font-face { font-family: "SG"; src: url("fonts/space_grotesk_700.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(120% 80% at 50% 0%, var(--surface) 0%, var(--ink) 60%) fixed, var(--ink);
+    color: var(--text-primary);
+    font-family: "SG", ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: var(--gutter) var(--gutter) 64px; }
+  h1 { font-size: 21px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  .subtitle { font-size: 11px; letter-spacing: 0.08em; color: var(--text-muted); text-transform: uppercase; margin-top: 2px; }
+  .chip {
+    border: var(--hairline-width) solid var(--hairline); border-radius: var(--control-radius);
+    background: var(--surface); padding: 6px var(--tight); font-size: 10px; letter-spacing: 0.06em;
+    color: var(--text-muted); text-align: right; line-height: 1.45;
+  }
+  .row { display: flex; align-items: flex-start; gap: var(--tight); }
+  .row > .grow { flex: 1 1 auto; min-width: 0; }
+  section { margin-top: var(--gutter); }
+
+  /* Result card: accent bar, label + P(HCC) */
+  .verdict {
+    display: flex; align-items: center; border: var(--hairline-width) solid var(--hairline);
+    border-radius: var(--card-radius); background: var(--surface); overflow: hidden;
+  }
+  .verdict .bar { width: 4px; align-self: stretch; background: var(--text-muted); }
+  .verdict .body { flex: 1; padding: 14px var(--gutter); }
+  .verdict .label { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+  .verdict .detail { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .verdict .note { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+  .verdict .pct { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; padding-right: var(--gutter); }
+
+  /* Metric rows: label, tabular value, normalised track with a cutoff tick */
+  .metric { padding: 10px 0; }
+  .metric + .metric { border-top: var(--hairline-width) solid var(--hairline); }
+  .metric .head { display: flex; align-items: baseline; gap: var(--tight); }
+  .metric .name { flex: 1; font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary); }
+  .metric .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .metric .track { position: relative; height: 8px; margin-top: 6px; }
+  .metric .rail { position: absolute; inset: 3px 0; background: var(--hairline); border-radius: 2px; }
+  .metric .fill { position: absolute; top: 3px; height: 2px; border-radius: 2px; background: var(--text-muted); }
+  .metric .tick { position: absolute; top: 0; width: var(--hairline-width); height: 8px; background: var(--caution); }
+  .metric .foot { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
+  button, .button {
+    appearance: none; font: inherit; color: inherit; cursor: pointer;
+    border: var(--hairline-width) solid var(--hairline); border-radius: var(--control-radius);
+    background: var(--surface); padding: 10px var(--gutter); font-size: 14px; font-weight: 500;
+    letter-spacing: 0.06em; min-height: 48px;
+  }
+  button.primary { background: color-mix(in srgb, var(--benign) 14%, transparent); border-color: color-mix(in srgb, var(--benign) 55%, transparent); color: var(--benign); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tight); }
+
+  .examples { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--tight); }
+  .examples button { padding: 0; overflow: hidden; }
+  .examples img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+  .examples .caption { font-size: 10px; color: var(--text-muted); padding: 4px 0; text-align: center; }
+
+  .panels { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--tight); }
+  .panel .title { font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-secondary); }
+  .panel canvas { display: block; width: 100%; aspect-ratio: 1; border: var(--hairline-width) solid var(--hairline); border-radius: var(--card-radius); background: var(--surface); }
+  .panel .ramp { height: 3px; margin-top: var(--tight); }
+  .panel .caption { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
+  .switch { display: flex; align-items: center; gap: var(--tight); padding: 6px 0; }
+  .switch input { width: 20px; height: 20px; accent-color: var(--benign); }
+  .switch span { font-size: 13px; }
+  .switch small { color: var(--text-muted); font-size: 10px; letter-spacing: 0.04em; }
+
+  .disclaimer {
+    margin-top: var(--gutter); border: var(--hairline-width) solid var(--hairline); border-radius: var(--card-radius);
+    background: color-mix(in srgb, var(--surface) 60%, transparent); padding: var(--gutter);
+    font-size: 11px; line-height: 1.65; color: var(--text-muted);
+  }
+  .status { font-size: 11px; color: var(--text-muted); margin-top: var(--tight); min-height: 16px; }
+  .status.error { color: var(--caution); }
+  .selftest { font-size: 11px; color: var(--text-muted); white-space: pre-wrap; font-variant-numeric: tabular-nums; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95em; }
+  a { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<main>
+  <div class="row">
+    <div class="grow">
+      <h1>HCC vs Hemangioma</h1>
+      <div class="subtitle">B-mode 간초음파 · 하이브리드 ViT 추론 데모</div>
+    </div>
+    <div class="chip" id="model-chip">모델 로딩 중…</div>
+  </div>
+
+  <section>
+    <div class="verdict" id="verdict" hidden>
+      <div class="bar" id="verdict-bar"></div>
+      <div class="body">
+        <div class="label" id="verdict-label"></div>
+        <div class="detail" id="verdict-detail"></div>
+        <div class="note" id="verdict-note"></div>
+      </div>
+      <div class="pct" id="verdict-pct"></div>
+    </div>
+    <div id="metrics"></div>
+    <div class="status" id="status">모델(27 MB)을 내려받는 중입니다. 처음 한 번만 걸립니다.</div>
+  </section>
+
+  <section class="examples" id="examples"></section>
+
+  <section class="switch">
+    <input type="checkbox" id="cleanup" checked />
+    <label for="cleanup">
+      <span>사진 간이 보정</span>
+      <small> · 조명 평탄화 + 그레이스케일 정렬 + 대비 정규화 (직접 올린 사진에만 적용)</small>
+    </label>
+  </section>
+
+  <section class="actions">
+    <button class="primary" id="pick-button">내 사진 사용</button>
+    <button id="selftest-button">숫자 자체검증</button>
+    <input type="file" id="file" accept="image/*" hidden />
+  </section>
+
+  <section class="status selftest" id="selftest"></section>
+
+  <section class="panels" id="panels" hidden>
+    <div class="panel">
+      <div class="title" id="panel-input-title">Input</div>
+      <canvas id="canvas-input" width="384" height="384"></canvas>
+      <div class="caption" id="panel-input-caption"></div>
+    </div>
+    <div class="panel">
+      <div class="title">CA attention</div>
+      <canvas id="canvas-attention" width="384" height="384"></canvas>
+      <div class="ramp" id="ramp-attention"></div>
+      <div class="caption">rollout, 4 layers · inferno</div>
+    </div>
+    <div class="panel">
+      <div class="title">HCC prototype</div>
+      <canvas id="canvas-prototype" width="384" height="384"></canvas>
+      <div class="ramp" id="ramp-prototype"></div>
+      <div class="caption">per-patch cosine, k=4 · turbo</div>
+    </div>
+  </section>
+
+  <div class="disclaimer">
+    <strong>연구·교육용 데모입니다. 진단이나 치료 결정에 사용할 수 없습니다.</strong>
+    Not a medical device — research and education only.<br />
+    추론은 <strong>여러분 기기 안에서</strong> 실행됩니다. 올린 사진은 서버로 전송되지 않습니다(모델 파일만
+    내려받습니다). 예시 영상은 공개 데이터셋 SMC-LUD 에서 가져왔습니다.<br />
+    모델: EfficientNetV2B0 + CE + SupCon, 384×384 입력, 12×12 patch, d_model 128 ·
+    컷오프는 SMC-LUD validation cohort 의 Youden 지점입니다.
+  </div>
+</main>
+
+<script src="vendor/ort.wasm.min.js"></script>
+<script>
+"use strict";
+
+const CUTOFF_FALLBACK = { confidence_score: 0.0010883796494454145, hcc_cosine_score: -0.004843093454837799, delta_score: -0.9584707617759705 };
+const INFERNO = ["#000004", "#1B0C41", "#4A0C6B", "#781C6D", "#A52C60", "#CF4446", "#ED6925", "#FB9A06", "#FCFFA4"];
+const TURBO = ["#30123B", "#4145AB", "#4675ED", "#39A2FC", "#1BCFD4", "#24ECA6", "#61FC6C", "#A4FC3B", "#D1E834", "#F9BA38", "#FE9B2D", "#F36315", "#D93806", "#B11901", "#7A0402"];
+const LAYER = 5; // upscale the 12x12 map to the canvas in this many steps, for a smooth ramp
+
+const $ = (id) => document.getElementById(id);
+let config = null;
+let session = null;
+let busy = false;
+const state = { probs: null, embedding: null, patches: null, attention: null, inputPixels: null };
+
+/* ---------- numeric helpers (mirror ml/ScoreMath.kt) ---------- */
+
+function cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < b.length; i += 1) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom < 1e-12 ? 0 : dot / denom;
+}
+
+function minMaxNormalize(values) {
+  let low = Infinity, high = -Infinity;
+  for (const v of values) { if (v < low) low = v; if (v > high) high = v; }
+  const span = high - low;
+  return span < 1e-12 ? values.map(() => 0) : values.map((v) => (v - low) / span);
+}
+
+function prototypeMap(patchTokens, grid, dim, prototypes) {
+  const bank = prototypes.map((p) => {
+    const norm = Math.sqrt(p.reduce((s, v) => s + v * v, 0)) + 1e-8;
+    return p.map((v) => v / norm);
+  });
+  const perPatch = [];
+  for (let patch = 0; patch < grid * grid; patch += 1) {
+    const token = patchTokens.slice(patch * dim, (patch + 1) * dim);
+    let mean = 0;
+    for (const prototype of bank) mean += cosine(token, prototype);
+    perPatch.push(mean / bank.length);
+  }
+  return minMaxNormalize(perPatch);
+}
+
+/* ---------- colour ramps ---------- */
+
+function hexToRgb(hex) {
+  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+}
+
+function sampleRamp(ramp, t) {
+  const clamped = Math.min(1, Math.max(0, t));
+  const position = clamped * (ramp.length - 1);
+  const lower = Math.min(Math.floor(position), ramp.length - 2);
+  const fraction = position - lower;
+  const from = hexToRgb(ramp[lower]);
+  const to = hexToRgb(ramp[lower + 1]);
+  return from.map((value, index) => Math.round(value + (to[index] - value) * fraction));
+}
+
+function rampStyle(ramp) { return `background: linear-gradient(90deg, ${ramp.join(", ")})`; }
+
+/* ---------- model ---------- */
+
+async function loadModel() {
+  ort.env.wasm.numThreads = 1;            // GitHub Pages cannot set COOP/COEP, so no threads
+  ort.env.wasm.wasmPaths = new URL("./vendor/", document.baseURI).href;
+  config = await (await fetch("config.json")).json();
+  $("model-chip").innerHTML = `${config.training}<br />ONNX · ${config.precision} · ${config.inputSize}²<br />${config.embedDim}-d · ${config.patchGrid}×${config.patchGrid}`;
+  session = await ort.InferenceSession.create("model/hcc_classifier.onnx", { executionProviders: ["wasm"] });
+  return session;
+}
+
+async function runModel(input) {
+  const tensor = new ort.Tensor("float32", input, [1, config.inputSize, config.inputSize, 3]);
+  const outputs = await session.run({ [config.inputName]: tensor });
+  return {
+    probs: Array.from(outputs[config.outputs.probs].data),
+    embedding: Array.from(outputs[config.outputs.embedding].data),
+    patches: Array.from(outputs[config.outputs.patch_tokens].data),
+    attention: Array.from(outputs[config.outputs.att_map].data),
+  };
+}
+
+/* ---------- input preparation ---------- */
+
+/** Raw float32 dump written by the export script: the exact tensor the app feeds. */
+async function loadRawInput(name) {
+  const buffer = await (await fetch(`examples/${name.replace(/\.jpg$/, ".bin")}`)).arrayBuffer();
+  return new Float32Array(buffer);
+}
+
+/**
+ * Visitor photos: draw to a 384x384 canvas, then optionally flatten the illumination, collapse to
+ * luma and stretch the contrast. Approximation of the app's pipeline - the app adds glare removal,
+ * a bilateral denoise and a diffusion inpaint, which are too heavy for a single-page demo.
+ */
+function preparePhoto(image, cleanup) {
+  const size = config.inputSize;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, 0, 0, size, size);
+  const pixels = context.getImageData(0, 0, size, size).data;
+  const rgb = new Float32Array(size * size * 3);
+  for (let i = 0; i < size * size; i += 1) {
+    rgb[i * 3] = pixels[i * 4];
+    rgb[i * 3 + 1] = pixels[i * 4 + 1];
+    rgb[i * 3 + 2] = pixels[i * 4 + 2];
+  }
+  return cleanup ? cleanupFrame(rgb, size) : rgb;
+}
+
+function cleanupFrame(rgb, size) {
+  const count = size * size;
+  const luma = new Float32Array(count);
+  for (let i = 0; i < count; i += 1) luma[i] = 0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2];
+
+  // Coarse background through an 1/8-scale box mean, upsampled: enough to remove a backlight ramp.
+  const small = size >> 3;
+  const background = new Float32Array(small * small);
+  for (let y = 0; y < small; y += 1) {
+    for (let x = 0; x < small; x += 1) {
+      let sum = 0;
+      for (let dy = 0; dy < 8; dy += 1) for (let dx = 0; dx < 8; dx += 1) sum += luma[(y * 8 + dy) * size + x * 8 + dx];
+      background[y * small + x] = sum / 64;
+    }
+  }
+  let mean = 0;
+  for (const value of luma) mean += value;
+  mean /= count;
+
+  const gain = new Float32Array(count);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const estimate = background[(y >> 3) * small + (x >> 3)] || mean;
+      gain[y * size + x] = Math.min(2, Math.max(0.5, mean / Math.max(estimate, 1e-3)));
+    }
+  }
+
+  const histogram = new Int32Array(256);
+  const flat = new Float32Array(count);
+  for (let i = 0; i < count; i += 1) {
+    const value = Math.min(255, Math.max(0, luma[i] * gain[i]));
+    flat[i] = value;
+    histogram[Math.min(255, Math.max(0, value | 0))] += 1;
+  }
+  const percentile = (target) => {
+    let cumulative = 0;
+    for (let bin = 0; bin < 256; bin += 1) { cumulative += histogram[bin]; if (cumulative >= target) return bin; }
+    return 255;
+  };
+  const low = percentile(0.01 * count);
+  const high = percentile(0.99 * count);
+  const span = high - low;
+
+  const out = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    const value = span < 8 ? flat[i] : Math.min(255, Math.max(0, ((flat[i] - low) * 255) / span));
+    out[i * 3] = value; out[i * 3 + 1] = value; out[i * 3 + 2] = value;
+  }
+  return out;
+}
+
+function toCanvas(canvas, rgb, size) {
+  const context = canvas.getContext("2d");
+  const image = context.createImageData(size, size);
+  for (let i = 0; i < size * size; i += 1) {
+    image.data[i * 4] = rgb[i * 3];
+    image.data[i * 4 + 1] = rgb[i * 3 + 1];
+    image.data[i * 4 + 2] = rgb[i * 3 + 2];
+    image.data[i * 4 + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+}
+
+/** 12x12 map -> small pixels -> smoothing-upscaled canvas, brighter towards the top of the ramp. */
+function drawMap(canvas, values, ramp) {
+  const grid = config.patchGrid;
+  const small = document.createElement("canvas");
+  small.width = grid; small.height = grid;
+  const smallContext = small.getContext("2d");
+  const image = smallContext.createImageData(grid, grid);
+  values.forEach((value, index) => {
+    const [r, g, b] = sampleRamp(ramp, value);
+    image.data[index * 4] = r; image.data[index * 4 + 1] = g; image.data[index * 4 + 2] = b; image.data[index * 4 + 3] = 255;
+  });
+  smallContext.putImageData(image, 0, 0);
+
+  const context = canvas.getContext("2d");
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  let source = small;
+  let target = document.createElement("canvas");
+  target.width = grid; target.height = grid;
+  for (let step = 0; step < LAYER; step += 1) {
+    target.width = Math.min(canvas.width, target.width * 2);
+    target.height = target.width;
+    const targetContext = target.getContext("2d");
+    targetContext.imageSmoothingEnabled = true;
+    targetContext.imageSmoothingQuality = "high";
+    targetContext.drawImage(source, 0, 0, target.width, target.height);
+    source = target;
+    target = document.createElement("canvas");
+    target.width = source.width; target.height = source.height;
+  }
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+}
+
+/* ---------- rendering ---------- */
+
+const METRICS = [
+  { key: "confidence", name: "Confidence · P(HCC)", decimals: 4, min: 0, max: 1, cutoff: "confidence_score" },
+  { key: "hccCosine", name: "HCC cosine score", decimals: 3, min: -1, max: 1, cutoff: "hcc_cosine_score" },
+  { key: "hemCosine", name: "Hemangioma cosine score", decimals: 3, min: -1, max: 1, cutoff: null },
+  { key: "delta", name: "Δscore (margin)", decimals: 3, min: -2, max: 2, cutoff: "delta_score" },
+];
+
+function renderResult(result, meta) {
+  const cutoffs = config.cutoffs || CUTOFF_FALLBACK;
+  const malignant = result.confidence >= cutoffs.confidence_score;
+  const accent = malignant ? "var(--malignant)" : "var(--benign)";
+
+  $("verdict").hidden = false;
+  $("verdict-bar").style.background = accent;
+  $("verdict-label").textContent = malignant ? "HCC" : "HEMANGIOMA";
+  $("verdict-label").style.color = accent;
+  $("verdict-detail").textContent = malignant ? "악성 의심 · Malignant concern" : "양성 · Benign";
+  $("verdict-note").textContent = meta.note;
+  $("verdict-pct").textContent = `${(result.confidence * 100).toFixed(1)}%`;
+  $("verdict-pct").style.color = accent;
+
+  $("metrics").innerHTML = METRICS.map((spec) => {
+    const value = result[spec.key];
+    const cutoff = spec.cutoff ? cutoffs[spec.cutoff] : null;
+    const above = cutoff === null ? null : value >= cutoff;
+    const color = above === null ? "var(--text-primary)" : above ? "var(--malignant)" : "var(--benign)";
+    const fraction = Math.min(1, Math.max(0, (value - spec.min) / (spec.max - spec.min)));
+    const tick = cutoff === null ? "" : `<div class="tick" style="left: ${Math.min(100, Math.max(0, ((cutoff - spec.min) / (spec.max - spec.min)) * 100)).toFixed(2)}%"></div>`;
+    const foot = cutoff === null ? "" : ` ${above ? "ABOVE" : "BELOW"} cutoff ${cutoff.toFixed(spec.decimals)}`;
+    return `<div class="metric">
+      <div class="head"><div class="name">${spec.name}</div><div class="value" style="color:${color}">${value.toFixed(spec.decimals)}</div></div>
+      <div class="track"><div class="rail"></div><div class="fill" style="width:${(fraction * 100).toFixed(2)}%;background:${color}"></div>${tick}</div>
+      <div class="foot">${foot}</div>
+    </div>`;
+  }).join("");
+}
+
+function showPanels() {
+  $("panels").hidden = false;
+  $("ramp-attention").style.cssText = rampStyle(INFERNO);
+  $("ramp-prototype").style.cssText = rampStyle(TURBO);
+}
+
+/* ---------- interactions ---------- */
+
+async function analyze(input, meta) {
+  if (busy || !session) return;
+  busy = true;
+  $("status").className = "status";
+  $("status").textContent = "추론 중…";
+  const started = performance.now();
+  try {
+    const raw = await runModel(input);
+    const elapsed = performance.now() - started;
+    const cutoffs = config.cutoffs || CUTOFF_FALLBACK;
+    const hccCosine = cosine(raw.embedding, config.prototypes.hccMean);
+    const hemCosine = cosine(raw.embedding, config.prototypes.hemMean);
+    const delta = hccCosine - hemCosine;
+    const result = { confidence: raw.probs[config.positiveIndex], hccCosine, hemCosine, delta };
+
+    state.probs = raw.probs;
+    state.embedding = raw.embedding;
+    state.patches = raw.patches;
+    state.attention = raw.attention;
+    state.inputPixels = input;
+
+    renderResult(result, meta);
+    toCanvas($("canvas-input"), input, config.inputSize);
+    $("panel-input-title").textContent = meta.panelTitle;
+    $("panel-input-caption").textContent = meta.caption;
+    drawMap($("canvas-attention"), minMaxNormalize(raw.attention), INFERNO);
+    drawMap($("canvas-prototype"), prototypeMap(raw.patches, config.patchGrid, config.embedDim, config.prototypes.hccKmeans), TURBO);
+    showPanels();
+
+    const verdicts = [result.confidence >= cutoffs.confidence_score, hccCosine >= cutoffs.hcc_cosine_score, delta >= cutoffs.delta_score];
+    const unanimous = verdicts.every((value) => value === verdicts[0]);
+    $("status").textContent = `${elapsed.toFixed(0)} ms · ${unanimous ? "3/3 markers agree" : "markers disagree — review overlays"}`;
+  } catch (error) {
+    $("status").className = "status error";
+    $("status").textContent = `실패: ${error.message}`;
+    throw error;
+  } finally {
+    busy = false;
+  }
+}
+
+async function setupExamples() {
+  const manifest = await (await fetch("examples/manifest.json")).json();
+  const container = $("examples");
+  container.innerHTML = "";
+  for (const entry of manifest) {
+    const button = document.createElement("button");
+    button.innerHTML = `<img src="examples/${entry.file}" alt="예시 초음파 영상 ${entry.file}" /><div class="caption">${entry.file.replace(/\.jpg$/, "")}</div>`;
+    button.addEventListener("click", async () => {
+      const input = await loadRawInput(entry.file);
+      await analyze(input, {
+        note: `예시 영상 (${entry.label}) · 앱과 동일한 리샘플 경로`,
+        panelTitle: "Input (384²)",
+        caption: "bilinear + uint8 · dataloader.py",
+      });
+    });
+    container.appendChild(button);
+  }
+}
+
+async function runSelfTest() {
+  if (busy || !session) return;
+  const expected = await (await fetch("examples/expected.json")).json();
+  const lines = [];
+  let worstProbability = 0, worstCosine = 0, worstMap = 0;
+  for (const [file, reference] of Object.entries(expected)) {
+    const raw = await runModel(await loadRawInput(file));
+    const hccCosine = cosine(raw.embedding, config.prototypes.hccMean);
+    const hemCosine = cosine(raw.embedding, config.prototypes.hemMean);
+    const map = prototypeMap(raw.patches, config.patchGrid, config.embedDim, config.prototypes.hccKmeans);
+    const probabilityDelta = Math.abs(raw.probs[config.positiveIndex] - reference.probs[config.positiveIndex]);
+    const cosineDelta = Math.max(Math.abs(hccCosine - reference.hccCosine), Math.abs(hemCosine - reference.hemCosine), Math.abs(hccCosine - hemCosine - reference.delta));
+    let mapDelta = 0;
+    map.forEach((value, index) => { mapDelta = Math.max(mapDelta, Math.abs(value - reference.prototypeMap[index])); });
+    worstProbability = Math.max(worstProbability, probabilityDelta);
+    worstCosine = Math.max(worstCosine, cosineDelta);
+    worstMap = Math.max(worstMap, mapDelta);
+    lines.push(`${probabilityDelta <= 2e-3 && cosineDelta <= 2e-3 ? "PASS" : "FAIL"} ${file.padEnd(14)} ΔP=${probabilityDelta.toExponential(2)} Δcos=${cosineDelta.toExponential(2)} Δmap=${mapDelta.toExponential(2)}`);
+  }
+  lines.push(`worst: ΔP=${worstProbability.toExponential(2)} Δcos=${worstCosine.toExponential(2)} Δmap=${worstMap.toExponential(2)}`);
+  $("selftest").textContent = `앱(TFLite fp32) 기준값과 비교:\n${lines.join("\n")}`;
+  window.__selfTest = { worstProbability, worstCosine, worstMap, lines };
+}
+
+async function onFile(file) {
+  const cleanup = $("cleanup").checked;
+  const image = await createImageBitmap(file);
+  const input = preparePhoto(image, cleanup);
+  await analyze(input, {
+    note: cleanup ? "직접 올린 사진 · 간이 보정 적용 (앱은 반사광 제거까지 수행)" : "직접 올린 사진 · 보정 없음",
+    panelTitle: "Input (384²)",
+    caption: cleanup ? "간이 보정: 조명·그레이스케일·대비" : "보정 없음",
+  });
+}
+
+(async function main() {
+  $("examples").innerHTML = "<div class='status'>예시 영상을 불러오는 중…</div>";
+  try {
+    await loadModel();
+    $("status").textContent = "모델 준비 완료. 예시를 누르거나 사진을 선택하세요.";
+    await setupExamples();
+  } catch (error) {
+    $("status").className = "status error";
+    $("status").textContent = `모델 로딩 실패: ${error.message}`;
+    $("model-chip").textContent = "MODEL UNAVAILABLE";
+    return;
+  }
+  $("pick-button").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", (event) => { if (event.target.files[0]) onFile(event.target.files[0]); });
+  $("selftest-button").addEventListener("click", runSelfTest);
+  window.__demoReady = true;
+})();
+</script>
+</body>
+</html>

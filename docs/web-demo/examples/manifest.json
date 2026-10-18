@@ -1,0 +1,22 @@
+[
+  {
+    "file": "hcc1.jpg",
+    "label": "HCC",
+    "source": "example_images_hcc_case\\hcc1.jpg"
+  },
+  {
+    "file": "hcc2.jpg",
+    "label": "HCC",
+    "source": "example_images_hcc_case\\hcc2.jpg"
+  },
+  {
+    "file": "hcc5.jpg",
+    "label": "HCC",
+    "source": "example_images_hcc_case\\hcc5.jpg"
+  },
+  {
+    "file": "new_hcc.jpg",
+    "label": "HCC",
+    "source": "example_images_hcc_case\\new_hcc.jpg"
+  }
+]
