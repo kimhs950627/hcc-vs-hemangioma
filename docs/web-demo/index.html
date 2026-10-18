@@ -97,11 +97,6 @@
   .panel .ramp { height: 3px; margin-top: var(--tight); }
   .panel .caption { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
 
-  .switch { display: flex; align-items: center; gap: var(--tight); padding: 6px 0; }
-  .switch input { width: 20px; height: 20px; accent-color: var(--benign); }
-  .switch span { font-size: 13px; }
-  .switch small { color: var(--text-muted); font-size: 10px; letter-spacing: 0.04em; }
-
   .disclaimer {
     margin-top: var(--gutter); border: var(--hairline-width) solid var(--hairline); border-radius: var(--card-radius);
     background: color-mix(in srgb, var(--surface) 60%, transparent); padding: var(--gutter);
@@ -139,14 +134,6 @@
   </section>
 
   <section class="examples" id="examples"></section>
-
-  <section class="switch">
-    <input type="checkbox" id="cleanup" checked />
-    <label for="cleanup">
-      <span>사진 간이 보정</span>
-      <small> · 조명 평탄화 + 그레이스케일 정렬 + 대비 정규화 (직접 올린 사진에만 적용)</small>
-    </label>
-  </section>
 
   <section class="actions">
     <button class="primary" id="pick-button">내 사진 사용</button>
@@ -281,11 +268,11 @@ async function loadRawInput(name) {
 }
 
 /**
- * Visitor photos: draw to a 384x384 canvas, then optionally flatten the illumination, collapse to
- * luma and stretch the contrast. Approximation of the app's pipeline - the app adds glare removal,
- * a bilateral denoise and a diffusion inpaint, which are too heavy for a single-page demo.
+ * Visitor photos: draw to a 384x384 canvas and resample. No image correction is applied here - the
+ * demo reports the model's own numbers, so the frame goes in as the camera produced it. The app is
+ * where glare removal, denoising and illumination flattening live.
  */
-function preparePhoto(image, cleanup) {
+function preparePhoto(image) {
   const size = config.inputSize;
   const canvas = document.createElement("canvas");
   canvas.width = size; canvas.height = size;
@@ -300,58 +287,7 @@ function preparePhoto(image, cleanup) {
     rgb[i * 3 + 1] = pixels[i * 4 + 1];
     rgb[i * 3 + 2] = pixels[i * 4 + 2];
   }
-  return cleanup ? cleanupFrame(rgb, size) : rgb;
-}
-
-function cleanupFrame(rgb, size) {
-  const count = size * size;
-  const luma = new Float32Array(count);
-  for (let i = 0; i < count; i += 1) luma[i] = 0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2];
-
-  // Coarse background through an 1/8-scale box mean, upsampled: enough to remove a backlight ramp.
-  const small = size >> 3;
-  const background = new Float32Array(small * small);
-  for (let y = 0; y < small; y += 1) {
-    for (let x = 0; x < small; x += 1) {
-      let sum = 0;
-      for (let dy = 0; dy < 8; dy += 1) for (let dx = 0; dx < 8; dx += 1) sum += luma[(y * 8 + dy) * size + x * 8 + dx];
-      background[y * small + x] = sum / 64;
-    }
-  }
-  let mean = 0;
-  for (const value of luma) mean += value;
-  mean /= count;
-
-  const gain = new Float32Array(count);
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const estimate = background[(y >> 3) * small + (x >> 3)] || mean;
-      gain[y * size + x] = Math.min(2, Math.max(0.5, mean / Math.max(estimate, 1e-3)));
-    }
-  }
-
-  const histogram = new Int32Array(256);
-  const flat = new Float32Array(count);
-  for (let i = 0; i < count; i += 1) {
-    const value = Math.min(255, Math.max(0, luma[i] * gain[i]));
-    flat[i] = value;
-    histogram[Math.min(255, Math.max(0, value | 0))] += 1;
-  }
-  const percentile = (target) => {
-    let cumulative = 0;
-    for (let bin = 0; bin < 256; bin += 1) { cumulative += histogram[bin]; if (cumulative >= target) return bin; }
-    return 255;
-  };
-  const low = percentile(0.01 * count);
-  const high = percentile(0.99 * count);
-  const span = high - low;
-
-  const out = new Float32Array(count * 3);
-  for (let i = 0; i < count; i += 1) {
-    const value = span < 8 ? flat[i] : Math.min(255, Math.max(0, ((flat[i] - low) * 255) / span));
-    out[i * 3] = value; out[i * 3 + 1] = value; out[i * 3 + 2] = value;
-  }
-  return out;
+  return rgb;
 }
 
 function toCanvas(canvas, rgb, size) {
@@ -532,13 +468,12 @@ async function runSelfTest() {
 }
 
 async function onFile(file) {
-  const cleanup = $("cleanup").checked;
   const image = await createImageBitmap(file);
-  const input = preparePhoto(image, cleanup);
+  const input = preparePhoto(image);
   await analyze(input, {
-    note: cleanup ? "직접 올린 사진 · 간이 보정 적용 (앱은 반사광 제거까지 수행)" : "직접 올린 사진 · 보정 없음",
+    note: "직접 올린 사진 · 보정 없음 (원본 그대로)",
     panelTitle: "Input (384²)",
-    caption: cleanup ? "간이 보정: 조명·그레이스케일·대비" : "보정 없음",
+    caption: "리샘플만 · 보정 없음",
   });
 }
 
