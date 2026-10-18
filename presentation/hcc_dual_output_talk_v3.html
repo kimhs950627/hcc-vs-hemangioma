@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <!--
-  Design pass only (design-craft). Content is byte-identical to v2:
-  same 11 slides, same strings, same numbers, same claims. Only the surface changed.
+  v3 design pass (design-craft) + one evidence slide.
+  The 11 v2 slides are unchanged (same strings, numbers, claims); slide 3
+  ("그 76%는 어디서 온 숫자인가") was added at the user's request to document the
+  Yang Q, et al. EBioMedicine 2020;56:102777 source of the 76.0/76.1/76.9%
+  reader benchmark. Total: 12 slides.
 
   Design direction (design/v3-visual-direction.md)
     - 16:9 canvas 1280x720 (conference standard), margins 64/52/44
@@ -339,7 +342,7 @@ footer, header, hgroup, main, menu, nav, section {
     <p class="cover-author" style="margin-top:var(--sp-4);">예수병원 가정의학과 R3 김현수</p>
     <p class="cover-affil" style="margin-top:var(--sp-2); font-size:var(--fs-sub);">대한가정의학회(KFM) 2026년도 추계학술대회 · 2026.10.24</p>
       </div>
-  <div class="foot"><span></span><span class="pg">1 / 11</span></div>
+  <div class="foot"><span></span><span class="pg">1 / 12</span></div>
 </section>
 
 <!-- ============ 2. WHAT IS YOUR DIAGNOSIS? ============ -->
@@ -373,10 +376,46 @@ footer, header, hgroup, main, menu, nav, section {
       <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">B-mode US로 악성/양성 국소 병변 감별 — 15년 경력 초음파 판독자 <b>236명</b>(임상정보 제공). Yang Q, et al. <i>EBioMedicine</i> 2020;56:102777</p>
     </div>
   </div>
-  <div class="foot"><span>임상 배경</span><span class="pg">2 / 11</span></div>
+  <div class="foot"><span>임상 배경</span><span class="pg">2 / 12</span></div>
 </section>
 
-<!-- ============ 3. WHAT WE OUTPUT ============ -->
+<!-- ============ 3. EVIDENCE FOR THE 76% ============ -->
+<section>
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">근거</p>
+      <p class="claim">그 76%는 어디서 온 숫자인가</p>
+    </div>
+    <div class="body">
+      <table class="tbl">
+        <tr>
+          <th class="l" style="width:150px;">설계</th>
+          <td class="l">중국 13개 병원 · <b>전향적 다기관</b>(NCT03871140) · 병리확진 국소 간병변, &gt;1.0 cm</td>
+        </tr>
+        <tr>
+          <th class="l">대상</th>
+          <td class="l"><b>2,143명 · 24,343장</b> — 학습 1,500 / 내부검증 375 / <b>외부검증 338 병변</b>(3,718장)</td>
+        </tr>
+        <tr>
+          <th class="l">판독자 과제</th>
+          <td class="l">초음파 전문의 <b>236명</b>(각 &gt;15년) · 익명 동영상 10–20초 판독 · 조직학 blinded · <b>임상정보 제공</b></td>
+        </tr>
+      </table>
+      <div class="stats cols-3" style="margin-top:var(--sp-3);">
+        <div class="stat"><div class="v">76.0%</div><div class="k">판독자 정확도</div></div>
+        <div class="stat"><div class="v">76.1%</div><div class="k">판독자 민감도</div></div>
+        <div class="stat"><div class="v">76.9%</div><div class="k">판독자 특이도</div></div>
+      </div>
+      <div class="verdict" style="margin-top:var(--sp-3);">
+        <p>같은 연구의 AI(Model<sub>LBC</sub>)는 정확도 <b>84.7%</b> · 민감도 <b>86.5%</b> · 특이도 <b>85.5%</b> (AUC 0.924) — 조영증강 CT 84.7% · MRI 87.9%.</p>
+      </div>
+      <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">Yang Q, et al. <i>EBioMedicine</i> 2020;56:102777 · 악성 80.7% : 양성 19.3% 불균형</p>
+    </div>
+  </div>
+  <div class="foot"><span>근거</span><span class="pg">3 / 12</span></div>
+</section>
+
+<!-- ============ 4. WHAT WE OUTPUT ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -454,10 +493,10 @@ footer, header, hgroup, main, menu, nav, section {
       <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">744명 · 2,656장 (Train 1,858 / Val 530 / Test 268) · 환자 단위 분할</p>
     </div>
   </div>
-  <div class="foot"><span>방법</span><span class="pg">3 / 11</span></div>
+  <div class="foot"><span>방법</span><span class="pg">4 / 12</span></div>
 </section>
 
-<!-- ============ 4. MODEL ============ -->
+<!-- ============ 5. MODEL ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -508,10 +547,10 @@ footer, header, hgroup, main, menu, nav, section {
       <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">EfficientNetV2B0 <b>7.1M</b> — ResNet50V2(23.6M)와 같은 AUROC를 더 가벼운 모델로</p>
     </div>
   </div>
-  <div class="foot"><span>방법</span><span class="pg">4 / 11</span></div>
+  <div class="foot"><span>방법</span><span class="pg">5 / 12</span></div>
 </section>
 
-<!-- ============ 5. TRAINING ============ -->
+<!-- ============ 6. TRAINING ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -575,10 +614,10 @@ footer, header, hgroup, main, menu, nav, section {
       </div>
     </div>
   </div>
-  <div class="foot"><span>방법</span><span class="pg">5 / 11</span></div>
+  <div class="foot"><span>방법</span><span class="pg">6 / 12</span></div>
 </section>
 
-<!-- ============ 6. RESULT — PERFORMANCE + THREE OUTPUTS ============ -->
+<!-- ============ 7. RESULT - PERFORMANCE + THREE OUTPUTS ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -605,10 +644,10 @@ footer, header, hgroup, main, menu, nav, section {
       </div>
     </div>
   </div>
-  <div class="foot"><span>결과</span><span class="pg">6 / 11</span></div>
+  <div class="foot"><span>결과</span><span class="pg">7 / 12</span></div>
 </section>
 
-<!-- ============ 7. RESULT — DISTRIBUTIONS ============ -->
+<!-- ============ 8. RESULT - DISTRIBUTIONS ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -633,10 +672,10 @@ footer, header, hgroup, main, menu, nav, section {
       </div>
     </div>
   </div>
-  <div class="foot"><span>결과</span><span class="pg">7 / 11</span></div>
+  <div class="foot"><span>결과</span><span class="pg">8 / 12</span></div>
 </section>
 
-<!-- ============ 8. HEMANGIOMA-LIKE HCC ============ -->
+<!-- ============ 9. HEMANGIOMA-LIKE HCC ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -670,10 +709,10 @@ footer, header, hgroup, main, menu, nav, section {
       <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">Proof-of-Concept demonstration (n=4) — 민감도 추정치로 읽을 수는 없다 · <i>J Med Assoc Thai</i> 2013;96(7):829-838</p>
     </div>
   </div>
-  <div class="foot"><span>결과</span><span class="pg">8 / 11</span></div>
+  <div class="foot"><span>결과</span><span class="pg">9 / 12</span></div>
 </section>
 
-<!-- ============ 9. NO INCREMENTAL GAIN ============ -->
+<!-- ============ 10. NO INCREMENTAL GAIN ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -697,10 +736,10 @@ footer, header, hgroup, main, menu, nav, section {
       </div>
     </div>
   </div>
-  <div class="foot"><span>고찰 ①</span><span class="pg">9 / 11</span></div>
+  <div class="foot"><span>고찰 ①</span><span class="pg">10 / 12</span></div>
 </section>
 
-<!-- ============ 10. NOVELTY + LIMITATIONS ============ -->
+<!-- ============ 11. NOVELTY + LIMITATIONS ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -732,10 +771,10 @@ footer, header, hgroup, main, menu, nav, section {
       </div>
     </div>
   </div>
-  <div class="foot"><span>고찰 ②</span><span class="pg">10 / 11</span></div>
+  <div class="foot"><span>고찰 ②</span><span class="pg">11 / 12</span></div>
 </section>
 
-<!-- ============ 11. THANK YOU ============ -->
+<!-- ============ 12. THANK YOU ============ -->
 <section class="cover">
   <div class="wrap">
     <p class="eyebrow">Thank you</p>
@@ -744,7 +783,7 @@ footer, header, hgroup, main, menu, nav, section {
     <p class="cover-author" style="margin-top:var(--sp-5);">예수병원 가정의학과 R3 김현수</p>
     <p class="cover-affil" style="margin-top:var(--sp-2); font-size:var(--fs-sub);">대한가정의학회(KFM) 2026년도 추계학술대회 · 2026.10.24</p>
       </div>
-  <div class="foot"><span></span><span class="pg">11 / 11</span></div>
+  <div class="foot"><span></span><span class="pg">12 / 12</span></div>
 </section>
 
 </div></div>
