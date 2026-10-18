@@ -16,7 +16,7 @@ QR → https://kimhs950627.github.io/hcc-vs-hemangioma/web-demo/
 | `index.html` | 페이지 + 스타일 + 스크립트 (외부 의존은 아래 vendor 뿐) |
 | `model/hcc_classifier.onnx` | 27.3 MB fp32 ONNX (6,764,880 params) |
 | `config.json` | 프로토타입 뱅크·컷오프·출력 텐서 이름·스테이지 정의 |
-| `examples/` | 예시 영상 4장 + 각 영상의 모델 입력 raw float32 + `expected.json` |
+| `examples/` | 예시 영상 8장 (HCC 4 + 혈관종 4) + 각 영상의 모델 입력 raw float32 + `expected.json` |
 | `vendor/ort.wasm.min.js`, `vendor/ort-wasm-simd-threaded.wasm` | ONNX Runtime Web 1.23 (wasm, 11.3 MB) |
 | `fonts/space_grotesk_*.ttf` | 앱과 같은 폰트 (OFL-1.1) |
 | `qr-web-demo.png` | 위 URL 의 QR (752×752, error correction H) |
@@ -54,11 +54,15 @@ python android_app/tools/export_web_onnx.py --skip-convert   # 페이지 작업�
 
 ## 페이지의 두 가지 입력 경로
 
-1. **예시 영상 4장** — 페이지가 `examples/*.bin`(모델 입력 raw float32)을 그대로 먹임. 즉 앱과
+1. **예시 영상 8장 (HCC 4 + 혈관종 4)** — 페이지가 `examples/*.bin`(모델 입력 raw float32)을 그대로 먹임. 즉 앱과
    **완전히 같은 리샘플 경로**(bilinear + uint8, `dataloader.py`)를 씀. 아래 자체검증이 이 경로를 씀.
 2. **방문자 사진** — 캔버스에서 384×384 로 리샘플만 하고 **보정 없이** 그대로 추론함. 웹 데모는
    모델 자체의 숫자를 보여주는 것이 목적이라, 보정(반사광 제거·denoise·조명 평탄화)은 앱에만 둠.
    화면에도 "보정 없음"으로 표시됨.
+
+**주의**: 화살표·캘리퍼·주석·환자정보·장비 UI 가 조금이라도 들어가면 결과를 믿을 수 없음. 병변만
+확대한 crop 도 안 됨(실측: 같은 혈관종 프레임을 0.65 crop 하면 HCC 3/3 로 뒤집힘). 페이지에 같은
+경고를 카드로 띄워 둠.
 
 **숫자 자체검증** 버튼을 누르면 방문자 기기에서 4개 예시를 다시 돌려 TFLite fp32 기준값과의 차이를
 보여줌. 발표 중 "이 페이지가 자기 숫자를 검증한다"로 쓸 수 있음.

@@ -91,6 +91,17 @@
   button:disabled { opacity: 0.45; cursor: default; }
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tight); }
 
+  .caution {
+    margin-top: var(--gutter); border: var(--hairline-width) solid var(--hairline);
+    border-left: 3px solid var(--caution); border-radius: var(--card-radius);
+    background: color-mix(in srgb, var(--caution) 8%, var(--surface));
+    padding: var(--gutter); font-size: 13px; line-height: 1.7; color: var(--text-secondary);
+  }
+  .caution strong { display: block; color: var(--caution); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+  .caution b { color: var(--text-primary); font-weight: 500; }
+  .caution ul { margin: 6px 0 0; padding-left: 18px; }
+  .caution li { margin: 2px 0; }
+
   .examples { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--tight); }
   .examples button { padding: 0; overflow: hidden; }
   .examples img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
@@ -139,6 +150,20 @@
   </section>
 
   <section class="examples" id="examples"></section>
+
+  <section class="caution">
+    <strong>주의 · 결과를 신뢰할 수 없는 경우</strong>
+    이 모델은 <b>초음파 영상 자체만</b> 본다. 같은 영상이라도 영상 외의 정보가 <b>단 하나라도</b> 섞이면
+    판단이 달라진다. 아래가 들어간 이미지는 결과를 믿지 말 것.
+    <ul>
+      <li><b>화살표 · 캘리퍼(측정선) · 주석 · 텍스트 라벨</b></li>
+      <li><b>환자정보 · 관리번호 · 장비 UI · 날짜/시간</b>이 찍힌 캡처</li>
+      <li><b>병변만 잘라낸 확대 사진</b> — 실측: 같은 혈관종 프레임도 병변만 65 % 로 확대해 넣으면
+        HCC(3/3)로 뒤집혔다. 모델은 화각에 민감하다</li>
+      <li>화면을 비스듬히 찍은 사진, 다른 장비 · 다른 gain · 다른 depth 의 영상</li>
+    </ul>
+    병변과 주변 간 실질이 함께 담긴 <b>원본 프레임 전체</b>를 넣어야 한다.
+  </section>
 
   <section class="actions">
     <button class="primary" id="pick-button">내 사진 사용</button>
