@@ -39,6 +39,20 @@ from inference.explainable_predictor import ExplainableHCCPredictor  # noqa: E40
 from export_tflite import IMAGE_SIZE, PROBE_DIR, WEIGHTS_PATH, cosine_to, forward, prototype_map  # noqa: E402
 
 WEB_DIR = PROJECT_ROOT / "docs" / "web-demo"
+EXAMPLE_DIR = WEB_DIR / "examples"
+HEMANGIOMA_DIR = PROJECT_ROOT / "example_images_hemangioma_case"
+EXAMPLE_JPEG_QUALITY = 95
+# Four known HCC frames and four known hemangioma frames, so a visitor sees both outcomes.
+DEMO_EXAMPLES = [
+    ("example_images_hcc_case/hcc1.jpg", "HCC"),
+    ("example_images_hcc_case/hcc2.jpg", "HCC"),
+    ("example_images_hcc_case/hcc5.jpg", "HCC"),
+    ("example_images_hcc_case/new_hcc.jpg", "HCC"),
+    ("example_images_hemangioma_case/hem1.jpg", "Hemangioma"),
+    ("example_images_hemangioma_case/hem2.jpg", "Hemangioma"),
+    ("example_images_hemangioma_case/hem3.jpg", "Hemangioma"),
+    ("example_images_hemangioma_case/hem4.png", "Hemangioma"),
+]
 MODEL_DIR = WEB_DIR / "model"
 ONNX_NAME = "hcc_classifier.onnx"
 COSINE_TOLERANCE = 2e-3
@@ -164,6 +178,89 @@ def write_runtime_names(config_path: Path, session) -> None:
     print(f"[config] input={config['inputName']} outputs={list(config['outputs'])}")
 
 
+def demo_model_input(image_path: Path) -> np.ndarray:
+    """The page's own preprocessing: bilinear + uint8 resample, i.e. the dataloader pipeline."""
+    import cv2
+
+    from photo_pipeline import bilinear_uint8
+
+    bgr = cv2.imread(str(image_path))
+    if bgr is None:
+        raise SystemExit(f"cannot read {image_path}")
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    return bilinear_uint8(rgb, IMAGE_SIZE, IMAGE_SIZE)[None].astype(np.float32)
+
+
+def write_examples() -> list[dict]:
+    """Stages the demo frames, their raw model inputs and the manifest.
+
+    Every frame is re-encoded to JPEG at high quality so the page handles one format, and the exact
+    384x384x3 tensor is dumped beside it so the page (and its self-test) needs no JPEG decoder.
+    """
+    import cv2
+
+    EXAMPLE_DIR.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for relative, label in DEMO_EXAMPLES:
+        source = PROJECT_ROOT / relative
+        if not source.exists():
+            print(f"[examples] skip missing {relative}")
+            continue
+        frame = cv2.imread(str(source))
+        if frame is None:
+            print(f"[examples] unreadable {relative}")
+            continue
+        target = EXAMPLE_DIR / f"{source.stem}.jpg"
+        cv2.imwrite(str(target), frame, [cv2.IMWRITE_JPEG_QUALITY, EXAMPLE_JPEG_QUALITY])
+        demo_model_input(target).astype(np.float32).tofile(EXAMPLE_DIR / f"{source.stem}.bin")
+        entries.append({"file": target.name, "label": label, "source": relative})
+    (EXAMPLE_DIR / "manifest.json").write_text(json.dumps(entries, indent=2), encoding="utf-8")
+    print(f"[examples] {len(entries)} frame(s) staged")
+    return entries
+
+
+def _normalise(values: np.ndarray) -> np.ndarray:
+    low, high = float(values.min()), float(values.max())
+    return (values - low) / (high - low + 1e-8)
+
+
+def write_expected(manifest: list[dict]) -> None:
+    """Reference markers per example, from the TFLite fp32 model the Android app ships."""
+    from export_tflite import run_tflite
+
+    model_path = PROJECT_ROOT / "android_app" / "app" / "src" / "main" / "model" / "hcc_classifier_fp32.tflite"
+    model_bytes = model_path.read_bytes()
+    hcc_mean = np.load(PROBE_DIR / "hcc_bank_mean.npy").astype(np.float32)[0]
+    hem_mean = np.load(PROBE_DIR / "hem_bank_mean.npy").astype(np.float32)[0]
+    hcc_kmeans = np.load(PROBE_DIR / "hcc_bank_kmeans.npy").astype(np.float32)
+
+    expected = {}
+    for entry in manifest:
+        outputs = run_tflite(model_bytes, demo_model_input(EXAMPLE_DIR / entry["file"]))
+        embedding = outputs["embedding"][0]
+        hcc_cosine = cosine_to(embedding, hcc_mean)
+        hem_cosine = cosine_to(embedding, hem_mean)
+        expected[entry["file"]] = {
+            "probs": [float(v) for v in outputs["probs"][0]],
+            "hccCosine": hcc_cosine,
+            "hemCosine": hem_cosine,
+            "delta": hcc_cosine - hem_cosine,
+            "attentionMap": [float(v) for v in _normalise(outputs["att_map"][0, :, :, 0]).ravel()],
+            "prototypeMap": [float(v) for v in prototype_map(outputs["patch_tokens"][0], hcc_kmeans).ravel()],
+        }
+        print(
+            "[expected] %-10s %-11s P(HCC)=%8.5f HCCcos=%+.4f dscore=%+.4f"
+            % (
+                entry["file"],
+                entry["label"],
+                expected[entry["file"]]["probs"][1],
+                hcc_cosine,
+                hcc_cosine - hem_cosine,
+            )
+        )
+    (EXAMPLE_DIR / "expected.json").write_text(json.dumps(expected), encoding="utf-8")
+
+
 def verify_onnx(model_path: Path) -> int:
     """Runs every staged example through ONNX Runtime and compares with the app's own numbers."""
     import onnxruntime as ort
@@ -253,6 +350,8 @@ def main() -> None:
             save_saved_model(predictor, saved_model_dir)
             convert_to_onnx(saved_model_dir, model_path)
 
+    manifest = write_examples()
+    write_expected(manifest)
     failures = verify_onnx(model_path)
     # The tfjs attempt left shards behind; the page only needs the ONNX graph.
     for stale in MODEL_DIR.glob("group1-shard*.bin"):
