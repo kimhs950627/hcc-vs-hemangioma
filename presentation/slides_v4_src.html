@@ -238,7 +238,7 @@
       <span class="chip">Hybrid ViT</span>
     </div>
     <div class="stats cols-4" style="margin-top:var(--sp-4);">
-      <div class="stat"><div class="v">1.000</div><div class="k">AUROC (Val·Test)</div></div>
+      <div class="stat"><div class="v">1.000</div><div class="k">AUROC (Test)</div></div>
       <div class="stat"><div class="v">3</div><div class="k">출력 지표</div></div>
       <div class="stat"><div class="v">2,656</div><div class="k">영상</div></div>
       <div class="stat"><div class="v">268</div><div class="k">테스트 영상</div></div>
@@ -539,7 +539,7 @@
             <tr><td class="l">정확도</td><td>97.8 %</td><td class="mark">99.6 %</td></tr>
             <tr><td class="l">TP·FP·FN·TN</td><td>134 / 0 / 6 / 128</td><td>140 / 1 / 0 / 127</td></tr>
           </table>
-          <p class="foot-note" style="margin-top:var(--sp-3); text-align:left;">닮음 지표 = HCC cosine ≥ −0.0048 · Δscore ≥ −0.958 (Val Youden).<br>세 출력의 AUROC 는 모두 1.000 — 우열은 판정할 수 없다.</p>
+          <p class="foot-note" style="margin-top:var(--sp-3); text-align:left;">닮음 지표 = HCC cosine ≥ −0.0048 · Δscore ≥ −0.958 (검증 세트 Youden, 탐색적).<br>세 출력의 AUROC 는 모두 1.000 — 우열은 판정할 수 없다.</p>
         </div>
         <div><img class="shot" src="figures/fig3b_roc_test.jpg" alt="ROC" style="max-height:300px; object-fit:contain;"></div>
       </div>
