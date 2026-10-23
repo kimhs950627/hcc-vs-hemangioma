@@ -4,7 +4,7 @@
   The 11 v2 slides are unchanged (same strings, numbers, claims); slide 3
   ("그 76%는 어디서 온 숫자인가") was added at the user's request to document the
   Yang Q, et al. EBioMedicine 2020;56:102777 source of the 76.0/76.1/76.9%
-  reader benchmark. Total: 12 slides.
+  reader benchmark. Total: 13 slides.
 
   Design direction (design/v3-visual-direction.md)
     - 16:9 canvas 1280x720 (conference standard), margins 64/52/44
@@ -246,7 +246,7 @@
     <p class="cover-author" style="margin-top:var(--sp-4);">예수병원 가정의학과 R3 김현수</p>
     <p class="cover-affil" style="margin-top:var(--sp-2); font-size:var(--fs-sub);">대한가정의학회(KFM) 2026년도 추계학술대회 · 2026.10.24</p>
       </div>
-  <div class="foot"><span></span><span class="pg">1 / 12</span></div>
+  <div class="foot"><span></span><span class="pg">1 / 13</span></div>
 </section>
 
 <!-- ============ 2. WHAT IS YOUR DIAGNOSIS? ============ -->
@@ -280,7 +280,7 @@
       <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">B-mode US로 악성/양성 국소 병변 감별 — 15년 경력 초음파 판독자 <b>236명</b>(임상정보 제공). Yang Q, et al. <i>EBioMedicine</i> 2020;56:102777</p>
     </div>
   </div>
-  <div class="foot"><span>임상 배경</span><span class="pg">2 / 12</span></div>
+  <div class="foot"><span>임상 배경</span><span class="pg">2 / 13</span></div>
 </section>
 
 <!-- ============ 3. EVIDENCE FOR THE 76% ============ -->
@@ -315,7 +315,7 @@
       <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">Yang Q, et al. <i>EBioMedicine</i> 2020;56:102777 · 악성 80.7% : 양성 19.3% 불균형</p>
     </div>
   </div>
-  <div class="foot"><span>근거</span><span class="pg">3 / 12</span></div>
+  <div class="foot"><span>근거</span><span class="pg">3 / 13</span></div>
 </section>
 
 <!-- ============ 4. WHAT WE OUTPUT ============ -->
@@ -397,7 +397,7 @@
       <p class="foot-note" style="margin-top:0; text-align:center;">744명 · 2,656장 (Train 1,858 / Val 530 / Test 268) · 환자 단위 분할</p>
     </div>
   </div>
-  <div class="foot"><span>방법</span><span class="pg">4 / 12</span></div>
+  <div class="foot"><span>방법</span><span class="pg">4 / 13</span></div>
 </section>
 
 <!-- ============ 5. MODEL ============ -->
@@ -451,7 +451,7 @@
       <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">EfficientNetV2B0 <b>7.1M</b> — ResNet50V2(23.6M)와 같은 AUROC를 더 가벼운 모델로</p>
     </div>
   </div>
-  <div class="foot"><span>방법</span><span class="pg">5 / 12</span></div>
+  <div class="foot"><span>방법</span><span class="pg">5 / 13</span></div>
 </section>
 
 <!-- ============ 6. TRAINING ============ -->
@@ -519,10 +519,10 @@
       <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">미학습 HCC 417예 중 <b>94.7%</b> 점수 상승 · 분산 <b>−60.7%</b> (paired Wilcoxon·Pitman-Morgan p&lt;0.001)</p>
     </div>
   </div>
-  <div class="foot"><span>방법</span><span class="pg">6 / 12</span></div>
+  <div class="foot"><span>방법</span><span class="pg">6 / 13</span></div>
 </section>
 
-<!-- ============ 7. RESULT - PERFORMANCE + THREE OUTPUTS ============ -->
+<!-- ============ 7. RESULT - TWO OPERATING POINTS ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -530,33 +530,138 @@
       <p class="claim">같은 모델, 두 운영점 —<br>민감도와 특이도가 맞바뀐다</p>
     </div>
     <div class="body">
-      <div class="row c2" style="align-items:start;">
-        <div>
-          <table class="tbl">
-            <tr><th class="l">Test n=268</th><th>확률 ≥ 0.5</th><th>닮음 (검증 유도)</th></tr>
-            <tr><td class="l">민감도</td><td>95.7 %</td><td class="mark">100 %</td></tr>
-            <tr><td class="l">특이도</td><td class="mark">100 %</td><td>99.2 %</td></tr>
-            <tr><td class="l">정확도</td><td>97.8 %</td><td class="mark">99.6 %</td></tr>
-            <tr><td class="l">TP·FP·FN·TN</td><td>134 / 0 / 6 / 128</td><td>140 / 1 / 0 / 127</td></tr>
-          </table>
-          <p class="foot-note" style="margin-top:var(--sp-2); text-align:left;">닮음 컷오프 = 검증 Youden 구간의 위쪽 끝(탐색적) · 세 출력 AUROC 1.000 — 우열은 판정 불가.<br>등가 구간 = 같은 혼동행렬을 내는 임계값 범위. 테스트에서 혈관종 1장(+0.033)이 위로 → 위양성 1건.</p>
-        </div>
-        <div>
-          <img class="shot" src="figures/fig3b_roc_test.jpg" alt="ROC" style="max-height:158px; object-fit:contain;">
-          <table class="tbl" style="margin-top:var(--sp-2); font-size:0.86em;">
-            <tr><th class="l">지표</th><th>컷오프</th><th>등가 구간 (검증)</th></tr>
-            <tr><td class="l">Confidence</td><td>0.50</td><td class="mark">(0.450, 0.540]</td></tr>
-            <tr><td class="l">HCC cosine</td><td>−0.0048</td><td class="mark">(−0.0498, −0.0048]</td></tr>
-            <tr><td class="l">Δscore</td><td>−0.9585</td><td class="mark">(−1.0001, −0.9585]</td></tr>
-          </table>
-        </div>
-      </div>
+      <table class="tbl" style="max-width:980px; margin:var(--sp-4) auto 0;">
+        <tr><th class="l">Test n=268</th><th>확률 ≥ 0.5</th><th>닮음 (검증 유도)</th></tr>
+        <tr><td class="l">컷오프</td><td>0.50</td><td>−0.0048 (cosine) · −0.9585 (Δscore)</td></tr>
+        <tr><td class="l">민감도</td><td>95.7 %</td><td class="mark">100 %</td></tr>
+        <tr><td class="l">특이도</td><td class="mark">100 %</td><td>99.2 %</td></tr>
+        <tr><td class="l">정확도</td><td>97.8 %</td><td>99.6 %</td></tr>
+        <tr><td class="l">TP·FP·FN·TN</td><td>134 / 0 / 6 / 128</td><td>140 / 1 / 0 / 127</td></tr>
+      </table>
+      <p class="foot-note" style="margin-top:var(--sp-5); text-align:center;">컷오프를 어떻게 정했는지, 왜 점이 아니라 구간인지는 다음 장에서.</p>
     </div>
   </div>
-  <div class="foot"><span>결과</span><span class="pg">7 / 12</span></div>
+  <div class="foot"><span>결과</span><span class="pg">7 / 13</span></div>
 </section>
 
-<!-- ============ 8. RESULT - DISTRIBUTIONS ============ -->
+<!-- ============ 8. WHY THE CUTOFF IS AN INTERVAL ============ -->
+<section>
+  <div class="wrap">
+    <div class="head">
+      <p class="eyebrow">결과</p>
+      <p class="claim">컷오프는 점이 아니라 <b>구간</b>이다</p>
+    </div>
+    <div class="body">
+      <svg viewBox="0 0 1152 452" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="inherit" role="img" aria-label="검증 세트 분포에서 빈 구간을 확대하면 어떤 임계값도 같은 판정을 준다">
+<text x="0.0" y="18.0" font-size="21" fill="var(--ink)" font-weight="700" text-anchor="start">① 검증 세트 — 두 무리가 떨어져 있고, 사이에 빈 공간이 있다</text>
+<text x="0.0" y="40.0" font-size="13" fill="var(--muted)" font-weight="400" text-anchor="start">HCC cosine score · 막대 = 그 구간의 영상 수 · 점 하나가 영상 한 장</text>
+<rect x="250.5" y="62" width="36.6" height="170" fill="var(--caution)" opacity="0.18"/>
+<rect x="53.5" y="199.6" width="10.9" height="32.4" fill="var(--hem)" opacity="0.85"/>
+<rect x="65.4" y="142.9" width="10.9" height="89.1" fill="var(--hem)" opacity="0.85"/>
+<rect x="77.3" y="94.3" width="10.9" height="137.7" fill="var(--hem)" opacity="0.85"/>
+<rect x="89.1" y="70.0" width="10.9" height="162.0" fill="var(--hem)" opacity="0.85"/>
+<rect x="101.0" y="70.0" width="10.9" height="162.0" fill="var(--hem)" opacity="0.85"/>
+<rect x="112.9" y="118.6" width="10.9" height="113.4" fill="var(--hem)" opacity="0.85"/>
+<rect x="124.7" y="130.8" width="10.9" height="101.2" fill="var(--hem)" opacity="0.85"/>
+<rect x="136.6" y="142.9" width="10.9" height="89.1" fill="var(--hem)" opacity="0.85"/>
+<rect x="148.5" y="179.3" width="10.9" height="52.6" fill="var(--hem)" opacity="0.85"/>
+<rect x="160.4" y="199.6" width="10.9" height="32.4" fill="var(--hem)" opacity="0.85"/>
+<rect x="172.2" y="199.6" width="10.9" height="32.4" fill="var(--hem)" opacity="0.85"/>
+<rect x="184.1" y="227.9" width="10.9" height="4.0" fill="var(--hem)" opacity="0.85"/>
+<rect x="196.0" y="227.9" width="10.9" height="4.0" fill="var(--hem)" opacity="0.85"/>
+<rect x="207.9" y="227.9" width="10.9" height="4.0" fill="var(--hem)" opacity="0.85"/>
+<rect x="219.7" y="227.9" width="10.9" height="4.0" fill="var(--hem)" opacity="0.85"/>
+<rect x="243.5" y="227.9" width="10.9" height="4.0" fill="var(--hem)" opacity="0.85"/>
+<rect x="279.1" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="326.6" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="362.2" y="228.5" width="10.9" height="3.5" fill="var(--hcc)" opacity="0.85"/>
+<rect x="386.0" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="469.1" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="481.0" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="492.9" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="504.8" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="516.6" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="528.5" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="611.6" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="682.9" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="742.2" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="766.0" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="777.9" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="789.8" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="813.5" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="837.2" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="849.1" y="225.0" width="10.9" height="7.0" fill="var(--hcc)" opacity="0.85"/>
+<rect x="861.0" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="872.9" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="884.8" y="230.3" width="10.9" height="1.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="896.6" y="228.5" width="10.9" height="3.5" fill="var(--hcc)" opacity="0.85"/>
+<rect x="908.5" y="228.5" width="10.9" height="3.5" fill="var(--hcc)" opacity="0.85"/>
+<rect x="920.4" y="226.8" width="10.9" height="5.2" fill="var(--hcc)" opacity="0.85"/>
+<rect x="932.2" y="228.5" width="10.9" height="3.5" fill="var(--hcc)" opacity="0.85"/>
+<rect x="944.1" y="226.8" width="10.9" height="5.2" fill="var(--hcc)" opacity="0.85"/>
+<rect x="956.0" y="225.0" width="10.9" height="7.0" fill="var(--hcc)" opacity="0.85"/>
+<rect x="967.9" y="228.5" width="10.9" height="3.5" fill="var(--hcc)" opacity="0.85"/>
+<rect x="979.8" y="219.8" width="10.9" height="12.2" fill="var(--hcc)" opacity="0.85"/>
+<rect x="1003.5" y="223.3" width="10.9" height="8.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="1015.4" y="223.3" width="10.9" height="8.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="1027.2" y="216.3" width="10.9" height="15.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="1039.1" y="216.3" width="10.9" height="15.7" fill="var(--hcc)" opacity="0.85"/>
+<rect x="1051.0" y="204.1" width="10.9" height="27.9" fill="var(--hcc)" opacity="0.85"/>
+<rect x="1062.9" y="195.4" width="10.9" height="36.6" fill="var(--hcc)" opacity="0.85"/>
+<rect x="1074.7" y="113.5" width="10.9" height="118.5" fill="var(--hcc)" opacity="0.85"/>
+<rect x="1086.6" y="70.0" width="10.9" height="162.0" fill="var(--hcc)" opacity="0.85"/>
+<line x1="6" y1="232" x2="1146" y2="232" stroke="var(--line)" stroke-width="1.6"/>
+<line x1="87.4" y1="232" x2="87.4" y2="237" stroke="var(--line)" stroke-width="1.4"/>
+<text x="87.4" y="252.0" font-size="11.5" fill="var(--muted)" font-weight="400" text-anchor="middle">-0.25</text>
+<line x1="291.0" y1="232" x2="291.0" y2="237" stroke="var(--line)" stroke-width="1.4"/>
+<text x="291.0" y="252.0" font-size="11.5" fill="var(--muted)" font-weight="400" text-anchor="middle">0.00</text>
+<line x1="494.6" y1="232" x2="494.6" y2="237" stroke="var(--line)" stroke-width="1.4"/>
+<text x="494.6" y="252.0" font-size="11.5" fill="var(--muted)" font-weight="400" text-anchor="middle">0.25</text>
+<line x1="698.1" y1="232" x2="698.1" y2="237" stroke="var(--line)" stroke-width="1.4"/>
+<text x="698.1" y="252.0" font-size="11.5" fill="var(--muted)" font-weight="400" text-anchor="middle">0.50</text>
+<line x1="901.7" y1="232" x2="901.7" y2="237" stroke="var(--line)" stroke-width="1.4"/>
+<text x="901.7" y="252.0" font-size="11.5" fill="var(--muted)" font-weight="400" text-anchor="middle">0.75</text>
+<line x1="1105.3" y1="232" x2="1105.3" y2="237" stroke="var(--line)" stroke-width="1.4"/>
+<text x="1105.3" y="252.0" font-size="11.5" fill="var(--muted)" font-weight="400" text-anchor="middle">1.00</text>
+<rect x="240.5" y="52" width="56.6" height="186" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-dasharray="6 4"/>
+<text x="309.1" y="66.0" font-size="13" fill="var(--ink)" font-weight="700" text-anchor="start">이 사이</text>
+<text x="309.1" y="84.0" font-size="13" fill="var(--caution)" font-weight="700" text-anchor="start">클릭 →</text>
+<rect x="956" y="48" width="9" height="9" fill="var(--hem)"/>
+<text x="970.0" y="56.0" font-size="12.5" fill="var(--muted)" font-weight="400" text-anchor="start">혈관종 253장</text>
+<rect x="1066" y="48" width="9" height="9" fill="var(--hcc)"/>
+<text x="1080.0" y="56.0" font-size="12.5" fill="var(--muted)" font-weight="400" text-anchor="start">HCC 277장</text>
+<g class="fragment">
+<path d="M250.5,240.0 L40.0,292.0 M287.1,240.0 L700.0,292.0" stroke="var(--line-strong, var(--line))" stroke-width="1.4" stroke-dasharray="4 4" fill="none"/>
+<text x="40.0" y="286.0" font-size="15" fill="var(--ink)" font-weight="700" text-anchor="start">② 확대 — 간격 0.045</text>
+<rect x="218.7" y="312" width="228.2" height="84" fill="var(--caution)" opacity="0.16"/>
+<rect x="55.0" y="312.0" width="14.0" height="84.0" fill="var(--hem)" opacity="0.9"/>
+<rect x="205.0" y="312.0" width="14.0" height="84.0" fill="var(--hem)" opacity="0.9"/>
+<rect x="445.0" y="312.0" width="14.0" height="84.0" fill="var(--hcc)" opacity="0.9"/>
+<line x1="40" y1="396" x2="700" y2="396" stroke="var(--line)" stroke-width="1.6"/>
+<line x1="218.7" y1="396" x2="218.7" y2="402" stroke="var(--ink)" stroke-width="1.6"/>
+<text x="218.7" y="418.0" font-size="12.5" fill="var(--ink)" font-weight="700" text-anchor="middle">−0.0498</text>
+<line x1="447.0" y1="396" x2="447.0" y2="402" stroke="var(--ink)" stroke-width="1.6"/>
+<text x="447.0" y="418.0" font-size="12.5" fill="var(--ink)" font-weight="700" text-anchor="middle">−0.0048</text>
+<text x="332.8" y="370.0" font-size="13.5" fill="var(--ink)" font-weight="700" text-anchor="middle">이 안 어디에 그어도 판정은 같다</text>
+<text x="760.0" y="286.0" font-size="15" fill="var(--ink)" font-weight="700" text-anchor="start">Youden J = 민감도 + 특이도 − 1</text>
+<line x1="760" y1="396" x2="1146" y2="396" stroke="var(--line)" stroke-width="1.6"/>
+<line x1="760" y1="396" x2="760" y2="318" stroke="var(--line)" stroke-width="1.6"/>
+<text x="752.0" y="400.0" font-size="11.5" fill="var(--muted)" font-weight="400" text-anchor="end">0</text>
+<text x="752.0" y="330.0" font-size="11.5" fill="var(--muted)" font-weight="400" text-anchor="end">1.0</text>
+<polyline points="760.0,326.6 761.0,326.6 761.9,326.6 762.9,326.6 763.9,326.6 764.8,326.6 765.8,326.6 766.8,326.6 767.7,326.6 768.7,326.6 769.6,326.6 770.6,326.3 771.6,326.3 772.5,326.3 773.5,326.3 774.5,326.3 775.4,326.3 776.4,326.3 777.4,326.3 778.3,326.3 779.3,326.3 780.3,326.3 781.2,326.3 782.2,326.3 783.2,326.3 784.1,326.3 785.1,326.3 786.1,326.3 787.0,326.3 788.0,326.3 788.9,326.3 789.9,326.3 790.9,326.3 791.8,326.3 792.8,326.3 793.8,326.3 794.7,326.3 795.7,326.3 796.7,326.3 797.6,326.3 798.6,326.3 799.6,326.3 800.5,326.3 801.5,326.3 802.5,326.3 803.4,326.3 804.4,326.3 805.4,326.3 806.3,326.3 807.3,326.3 808.2,326.3 809.2,326.3 810.2,326.3 811.1,326.3 812.1,326.3 813.1,326.3 814.0,326.3 815.0,326.3 816.0,326.3 816.9,326.3 817.9,326.3 818.9,326.3 819.8,326.3 820.8,326.3 821.8,326.3 822.7,326.3 823.7,326.3 824.7,326.3 825.6,326.3 826.6,326.3 827.5,326.3 828.5,326.3 829.5,326.3 830.4,326.3 831.4,326.3 832.4,326.3 833.3,326.3 834.3,326.3 835.3,326.3 836.2,326.3 837.2,326.3 838.2,326.3 839.1,326.3 840.1,326.3 841.1,326.3 842.0,326.3 843.0,326.3 844.0,326.3 844.9,326.3 845.9,326.3 846.9,326.3 847.8,326.3 848.8,326.3 849.7,326.3 850.7,326.3 851.7,326.3 852.6,326.3 853.6,326.3 854.6,326.3 855.5,326.3 856.5,326.3 857.5,326.3 858.4,326.3 859.4,326.3 860.4,326.3 861.3,326.3 862.3,326.3 863.3,326.3 864.2,326.3 865.2,326.0 866.1,326.0 867.1,326.0 868.1,326.0 869.0,326.0 870.0,326.0 871.0,326.0 871.9,326.0 872.9,326.0 873.9,326.0 874.8,326.0 875.8,326.0 876.8,326.0 877.7,326.0 878.7,326.0 879.7,326.0 880.6,326.0 881.6,326.0 882.6,326.0 883.5,326.0 884.5,326.0 885.5,326.0 886.4,326.0 887.4,326.0 888.3,326.0 889.3,326.0 890.3,326.0 891.2,326.0 892.2,326.0 893.2,326.0 894.1,326.0 895.1,326.0 896.1,326.0 897.0,326.0 898.0,326.0 899.0,326.0 899.9,326.0 900.9,326.0 901.9,326.0 902.8,326.0 903.8,326.0 904.8,326.0 905.7,326.0 906.7,326.0 907.6,326.0 908.6,326.0 909.6,326.0 910.5,326.0 911.5,326.0 912.5,326.0 913.4,326.0 914.4,326.0 915.4,326.0 916.3,326.0 917.3,326.0 918.3,326.0 919.2,326.0 920.2,326.0 921.2,326.0 922.1,326.0 923.1,326.0 924.0,326.0 925.0,326.0 926.0,326.0 926.9,326.0 927.9,326.0 928.9,326.0 929.8,326.0 930.8,326.0 931.8,326.0 932.7,326.0 933.7,326.0 934.7,326.0 935.6,326.0 936.6,326.0 937.6,326.0 938.5,326.0 939.5,326.0 940.5,326.0 941.4,326.0 942.4,326.0 943.4,326.0 944.3,326.0 945.3,326.0 946.2,326.0 947.2,326.0 948.2,326.0 949.1,326.0 950.1,326.0 951.1,326.0 952.0,326.0 953.0,326.0 954.0,326.0 954.9,326.0 955.9,326.0 956.9,326.0 957.8,326.0 958.8,326.0 959.8,326.0 960.7,326.0 961.7,326.0 962.6,326.0 963.6,326.0 964.6,326.0 965.5,326.0 966.5,326.0 967.5,326.0 968.4,326.0 969.4,326.0 970.4,326.0 971.3,326.0 972.3,326.0 973.3,326.0 974.2,326.0 975.2,326.0 976.2,326.0 977.1,326.0 978.1,326.0 979.1,326.0 980.0,326.0 981.0,326.0 982.0,326.0 982.9,326.0 983.9,326.0 984.8,326.0 985.8,326.0 986.8,326.0 987.7,326.0 988.7,326.0 989.7,326.0 990.6,326.0 991.6,326.0 992.6,326.0 993.5,326.0 994.5,326.0 995.5,326.0 996.4,326.0 997.4,326.0 998.4,326.3 999.3,326.3 1000.3,326.3 1001.2,326.3 1002.2,326.3 1003.2,326.3 1004.1,326.3 1005.1,326.3 1006.1,326.3 1007.0,326.3 1008.0,326.3 1009.0,326.3 1009.9,326.3 1010.9,326.3 1011.9,326.3 1012.8,326.3 1013.8,326.3 1014.8,326.3 1015.7,326.3 1016.7,326.3 1017.7,326.3 1018.6,326.3 1019.6,326.3 1020.5,326.3 1021.5,326.3 1022.5,326.3 1023.4,326.3 1024.4,326.3 1025.4,326.3 1026.3,326.3 1027.3,326.3 1028.3,326.3 1029.2,326.3 1030.2,326.3 1031.2,326.3 1032.1,326.3 1033.1,326.3 1034.1,326.3 1035.0,326.3 1036.0,326.3 1037.0,326.3 1037.9,326.3 1038.9,326.3 1039.8,326.3 1040.8,326.3 1041.8,326.3 1042.7,326.3 1043.7,326.3 1044.7,326.3 1045.6,326.3 1046.6,326.3 1047.6,326.3 1048.5,326.3 1049.5,326.3 1050.5,326.3 1051.4,326.3 1052.4,326.3 1053.4,326.3 1054.3,326.3 1055.3,326.3 1056.3,326.3 1057.2,326.3 1058.2,326.3 1059.2,326.3 1060.1,326.3 1061.1,326.3 1062.0,326.3 1063.0,326.3 1064.0,326.3 1064.9,326.3 1065.9,326.3 1066.9,326.3 1067.8,326.3 1068.8,326.3 1069.8,326.3 1070.7,326.3 1071.7,326.3 1072.7,326.3 1073.6,326.3 1074.6,326.3 1075.6,326.3 1076.5,326.3 1077.5,326.3 1078.5,326.3 1079.4,326.3 1080.4,326.3 1081.3,326.3 1082.3,326.3 1083.3,326.3 1084.2,326.3 1085.2,326.3 1086.2,326.3 1087.1,326.3 1088.1,326.3 1089.1,326.3 1090.0,326.3 1091.0,326.3 1092.0,326.3 1092.9,326.3 1093.9,326.3 1094.9,326.3 1095.8,326.3 1096.8,326.3 1097.8,326.3 1098.7,326.3 1099.7,326.3 1100.6,326.3 1101.6,326.3 1102.6,326.3 1103.5,326.3 1104.5,326.3 1105.5,326.3 1106.4,326.3 1107.4,326.3 1108.4,326.3 1109.3,326.3 1110.3,326.3 1111.3,326.3 1112.2,326.3 1113.2,326.3 1114.2,326.3 1115.1,326.3 1116.1,326.3 1117.0,326.3 1118.0,326.3 1119.0,326.3 1119.9,326.3 1120.9,326.3 1121.9,326.3 1122.8,326.3 1123.8,326.3 1124.8,326.3 1125.7,326.3 1126.7,326.3 1127.7,326.3 1128.6,326.3 1129.6,326.3 1130.6,326.3 1131.5,326.3 1132.5,326.3 1133.5,326.3 1134.4,326.3 1135.4,326.3 1136.3,326.3 1137.3,326.3 1138.3,326.3 1139.2,326.3 1140.2,326.3 1141.2,326.3 1142.1,326.3 1143.1,326.3 1144.1,326.3 1145.0,326.3 1146.0,326.3" fill="none" stroke="var(--accent)" stroke-width="2.4"/>
+<line x1="864.5" y1="326.0" x2="998.0" y2="326.0" stroke="var(--caution)" stroke-width="6" stroke-linecap="round"/>
+<circle cx="998.0" cy="326.0" r="6" fill="var(--caution)"/>
+<text x="931.3" y="348.0" font-size="12.5" fill="var(--caution)" font-weight="700" text-anchor="middle">평평 — 최고점이 하나가 아니다</text>
+<text x="1008.0" y="316.0" font-size="12" fill="var(--ink)" font-weight="400" text-anchor="start">구현이 고른 끝 = −0.0048</text>
+</g>
+<text x="0" y="450" font-size="15.5" fill="var(--ink)">컷오프는 데이터가 정한 한 점이 아니다 — <tspan font-weight="700">같은 판정이 유지되는 구간</tspan>으로 제시한다.</text>
+</svg>
+    </div>
+  </div>
+  <div class="foot"><span>결과</span><span class="pg">8 / 13</span></div>
+</section>
+
+<!-- ============ 9. RESULT - DISTRIBUTIONS ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -583,7 +688,7 @@
       <p class="foot-note" style="margin-top:var(--sp-2); text-align:center;">단 상승은 SupCon 목적함수의 귀결 — 임상 타당성의 독립 증거가 아니다 · ResNet50V2에서 재현 (+0.104)</p>
     </div>
   </div>
-  <div class="foot"><span>결과</span><span class="pg">8 / 12</span></div>
+  <div class="foot"><span>결과</span><span class="pg">9 / 13</span></div>
 </section>
 
 <!-- ============ 9. HEMANGIOMA-LIKE HCC ============ -->
@@ -620,10 +725,10 @@
       <p class="foot-note" style="margin-top:var(--sp-3); text-align:center;">Proof-of-Concept demonstration (n=4) — 민감도 추정치로 읽을 수는 없다 · <i>J Med Assoc Thai</i> 2013;96(7):829-838</p>
     </div>
   </div>
-  <div class="foot"><span>결과</span><span class="pg">9 / 12</span></div>
+  <div class="foot"><span>결과</span><span class="pg">10 / 13</span></div>
 </section>
 
-<!-- ============ 10. THE TWO OPERATING POINTS FAIL DIFFERENTLY ============ -->
+<!-- ============ 11. THE TWO OPERATING POINTS FAIL DIFFERENTLY ============ -->
 <section>
   <div class="wrap">
     <div class="head">
@@ -641,7 +746,7 @@
       <p class="foot-note" style="margin-top:var(--sp-4); text-align:center; font-style:italic; font-size:0.92em;">Confidence 기준 오류 케이스 6개 · Cosine score 기준 1개<br>McNemar p &gt; 0.05 — 두 기준 간 분류성능 차이는 유의하지 않다</p>
     </div>
   </div>
-  <div class="foot"><span>고찰 ①</span><span class="pg">10 / 12</span></div>
+  <div class="foot"><span>고찰 ①</span><span class="pg">11 / 13</span></div>
 </section>
 
 <!-- ============ 11. NOVELTY + LIMITATIONS ============ -->
@@ -678,10 +783,10 @@
       </div>
     </div>
   </div>
-  <div class="foot"><span>고찰 ②</span><span class="pg">11 / 12</span></div>
+  <div class="foot"><span>고찰 ②</span><span class="pg">12 / 13</span></div>
 </section>
 
-<!-- ============ 12. THANK YOU ============ -->
+<!-- ============ 13. THANK YOU ============ -->
 <section class="cover">
   <div class="wrap">
     <div style="display:grid; grid-template-columns:1fr 320px; gap:var(--sp-5); align-items:center;">
