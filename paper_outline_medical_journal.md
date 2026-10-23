@@ -264,13 +264,13 @@ Figure 4. HCC Cosine Score Distribution in True HCC Cases by Training Mode (Val 
 
 ![Figure 7: HCC cosine score distribution](cosine_probe_result/hcc_cosine_annot_distrib.png)
 
-*Figure 4. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 HCC cosine score의 boxplot 분포. CE+SupCon 조건이 CE only 대비 두 backbone 모두에서 유의하게 높은 HCC cosine score를 보이며(독립표본 t-검정, 모든 비교 p < 0.001),  SupCon 학습이 HCC 임베딩을 HCC prototype 방향으로 정렬함을 확인한다.*
+*Figure 4. True HCC cases(Val+Test 합산, n=417)에서 backbone별·학습 조건별 HCC cosine score 분포. 패널 A/C 는 density, B/D 는 증례별 paired shift. CE+SupCon 조건이 CE only 대비 두 backbone 모두에서 유의하게 높은 HCC cosine score를 보이며(독립표본 t-검정, 모든 비교 p < 0.001),  SupCon 학습이 HCC 임베딩을 HCC prototype 방향으로 정렬함을 확인한다.*
 
-Figure 5. Δscore Distribution in True HCC Cases by Training Mode (Val + Test)
+Figure 5. Hemangioma Cosine Score Distribution in True Hemangioma Cases by Training Mode (Val + Test)
 
 ![Figure 8: Delta cosine score distribution](cosine_probe_result/delta_cosine_annot_distrib.png)
 
-*Figure 5. True HCC cases(Val+Test 합산)에서 backbone별·학습 조건별 Δscore(HCC cosine − Hemangioma cosine)의 boxplot 분포 비교. HCC score와는 다르게 score 분포의 차이가 통계적으로 유의하지 않다. 이는 두 케이스 모두 병변 자체의 특성을 제외하면 간 실질, 초음파라는 modality 자체의 유사성이 HCC 및 Hemangioma 그룹에 공히 강력하게 나타나, score 차이가 두 그룹 사이에서는 크지 않은 것으로 추측할 수 있다.*
+*Figure 5. True hemangioma cases(Val+Test 합산, n=381)에서 backbone별·학습 조건별 hemangioma cosine score 분포. 패널 A/C 는 density, B/D 는 증례별 paired shift. HCC score와는 다르게 score 분포의 차이가 통계적으로 유의하지 않다. 이는 두 케이스 모두 병변 자체의 특성을 제외하면 간 실질, 초음파라는 modality 자체의 유사성이 HCC 및 Hemangioma 그룹에 공히 강력하게 나타나, score 차이가 두 그룹 사이에서는 크지 않은 것으로 추측할 수 있다.*
 
 ### 3.6 애매한 결정(Ambiguous Confidence) 구간에서의 Cosine 표지자 구제 효과
 
