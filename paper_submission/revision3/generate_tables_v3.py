@@ -174,7 +174,7 @@ for r_idx, row in enumerate(t3_data[1:], start=1):
         for run in p.runs:
             run.font.name = "Malgun Gothic"
             run.font.size = Pt(9)
-add_footnote(doc, "Performance is reported for the test set only; validation-set performance is not reported because thresholds were derived there (in-sample). The primary operating point was prespecified at a confidence score of 0.50 rather than a validation-derived Youden point, because AUROC reached the ceiling (1.000) in the derivation cohort. Test set: n=268 (HCC 140, hemangioma 128). Misclassifications at this operating point were false negatives only. The 0.50 cutoff lies inside the test zero-error interval (0.4038, 0.5444]. 95% confidence intervals are Wilson score intervals estimated at the image level.", is_revised=True)
+add_footnote(doc, "Performance is reported for the test set only; validation-set performance is not reported because thresholds were derived there (in-sample). The primary operating point was prespecified at a confidence score of 0.50 rather than a validation-derived Youden point, because AUROC reached the ceiling (1.000) in the derivation cohort. Test set: n=268 (HCC 140, hemangioma 128). Misclassifications at this operating point were false negatives only. The 0.50 cutoff lies outside the test zero-error interval (0.0014, 0.0286]; the six missed HCC cases have predicted probabilities of 0.029-0.404. 95% confidence intervals are Wilson score intervals estimated at the image level.", is_revised=True)
 
 # --- Table 3B (similarity operating points, test set only) ---
 add_caption(doc, "Table 3B. Exploratory Operating Points of the Similarity Metrics, Test Set", is_revised=True)

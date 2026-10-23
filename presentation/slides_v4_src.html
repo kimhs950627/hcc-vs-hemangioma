@@ -539,13 +539,13 @@
             <tr><td class="l">정확도</td><td>97.8 %</td><td class="mark">99.6 %</td></tr>
             <tr><td class="l">TP·FP·FN·TN</td><td>134 / 0 / 6 / 128</td><td>140 / 1 / 0 / 127</td></tr>
           </table>
-          <p class="foot-note" style="margin-top:var(--sp-2); text-align:left;">닮음 컷오프 = 검증 세트 Youden(탐색적) · 세 출력 AUROC 모두 1.000 — 우열은 판정할 수 없다.<br>구간 = 그 범위의 임계값이면 테스트 오류 0. 0.50 은 구간 안, 검증 Youden 두 값은 밖(위양성 1건).</p>
+          <p class="foot-note" style="margin-top:var(--sp-2); text-align:left;">닮음 컷오프 = 검증 세트 Youden(탐색적) · 세 출력 AUROC 모두 1.000 — 우열은 판정할 수 없다.<br>구간 = 그 안의 어떤 임계값을 택해도 테스트 오류 0. 0.50 과 검증 Youden 값은 모두 이 밖 — n=268 탓에 폭이 넓다.</p>
         </div>
         <div>
           <img class="shot" src="figures/fig3b_roc_test.jpg" alt="ROC" style="max-height:158px; object-fit:contain;">
           <table class="tbl" style="margin-top:var(--sp-2); font-size:0.86em;">
             <tr><th class="l">지표</th><th>컷오프</th><th>테스트 오류 0 구간</th></tr>
-            <tr><td class="l">Confidence</td><td>0.50</td><td class="mark">(0.404, 0.544]</td></tr>
+            <tr><td class="l">Confidence</td><td>0.50</td><td>(0.0014, 0.0286]</td></tr>
             <tr><td class="l">HCC cosine</td><td>−0.0048</td><td>(0.0325, 0.2583]</td></tr>
             <tr><td class="l">Δscore</td><td>−0.9585</td><td>(−0.8879, −0.5435]</td></tr>
           </table>
@@ -669,13 +669,13 @@
             <li><b>단일기관</b> · 외부 검증 없음</li>
             <li>컷오프는 이 코호트 값 — <b>이전 불가</b></li>
             <li>차이 <b>유의하지 않음</b>(p=0.125) — 우월·비열등 판정 불가</li>
-            <li><b>AUROC 1.000</b> — 최적 컷오프가 유일하지 않음</li>
+            <li><b>AUROC 1.000 · n=268</b> — 컷오프가 하나로 정해지지 않음</li>
             <li><b>Δscore 감소</b> · 닮음 상승은 목적함수의 귀결</li>
             <li>배경 층화 불가 · <b>shortcut</b> 배제 불가</li>
           </ul>
         </div>
       </div>
-      <div class="verdict" style="margin-top:var(--sp-5);">
+      <div class="verdict" style="margin-top:var(--sp-2);">
         <p>다음 단계 — 다기관 외부 검증에서 <b>컷오프 재산출</b> · 판독자 대상 전향적 비교 · AFP 및 조영증강 영상과의 비교.</p>
       </div>
     </div>
