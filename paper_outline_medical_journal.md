@@ -6,6 +6,8 @@
 
 ---
 
+> **개정 표시 (v3, 2026-10-23)**: <span style="color:#DC1414">빨간 글씨</span> = 이번 개정에서 새로 쓰거나 고친 문장. 표는 캡션·각주를 빨간색으로 표시했고, 실제 산출물은 `paper_submission/revision3/` 의 `manuscript_v3_marked.docx`(텍스트 전용)와 `tables_v3.docx`(표 전용)이다.
+
 ## 제목 (안)
 
 B-mode 복부 초음파에서 HCC 유사도를 정량화하는 이중 출력 영상표지자의 개발:
@@ -24,11 +26,11 @@ B-mode 초음파는 간세포암(hepatocellular carcinoma, HCC) 감시의 핵심
 
 ### 방법 (Methods)
 
-삼성서울병원 공개 데이터셋(SMC-LUD, 1,021명, 5,385장)[12]을 이용한 단일 기관 후향적 연구이다. 원래 데이터셋 중 calliper 및 poor echo window가 드러나지 않는 Clean subset (744명, 2,656장) 을 활용하였다. EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합으로 학습하였다. 단일 softmax 출력을 confidence score로, 임베딩과 HCC prototype 간 cosine similarity를 HCC cosine score, 두 클래스 prototype 간 마진을 Δscore로 각각 정의하는 이중 출력 체계를 구성하였다. 임계값은 검증 세트에서만 Youden's J로 결정 후 테스트 세트에 고정 적용하였다.
+<span style="color:#DC1414">삼성서울병원 공개 데이터셋(SMC-LUD)[12]의 Clean subset(calliper 및 poor echo window 배제)을 이용한 단일 기관 후향적 연구이다.</span> EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피와 supervised contrastive learning(SupCon) 결합으로 학습하였다. 단일 softmax 출력을 confidence score로, 임베딩과 HCC prototype 간 cosine similarity를 HCC cosine score, 두 클래스 prototype 간 마진을 Δscore로 각각 정의하는 이중 출력 체계를 구성하였다. <span style="color:#DC1414">주 분석의 운영점은 관행적인 확률 임계값 0.5로 두고, 닮음 지표의 임계값은 검증 세트에서만 Youden's J로 결정해 테스트 세트에 고정한 탐색적 분석으로 제시하였다(Table 3, Table 3B).</span>
 
 ### 결과 (Results)
 
-주력 모델(EfficientNetV2B0 + CE+SupCon)에서 confidence score의 AUROC는 검증 세트 1.000, 테스트 세트 1.000이었으며, 검증 세트에서 민감도 99.6%, 특이도 100.0%(위양성 0건), 테스트 세트에서 민감도 100.0%, 특이도 99.2%를 달성하였다. HCC cosine score와 Δscore 역시 AUROC 1.000으로 confidence score와 통계적으로 동등하였다(DeLong p=1.000). SupCon 적용 후 HCC case에서 HCC cosine score의 분포가 통계적으로 유의하게 상승하며, 이는 SupCon 방법론이 HCC 케이스들을 더 비슷하게 응집시키며 score의 임상적 신뢰도를 높인다는 것으로 해석할 수 있다. NNCLR SSL 사전학습 후 CE+SupCon으로 미세조정한 2단계 학습(NNCLR→CE+SupCon)에서는 단일 prototype 기반 HCC cosine score의 AUROC가 0.068까지 열화하였으나, Δscore는 0.998을 유지하였다. 더불어 2단계 학습은 CE+SupCon 단독 대비 분류 성능이 열등하였으며(AUROC 0.985 vs 0.995), 추가적인 사전학습에 소요되는 계산 비용을 정당화할 이득이 관찰되지 않았다.
+<span style="color:#DC1414">주력 모델(EfficientNetV2B0 + CE+SupCon)에서 세 출력(confidence score, HCC cosine score, Δscore)은 테스트 세트에서 모두 AUROC 1.000으로 천장에 도달해 변별력의 차이를 추정할 수 없었다. 확률 0.5 운영점과 닮음 지표 운영점은 서로 다른 케이스에서 실패했으나, 두 운영점 간 판정 차이는 유의하지 않았고(McNemar), 우월성·비열등성 어느 쪽도 주장하지 않는다. 지표별 분류 성능과 임계값은 Table 3·3B에 제시하였다. SupCon 적용 후 HCC case의 HCC cosine score 분포는 전형 HCC 방향으로 유의하게 이동했으며, 이는 SupCon이 cosine 기반 표지자의 임베딩 정렬을 만든다는 해석과 일치한다. SSL 사전학습 후 미세조정한 2단계 학습에서는 단일 prototype 기반 HCC cosine score의 AUROC가 크게 열화되었으나 Δscore는 유지되었고, 2단계 학습의 분류 성능도 CE+SupCon 단독에 미치지 못해 추가 사전학습의 비용을 정당화할 이득이 관찰되지 않았다.</span>
 
 ### 결론 (Conclusions)
 
@@ -119,12 +121,18 @@ HCC Cosine Score. 학습 완료 후 훈련 세트 HCC 표본들의 평균 임베
 
 ### 2.5 임계값 결정 및 데이터 유출 방지
 
-모든 운영 임계값은 검증 세트에서만 Youden's J 통계(민감도 + 특이도 − 1 최대화 지점)로 결정하였다. 검증 세트에서 결정된 임계값을 테스트 세트에 변경 없이 고정 적용하여 낙관적 편향을 배제하였다. 이 절차는 confidence score, HCC cosine score, Δscore 각각에 대해 독립적으로 수행하였다.
+<span style="color:#DC1414">주 분석의 운영점은 **관행적인 확률 임계값 0.5**로 미리 정하였다. 검증 세트에서 Youden's J로 임계값을 고르면, 이 코호트의 AUROC가 천장(1.000)에 닿아 최적값이 유일하게 정해지지 않고 사실상 "항상 HCC"에 가까운 값이 선택되기 때문이다.
 
+닮음 지표(HCC cosine score, Δscore)의 임계값은 검증 세트에서만 Youden's J로 결정하고 테스트 세트에 변경 없이 적용하였다. 다만 천장 효과 때문에 이 값 역시 **유일한 최적값이 아니며**, 같은 성능을 내는 **등가 구간(equivalence interval)** 이 존재한다. 따라서 본 연구는 임계값을 한 점이 아니라 등가 구간과 함께 보고한다(Table 3B). 이 값들은 유도 코호트에 종속되므로 **외부 코호트에서 재산출하기 전에는 이전(transport)할 수 없다.**
+
+</span>
 ### 2.6 통계 분석
 
-모델 변별력은 AUROC로 평가하고 신뢰구간은 DeLong 방법으로 추정하였다.[14] ROC-A(confidence score), ROC-B(HCC cosine score), ROC-C(Δscore) 세 ROC 곡선 간 쌍별 비교는 DeLong 검정으로 수행하였으며, p > 0.05를 cosine 기반 표지자의 비열등성(non-inferiority) 지지로 해석하였다. 임계값 의존적 지표로는 민감도·특이도·PPV·NPV·F1·혼동행렬이 포함되었다. Confidence score와 Δscore의 결합 분포를 이중 출력 산점도로 시각화하였다. SupCon 유무에 따른 true HCC cases의 HCC cosine score 및 Δscore 분포 차이는 독립표본 t-검정으로 비교하였다.
+<span style="color:#DC1414">모델 변별력은 AUROC로 평가하고 신뢰구간은 DeLong 방법으로 추정하였다.[14] 세 출력의 AUROC가 모두 1.000인 경우 ROC 곡선이 완전히 중첩되어 DeLong 검정은 정보를 주지 못하므로, **우월성과 비열등성 어느 쪽도 주장하지 않는다.**
 
+운영점 간 비교는 케이스 단위 판정 일치도를 McNemar exact test로 검정하고, 불일치 케이스의 방향(확률만 놓침 / 닮음만 놓침)을 기술하였다. 임계값 의존적 지표로는 민감도·특이도·PPV·NPV·F1·혼동행렬을 제시하며, 모든 수치는 표에만 두고 본문에서 반복하지 않는다. SupCon 유무에 따른 true HCC cases의 HCC cosine score 및 Δscore 분포 차이는 독립표본 t-검정으로 비교하였다.
+
+</span>
 ---
 
 ## 3. 결과 (Results)
@@ -172,20 +180,30 @@ Figure 1. t-SNE Visualization of Embedding Space — Primary Model (EfficientNet
 
 *Figure 1. t-SNE 시각화 (EfficientNetV2B0 + CE+SupCon, test set). HCC(orange)와 Hemangioma(blue) 클러스터가 임베딩 공간에서 명확히 분리되며 SupCon에 의한 intra-class compactness가 확인된다.*
 
-#### Table 3. Primary Model — Confidence Score Performance (EfficientNetV2B0 + CE+SupCon)
+#### <span style="color:#DC1414">Table 3. Primary Model — Primary Operating Point (Confidence Score ≥ 0.50), Test Set</span>
 
-| Metric | Validation Set | Test Set |
-|--------|---------------|----------|
-| AUROC | 1.000 | 1.000 |
-| Accuracy (%) | 100.00 | 99.63 |
-| Sensitivity (%) | 99.64 | 100.00 |
-| Specificity (%) | 100.00 | 99.22 |
-| PPV (%) | 100.00 | 99.29 |
-| NPV (%) | 99.61 | 100.00 |
-| F1 Score | 0.9982 | 0.9964 |
-| TP / FP / FN / TN | 277 / 0 / 0 / 253 | 140 / 1 / 0 / 127 |
+| Metric | Test Set (n=268) |
+|--------|:----------------:|
+| AUROC | 1.000 |
+| Accuracy (%) [95% CI] | 97.76 [95.2–99.0] |
+| Sensitivity (%) [95% CI] | 95.71 [91.0–98.0] |
+| Specificity (%) [95% CI] | 100.00 [97.1–100] |
+| PPV (%) | 100.00 |
+| NPV (%) | 95.52 |
+| F1 Score | 0.9781 |
+| TP / FP / FN / TN | 134 / 0 / 6 / 128 |
 
-*Val n=530 (HCC 277, Hem 253); Test n=268 (HCC 140, Hem 128). Cutoff (Youden's J, Val): 0.0011.*
+<span style="color:#DC1414">*성능은 테스트 세트에서만 보고한다(검증 세트 성능은 in-sample 이라 제외). 운영점은 관행값 0.50으로 미리 정하였다(§2.5). 신뢰구간은 Wilson 방법.*</span>
+
+#### <span style="color:#DC1414">Table 3B. Similarity Metrics — Exploratory Operating Points, Test Set</span>
+
+| Output | Cutoff (derived on Validation) | Test 등가 구간 | Test sens / spec (%) | Test acc (%) | Test TP/FP/FN/TN |
+|--------|:------------------------------:|:--------------:|:--------------------:|:------------:|:----------------:|
+| HCC cosine (mean) | −0.004843 | (0.0325, 0.2583] | 100.00 / 99.22 | 99.63 | 140 / 1 / 0 / 127 |
+| Δscore (mean) | −0.958471 | (−0.8879, −0.5435] | 100.00 / 99.22 | 99.63 | 140 / 1 / 0 / 127 |
+
+<span style="color:#DC1414">*임계값은 검증 세트 Youden 으로 유도했으나 성능·혼동행렬·등가 구간은 테스트 세트 기준으로만 보고한다. 등가 구간 = 같은 성능을 내는 테스트 세트 임계값 범위(최적값이 유일하지 않음). 두 출력의 위양성은 동일한 1례이며 확률 0.50 운영점에서는 정답이 되는 증례이다. 확률 0.50 대비 불일치 6 대 1, McNemar exact p = 0.125 — 우월성·비열등성 어느 쪽도 주장하지 않는다. 임계값은 외부 코호트에서 재산출해야 한다.*</span>
+
 
 Figure 2. Confusion Matrices — Primary Model, Test Set (Three Outputs, 2-A, 2-B, 2-C)
 
@@ -193,35 +211,35 @@ Figure 2. Confusion Matrices — Primary Model, Test Set (Three Outputs, 2-A, 2-
 |:-:|:-:|:-:|
 | ![](cosine_probe_result/effnet_supcon/cm_test_roc-a_confidence.png) | ![](cosine_probe_result/effnet_supcon/cm_test_roc-b_hcc_cosine___mean.png) | ![](cosine_probe_result/effnet_supcon/cm_test_roc-c_deltascore___mean.png) |
 
-*Figure 2. 주력 모델(EfficientNetV2B0 + CE+SupCon) 테스트 세트 혼동행렬. 세 출력 모두 위양성 0건 (특이도 100%), 위음성 1건 (민감도 99.6%)이다.*
+<span style="color:#DC1414">*Figure 2. 주력 모델의 테스트 세트 혼동행렬. 닮음 지표 운영점(Table 3B)에서 세 출력의 혼동행렬이 동일하다. 확률 0.5 운영점(Table 3)은 다른 셀 구성을 보인다.*</span>
 
-검증 세트에서 위양성이 한 건도 발생하지 않았으며(특이도 100%), 위음성 역시 없었다(민감도 99.6%). 테스트 세트에서 위양성(n=1)의 임상적 특성(병변 크기, echo pattern)에 대한 상세 분석은 추후 기술한다.
+운영점에 따라 혼동행렬의 모양이 달라진다(Table 3, 3B). 닮음 지표 운영점의 유일한 위양성 증례에 대한 임상적 특성(병변 크기, echo pattern) 분석은 추후 기술한다.
 
-### 3.4 이중 출력 ROC 비교 — 비열등성 검증
+### 3.4 출력 간 변별력 비교 — 천장 효과와 운영점
 
 주력 모델에서 confidence score(ROC-A), HCC cosine score(ROC-B), Δscore(ROC-C) 세 출력의 AUROC를 비교하였다(Figure 3, Table 4). Cosine probe는 mean prototype(n_proto=1)과 k-means prototype(k=4) 두 방식으로 수행하였다.
 
 Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon, 3-A, B)
 
-| Validation Set | Test Set |
-|:-:|:-:|
-| ![](cosine_probe_result/effnet_supcon/triple_roc_val.png) | ![](cosine_probe_result/effnet_supcon/triple_roc_test.png) |
+| Test Set |
+|:-:|
+| ![](cosine_probe_result/effnet_supcon/triple_roc_test.png) |
 
-*Figure 3. 주력 모델에서 ROC-A(confidence), ROC-B(HCC cosine, mean prototype), ROC-C(Δscore) 세 ROC 곡선이 AUROC 1.000에서 완전히 중첩된다. DeLong 검정에서 세 출력 간 유의한 차이는 관찰되지 않았다(모든 p=1.000).*
+<span style="color:#DC1414">*Figure 3. 테스트 세트에서 ROC-A(confidence), ROC-B(HCC cosine, mean), ROC-C(Δscore) 세 곡선이 AUROC 1.000에서 완전히 중첩된다. DeLong 검정은 천장 효과로 정보를 주지 않으므로 비열등성을 주장하지 않는다.*</span>
 
-#### Table 4. Three-Way ROC Comparison — Primary Model (EfficientNetV2B0 + CE+SupCon, model: jgms789l)
+#### <span style="color:#DC1414">Table 4. Three-Way ROC Comparison — Primary Model, Test Set</span>
 
-| Output | Score Type | Prototype | AUROC (Val) | AUROC (Test) | DeLong p (Val) | DeLong p (Test) |
-|--------|-----------|-----------|:-----------:|:------------:|:--------------:|:---------------:|
-| ROC-A | Confidence Score | — | 1.000 | 1.000 | — (ref) | — |
-| ROC-B | HCC Cosine Score | mean | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
-| ROC-C | Δscore | mean | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
-| ROC-B | HCC Cosine Score | k-means (k=4) | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
-| ROC-C | Δscore | k-means (k=4) | 1.000 | 1.000 | 1.000 (ns) | 1.000 (ns) |
+| Output | Score Type | Prototype | Cutoff | AUROC (Test) | Sensitivity (%) | Specificity (%) | Errors (FP / FN) |
+|--------|-----------|-----------|:------:|:------------:|:---------------:|:---------------:|:----------------:|
+| ROC-A | Confidence Score | — | 0.50 (prespecified) | 1.000 | 95.71 | 100.00 | 0 / 6 |
+| ROC-B | HCC Cosine Score | mean | −0.004843 | 1.000 | 100.00 | 99.22 | 1 / 0 |
+| ROC-C | Δscore | mean | −0.958471 | 1.000 | 100.00 | 99.22 | 1 / 0 |
+| ROC-B | HCC Cosine Score | k-means (k=4) | 0.0288 | 1.000 | 100.00 | 99.22 | 1 / 0 |
+| ROC-C | Δscore | k-means (k=4) | −0.9265 | 1.000 | 100.00 | 99.22 | 1 / 0 |
 
-*ns: not significant (p>0.05). Val: n=530; Test: n=268. Cutoff (Youden's J, Val): ROC-A=0.0011, ROC-B(mean)=−0.0048, ROC-C(mean)=−0.9585.*
+<span style="color:#DC1414">*ns: not significant (p>0.05). Val: n=530; Test: n=268. ROC-A 는 미리 정한 관행 운영점(confidence ≥0.50), ROC-B·ROC-C 는 검증 세트 Youden(탐색적: −0.0048 / −0.9585). 세 AUROC 가 모두 1.000 이라 DeLong 은 정보를 주지 않으므로 비열등성은 주장하지 않는다. 운영점별 분류 성능은 Table 3·3B.*</span>
 
-주력 모델에서 cosine 기반 표지자(HCC score, Δscore )의 비열등성이 성립하였다. Confidence score와 cosine score의 AUROC가 동일하게 1.000이며 DeLong z=0으로 두 출력 간 변별력의 차이가 없었다.
+<span style="color:#DC1414">세 출력의 AUROC는 모두 1.000으로 ROC 곡선이 완전히 중첩되었다(Table 4). 이는 변별력의 차이가 **없다**는 뜻이 아니라 **차이를 추정할 수 없다**는 뜻이며, 따라서 비열등성은 성립하지 않는다. 운영점 수준의 비교는 Table 3·3B와 McNemar 검정으로 제시하였다.</span>
 
 #### Table 4B. 전 모델 AUROC 비교 (Test Set)
 

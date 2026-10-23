@@ -113,30 +113,42 @@ This ensures that cosine distances in embedding space meaningfully reflect clini
 
 ### Primary Model Performance (EfficientNetV2B0 + CE+SupCon)
 
-| Metric | Validation Set | Test Set |
-|--------|:--------------:|:--------:|
-| AUROC | **1.000** | **1.000** |
-| Accuracy (%) | 100.00 | 99.63 |
-| Sensitivity (%) | 99.64 | 100.00 |
-| Specificity (%) | 100.00 | 99.22 |
-| PPV (%) | 100.00 | 99.29 |
-| NPV (%) | 99.61 | 100.00 |
-| F1 Score | 0.9982 | 0.9964 |
-| TP / FP / FN / TN | 277 / 0 / 0 / 253 | 140 / 1 / 0 / 127 |
+Primary operating point is the conventional **confidence score ≥ 0.50** (prespecified); the similarity
+metrics use validation Youden points as an **exploratory** operating point (table below).
 
-*Val n=530 (HCC 277, Hemangioma 253); Test n=268 (HCC 140, Hemangioma 128). Cutoff (Youden's J on Val): 0.0011.*
+| Metric | Test Set (n=268) |
+|--------|:----------------:|
+| AUROC | **1.000** |
+| Accuracy (%) | 97.76 |
+| Sensitivity (%) | 95.71 |
+| Specificity (%) | 100.00 |
+| PPV (%) | 100.00 |
+| NPV (%) | 95.52 |
+| F1 Score | 0.9781 |
+| TP / FP / FN / TN | 134 / 0 / 6 / 128 |
 
-### Three-Way ROC Comparison (Non-inferiority Validation)
+*Test-only reporting (HCC 140 / hemangioma 128): thresholds were derived on the validation set, so validation performance is not reported. CI in Tables 3–3B.*
 
-| Output | Score Type | Prototype | AUROC (Val) | AUROC (Test) | DeLong p |
-|--------|-----------|-----------|:-----------:|:------------:|:--------:|
-| ROC-A | Confidence Score | — | 1.000 | 1.000 | — (ref) |
-| ROC-B | HCC Cosine Score | mean | 1.000 | 1.000 | 1.000 (ns) |
-| ROC-C | Δscore | mean | 1.000 | 1.000 | 1.000 (ns) |
-| ROC-B | HCC Cosine Score | k-means (k=4) | 1.000 | 1.000 | 1.000 (ns) |
-| ROC-C | Δscore | k-means (k=4) | 1.000 | 1.000 | 1.000 (ns) |
+| Exploratory operating point | Cutoff (Val-derived) | Test equivalence interval | Test sens / spec (%) | Test TP/FP/FN/TN |
+|-----------------------------|:--------------------:|:------------------------:|:--------------------:|:----------------:|
+| HCC cosine score (mean) | −0.004843 | (0.0325, 0.2583] | 100.00 / 99.22 | 140 / 1 / 0 / 127 |
+| Δscore (mean) | −0.958471 | (−0.8879, −0.5435] | 100.00 / 99.22 | 140 / 1 / 0 / 127 |
 
-*ns: not significant (p>0.05). Cosine-based markers are **non-inferior** to Confidence Score.*
+*Cutoffs come from the validation set but all performance below is test-set only. Discordant classifications versus the 0.50 operating point: 6 vs 1 (McNemar exact p = 0.125). No
+superiority or non-inferiority is claimed. Both similarity outputs share the same single false positive,
+which is correctly classified at 0.50. Thresholds require re-derivation in an external cohort.*
+
+### Three-Way ROC Comparison (Ceiling Effect — Difference Not Estimable)
+
+| Output | Score Type | Prototype | AUROC (Test) |
+|--------|-----------|-----------|:------------:|
+| ROC-A | Confidence Score | — | 1.000 |
+| ROC-B | HCC Cosine Score | mean | 1.000 |
+| ROC-C | Δscore | mean | 1.000 |
+| ROC-B | HCC Cosine Score | k-means (k=4) | 1.000 |
+| ROC-C | Δscore | k-means (k=4) | 1.000 |
+
+*ns: not significant (p>0.05). All three AUROCs sit at the ceiling, so DeLong gives no information: the difference is **not estimable**, and cosine-based markers are **not** claimed to be non-inferior. Operating-point comparison is in the tables above.*
 
 ### Cross-Model AUROC Summary (Test Set)
 
@@ -277,18 +289,24 @@ hcc-vs-hemangioma/
 
 ### Threshold Determination (No Data Leakage)
 
-All operating thresholds were determined **exclusively on the validation set** using Youden's J statistic (maximizing sensitivity + specificity − 1), then applied **unchanged** to the test set.
+The primary operating point was **prespecified at confidence score ≥ 0.50**. A validation-derived Youden
+point is not usable here: with AUROC at the ceiling (1.000), Youden optimisation selects a threshold
+almost equivalent to "always HCC". Similarity-metric thresholds were derived **exclusively on the
+validation set** and applied **unchanged** to the test set, as an exploratory analysis; because the
+optimum is not unique, each threshold is reported with its **equivalence interval** (the range of values
+giving identical performance).
 
-| Output | Cutoff (Youden's J, Val) |
-|--------|:------------------------:|
-| ROC-A (Confidence Score) | 0.0011 |
-| ROC-B (HCC Cosine, mean) | −0.0048 |
-| ROC-C (Δscore, mean) | −0.9585 |
+| Output | Cutoff | Equivalence interval (Val) | Equivalence interval (Test) |
+|--------|:------:|:--------------------------:|:---------------------------:|
+| ROC-A (Confidence Score) | 0.50 (prespecified) | — | — |
+| ROC-B (HCC Cosine, mean) | −0.004843 | (−0.0498, −0.0048] | (0.0325, 0.2583] |
+| ROC-C (Δscore, mean) | −0.958471 | (−1.0001, −0.9585] | (−0.8879, −0.5435] |
 
 ### Statistical Analysis
 
 - **Discrimination**: AUROC with DeLong 95% CI
-- **Three-way ROC comparison**: DeLong pairwise test (p>0.05 → non-inferiority)
+- **Three-way ROC comparison**: DeLong pairwise test — at AUROC 1.000 it carries no information, so no non-inferiority claim is made
+- **Operating-point comparison**: McNemar exact test on paired classifications (6 vs 1 discordant, p = 0.125)
 - **SupCon effect on score distribution**: Independent-samples t-test on true HCC cases (Val+Test, n=381)
 - Threshold-dependent metrics: Sensitivity, Specificity, PPV, NPV, F1, Confusion Matrix
 
