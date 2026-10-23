@@ -533,13 +533,13 @@
       <div class="row c2" style="align-items:start;">
         <div>
           <table class="tbl">
-            <tr><th class="l">Test n=268</th><th>확률 ≥ 0.5</th><th>닮음 (Youden)</th></tr>
+            <tr><th class="l">Test n=268</th><th>확률 ≥ 0.5</th><th>닮음 (검증 유도)</th></tr>
             <tr><td class="l">민감도</td><td>95.7 %</td><td class="mark">100 %</td></tr>
             <tr><td class="l">특이도</td><td class="mark">100 %</td><td>99.2 %</td></tr>
             <tr><td class="l">정확도</td><td>97.8 %</td><td class="mark">99.6 %</td></tr>
             <tr><td class="l">TP·FP·FN·TN</td><td>134 / 0 / 6 / 128</td><td>140 / 1 / 0 / 127</td></tr>
           </table>
-          <p class="foot-note" style="margin-top:var(--sp-2); text-align:left;">닮음 컷오프 = 검증 세트 Youden(탐색적) · 세 출력 AUROC 모두 1.000 — 우열은 판정할 수 없다.<br>등가 구간 = 검증에서 같은 혼동행렬을 내는 임계값 범위 — 세 컷오프 모두 이 안. 닮음 지표는 구간의 위쪽 끝이 곧 컷오프다. 테스트에서는 혈관종 1장(+0.033)이 그 위로 올라와 위양성 1건.</p>
+          <p class="foot-note" style="margin-top:var(--sp-2); text-align:left;">닮음 컷오프 = 검증 Youden 구간의 위쪽 끝(탐색적) · 세 출력 AUROC 1.000 — 우열은 판정 불가.<br>등가 구간 = 같은 혼동행렬을 내는 임계값 범위. 테스트에서 혈관종 1장(+0.033)이 위로 → 위양성 1건.</p>
         </div>
         <div>
           <img class="shot" src="figures/fig3b_roc_test.jpg" alt="ROC" style="max-height:158px; object-fit:contain;">
@@ -658,7 +658,7 @@
           <ul class="plain">
             <li>한 모델에서 <b>확률과 닮음 판단</b>을 케이스 단위로 함께 낸다</li>
             <li>판독자의 <b>“전형 소견과의 비교”를 숫자로</b> — SupCon이 cosine을 전형 쪽으로 정렬 (분산 −60.7 %)</li>
-            <li>지표마다 <b>Youden 운영점과 등가 구간</b>을 제시한다</li>
+            <li>지표마다 <b>운영점과 등가 구간</b>을 제시한다</li>
           </ul>
         </div>
         <div class="block quiet">

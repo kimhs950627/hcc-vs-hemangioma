@@ -294,7 +294,8 @@ point is not usable here: with AUROC at the ceiling (1.000), Youden optimisation
 almost equivalent to "always HCC". Similarity-metric thresholds were derived **exclusively on the
 validation set** and applied **unchanged** to the test set, as an exploratory analysis; because the
 optimum is not unique, each threshold is reported with its **equivalence interval** (the range of values
-giving identical performance).
+giving identical performance). The implemented value is the upper edge of that plateau, i.e. the lowest-scoring
+HCC case in the validation set; it is not a unique optimum.
 
 | Output | Cutoff | Equivalence interval (Val) |
 |--------|:------:|:--------------------------:|
