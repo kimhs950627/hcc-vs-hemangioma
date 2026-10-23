@@ -31,6 +31,7 @@
   @font-face { font-family: "SG"; src: url("fonts/space_grotesk_700.ttf") format("truetype"); font-weight: 700; font-display: swap; }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; padding: 0; }
   body {
     background: radial-gradient(120% 80% at 50% 0%, var(--surface) 0%, var(--ink) 60%) fixed, var(--ink);
@@ -198,8 +199,10 @@
     Not a medical device — research and education only.<br />
     추론은 <strong>여러분 기기 안에서</strong> 실행됩니다. 올린 사진은 서버로 전송되지 않습니다(모델 파일만
     내려받습니다). 예시 영상은 공개 데이터셋 SMC-LUD 에서 가져왔습니다.<br />
-    모델: EfficientNetV2B0 + CE + SupCon, 384×384 입력, 12×12 patch, d_model 128 ·
-    컷오프는 SMC-LUD validation cohort 의 Youden 지점입니다.
+    모델: EfficientNetV2B0 + CE + SupCon, 384×384 입력, 12×12 patch, d_model 128.<br />
+    컷오프: confidence <strong>0.5</strong>(관행값) · 두 닮음 점수는 학습 코호트 validation 의
+    <strong>Youden 지점</strong>. 두 운영점의 판정 차이는 유의하지 않았고(McNemar p = 0.125),
+    AUROC 가 1.0 이라 최적 컷오프가 유일하지 않습니다(등가 구간 존재) — 외부 코호트에서 재산출이 필요합니다.
   </div>
 </main>
 
@@ -207,7 +210,7 @@
 <script>
 "use strict";
 
-const CUTOFF_FALLBACK = { confidence_score: 0.0010883796494454145, hcc_cosine_score: -0.004843093454837799, delta_score: -0.9584707617759705 };
+const CUTOFF_FALLBACK = { confidence_score: 0.5, hcc_cosine_score: -0.004843093454837799, delta_score: -0.9584707617759705 };
 const INFERNO = ["#000004", "#1B0C41", "#4A0C6B", "#781C6D", "#A52C60", "#CF4446", "#ED6925", "#FB9A06", "#FCFFA4"];
 const TURBO = ["#30123B", "#4145AB", "#4675ED", "#39A2FC", "#1BCFD4", "#24ECA6", "#61FC6C", "#A4FC3B", "#D1E834", "#F9BA38", "#FE9B2D", "#F36315", "#D93806", "#B11901", "#7A0402"];
 const LAYER = 5; // upscale the 12x12 map to the canvas in this many steps, for a smooth ramp

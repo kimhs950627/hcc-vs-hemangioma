@@ -67,6 +67,60 @@ python android_app/tools/export_web_onnx.py --skip-convert   # 페이지 작업�
 **숫자 자체검증** 버튼을 누르면 방문자 기기에서 4개 예시를 다시 돌려 TFLite fp32 기준값과의 차이를
 보여줌. 발표 중 "이 페이지가 자기 숫자를 검증한다"로 쓸 수 있음.
 
+## 컷오프 — confidence 0.5 + 두 점수는 validation Youden (2026-10-23 변경)
+
+| 지표 | 컷오프 | 근거 |
+|---|---|---|
+| `confidence_score` (P(HCC)) | **0.5** | 이진 분류의 관행 경계. 기존 0.0011 은 사실상 "항상 HCC" |
+| `hcc_cosine_score` | **-0.004843** | 학습 코호트 validation Youden (유지) |
+| `delta_score` (margin) | **-0.958471** | 학습 코호트 validation Youden (유지) |
+
+SMC-LUD validation cohort 에서 딴 Youden 지점은 그 코호트에서 **AUC 1.0** 이 나왔고, 그 값을 외부
+데이터에 그대로 쓰면 판정이 한쪽으로 붙는다(과적합 의심). 그래서 **확률은 관행 0.5 로 자르고, 순위
+기반 점수 두 개는 기존 컷오프를 유지**한다 — 두 점수는 확률이 아니라 거리라 관행값이 없기 때문.
+**어느 쪽도 외부 검증된 값은 아니며, 외부 코호트에서 재산출해야 한다.**
+
+### 이 조합의 분류 성능 (실측)
+
+`cosine_probe_result/raw_cosprobe_effnet_supcon.csv`, 주력 모델(EfficientNetV2B0 + CE + SupCon),
+컷오프 고정: confidence ≥ 0.5, HCC cosine ≥ -0.004843, Δscore ≥ -0.958471.
+
+```
+Test n=268 (HCC 140 / 혈관종 128)
+  Confidence P(HCC)  TP134 FP0 FN6 TN128  sens 95.71  spec 100.00  acc 97.76  PPV 100.00  NPV 95.52
+  HCC cosine        TP140 FP1 FN0 TN127  sens 100.00 spec  99.22  acc 99.63  PPV  99.29  NPV 100.00
+  Δscore (margin)   TP140 FP1 FN0 TN127  sens 100.00 spec  99.22  acc 99.63  PPV  99.29  NPV 100.00
+
+Val n=530 (HCC 277 / 혈관종 253)
+  Confidence P(HCC)  TP263 FP0 FN14 TN253 sens 94.95  spec 100.00  acc 97.36
+  HCC cosine        TP277 FP0 FN0  TN253 sens 100.00 spec 100.00  acc 100.00
+  Δscore (margin)   TP277 FP0 FN0  TN253 sens 100.00 spec 100.00  acc 100.00
+```
+
+- 세 출력이 모두 일치: Test 261/268 (97.4 %), Val 516/530 (97.4 %). 불일치는 **전부** confidence 만
+  혈관종, 두 점수는 HCC 라고 하는 형태(Test 7건 = HCC 6 + 혈관종 1).
+- 그래서 판정 규칙이 곧 operating point 다. **셋 다 HCC(AND)** → sens 95.7 / spec 100,
+  **하나라도 HCC(OR)** → sens 100 / spec 99.2. 페이지의 "3/3 agree" 표시가 이 구분을 보여준다.
+- 두 점수의 validation 성능 100 % 는 **컷오프를 그 세트에서 뽑았기 때문**(in-sample)이라 성능 추정치가
+  아니다. Test 100/99.2 도 같은 코호트 안이라 낙관적이다.
+- **AUC 1.0 은 순위가 완벽하다는 뜻**이다. 전역 보정은 나쁘지 않음(Brier 0.017 · ECE10 0.025, Test) —
+  확률은 0 과 1 에 봉우리가 있는 이봉분포다. 문제는 **중간대(0.001–0.99)의 구성**이다: Test 24장 중 23장,
+  Val 51장 중 51장이 HCC. 즉 경계 하위군에서 확률이 HCC 를 0 쪽으로 끌어내리는 반면, 같은 케이스의
+  닮음 점수는 HCC 라고 답한다. 0.5 는 그래서 HCC 6장(0.028–0.404)을 놓친다.
+  컷오프 재산출과 함께 이 중간대를 따로 보정(temperature scaling·isotonic)하는 편이 낫다.
+
+외부 데이터가 생기면:
+
+```bash
+python3 recompute_cutoff.py external.json --labels external_labels.json          # 값만 확인
+python3 recompute_cutoff.py external.json --labels external_labels.json --apply  # config.json 갱신
+```
+
+`--labels` 는 `{"파일명": "HCC"|"Hemangioma"}`, 생략하면 파일명에 `hcc`/`hem` 이 들어 있는지로 읽는다.
+출력은 지표별 AUC · Youden J · 최적 컷오프 · 동률 구간이고, AUC 1.0 이면 "컷오프가 유일하지 않다"
+경고를 낸다. **앱(`model_meta_*.json`)과 `inference/explainable_predictor.py` 는 아직 이전 값**이므로,
+컷오프를 확정하면 세 곳을 같이 갱신해야 한다.
+
 ## 배포 (한 번만)
 
 GitHub Pages 는 저장소 Settings → Pages → Source: **Deploy from a branch** → `main` / `/docs` 로

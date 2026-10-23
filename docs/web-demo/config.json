@@ -9,7 +9,7 @@
   ],
   "positiveIndex": 1,
   "cutoffs": {
-    "confidence_score": 0.0010883796494454145,
+    "confidence_score": 0.5,
     "hcc_cosine_score": -0.004843093454837799,
     "delta_score": -0.9584707617759705
   },
