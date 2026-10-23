@@ -129,12 +129,12 @@ metrics use validation Youden points as an **exploratory** operating point (tabl
 
 *Test-only reporting (HCC 140 / hemangioma 128): thresholds were derived on the validation set, so validation performance is not reported. CI in Tables 3–3B.*
 
-| Exploratory operating point | Cutoff (Val-derived) | Test equivalence interval | Test sens / spec (%) | Test TP/FP/FN/TN |
-|-----------------------------|:--------------------:|:------------------------:|:--------------------:|:----------------:|
-| HCC cosine score (mean) | −0.004843 | (0.0325, 0.2583] | 100.00 / 99.22 | 140 / 1 / 0 / 127 |
-| Δscore (mean) | −0.958471 | (−0.8879, −0.5435] | 100.00 / 99.22 | 140 / 1 / 0 / 127 |
+| Exploratory operating point | Cutoff (Val-derived) | Val equivalence interval | Test sens / spec (%) | Test TP/FP/FN/TN |
+|-----------------------------|:--------------------:|:-----------------------:|:--------------------:|:----------------:|
+| HCC cosine score (mean) | −0.004843 | (−0.0498, −0.0048] | 100.00 / 99.22 | 140 / 1 / 0 / 127 |
+| Δscore (mean) | −0.958471 | (−1.0001, −0.9585] | 100.00 / 99.22 | 140 / 1 / 0 / 127 |
 
-*Cutoffs come from the validation set but all performance below is test-set only. Discordant classifications versus the 0.50 operating point: 6 vs 1 (McNemar exact p = 0.125). No
+*Cutoffs and their intervals come from the validation set; all performance below is test-set only. Discordant classifications versus the 0.50 operating point: 6 vs 1 (McNemar exact p = 0.125). No
 superiority or non-inferiority is claimed. Both similarity outputs share the same single false positive,
 which is correctly classified at 0.50. Thresholds require re-derivation in an external cohort.*
 
