@@ -174,12 +174,12 @@ for r_idx, row in enumerate(t3_data[1:], start=1):
         for run in p.runs:
             run.font.name = "Malgun Gothic"
             run.font.size = Pt(9)
-add_footnote(doc, "Performance is reported for the test set only; validation-set performance is not reported because thresholds were derived there (in-sample). The primary operating point was prespecified at a confidence score of 0.50 rather than a validation-derived Youden point, because AUROC reached the ceiling (1.000) in the derivation cohort. Test set: n=268 (HCC 140, hemangioma 128). Misclassifications at this operating point were false negatives only. 95% confidence intervals are Wilson score intervals estimated at the image level.", is_revised=True)
+add_footnote(doc, "Performance is reported for the test set only; validation-set performance is not reported because thresholds were derived there (in-sample). The primary operating point was prespecified at a confidence score of 0.50 rather than a validation-derived Youden point, because AUROC reached the ceiling (1.000) in the derivation cohort. Test set: n=268 (HCC 140, hemangioma 128). Misclassifications at this operating point were false negatives only. The 0.50 cutoff lies inside the test zero-error interval (0.4038, 0.5444]. 95% confidence intervals are Wilson score intervals estimated at the image level.", is_revised=True)
 
 # --- Table 3B (similarity operating points, test set only) ---
 add_caption(doc, "Table 3B. Exploratory Operating Points of the Similarity Metrics, Test Set", is_revised=True)
 t3b_data = [
-    ["Output", "Cutoff (derived on Validation)", "Test equivalence interval", "Test Sens / Spec (%)", "Test Acc (%)", "Test TP/FP/FN/TN"],
+    ["Output", "Cutoff (derived on Validation)", "Test zero-error interval", "Test Sens / Spec (%)", "Test Acc (%)", "Test TP/FP/FN/TN"],
     ["HCC cosine score (mean)", "-0.004843", "(0.0325, 0.2583]", "100.00 / 99.22", "99.63", "140 / 1 / 0 / 127"],
     ["Delta score (mean)", "-0.958471", "(-0.8879, -0.5435]", "100.00 / 99.22", "99.63", "140 / 1 / 0 / 127"]
 ]
@@ -195,7 +195,7 @@ for r_idx, row in enumerate(t3b_data[1:], start=1):
         for run in p.runs:
             run.font.name = "Malgun Gothic"
             run.font.size = Pt(8.5)
-add_footnote(doc, "Cutoffs were derived on the validation set (Youden's J) but all performance, confusion matrices and equivalence intervals are reported for the test set only. Equivalence interval = the range of test-set thresholds yielding identical classification performance; because AUROC reached 1.000 in the derivation cohort, the optimum is not unique. Both similarity outputs produced the same single false positive, which is classified correctly at the primary 0.50 operating point. Discordant classifications versus the primary operating point: 6 versus 1 (McNemar exact p = 0.125); neither superiority nor non-inferiority is claimed. Thresholds require re-derivation in an external cohort.", is_revised=True)
+add_footnote(doc, "Cutoffs were derived on the validation set (Youden's J) but all performance, confusion matrices and equivalence intervals are reported for the test set only. Zero-error interval = the range of test-set thresholds that keeps test errors at zero; because AUROC reached 1.000 in the derivation cohort, the optimum is not unique. Both similarity outputs produced the same single false positive, which is classified correctly at the primary 0.50 operating point. Discordant classifications versus the primary operating point: 6 versus 1 (McNemar exact p = 0.125); neither superiority nor non-inferiority is claimed. Thresholds require re-derivation in an external cohort.", is_revised=True)
 
 # --- Table 4 (test set only) ---
 add_caption(doc, "Table 4. Comparison of Dual-Output Metrics in Primary Model (EfficientNetV2B0 + CE+SupCon), Test Set", is_revised=True)

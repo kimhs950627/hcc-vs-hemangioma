@@ -530,7 +530,7 @@
       <p class="claim">같은 모델, 두 운영점 —<br>민감도와 특이도가 맞바뀐다</p>
     </div>
     <div class="body">
-      <div class="row c2 align-c">
+      <div class="row c2" style="align-items:start;">
         <div>
           <table class="tbl">
             <tr><th class="l">Test n=268</th><th>확률 ≥ 0.5</th><th>닮음 (Youden)</th></tr>
@@ -539,9 +539,17 @@
             <tr><td class="l">정확도</td><td>97.8 %</td><td class="mark">99.6 %</td></tr>
             <tr><td class="l">TP·FP·FN·TN</td><td>134 / 0 / 6 / 128</td><td>140 / 1 / 0 / 127</td></tr>
           </table>
-          <p class="foot-note" style="margin-top:var(--sp-3); text-align:left;">닮음 지표 = HCC cosine ≥ −0.0048 · Δscore ≥ −0.958 (검증 세트 Youden, 탐색적).<br>세 출력의 AUROC 는 모두 1.000 — 우열은 판정할 수 없다.</p>
+          <p class="foot-note" style="margin-top:var(--sp-2); text-align:left;">닮음 컷오프 = 검증 세트 Youden(탐색적) · 세 출력 AUROC 모두 1.000 — 우열은 판정할 수 없다.<br>구간 = 그 범위의 임계값이면 테스트 오류 0. 0.50 은 구간 안, 검증 Youden 두 값은 밖(위양성 1건).</p>
         </div>
-        <div><img class="shot" src="figures/fig3b_roc_test.jpg" alt="ROC" style="max-height:300px; object-fit:contain;"></div>
+        <div>
+          <img class="shot" src="figures/fig3b_roc_test.jpg" alt="ROC" style="max-height:158px; object-fit:contain;">
+          <table class="tbl" style="margin-top:var(--sp-2); font-size:0.86em;">
+            <tr><th class="l">지표</th><th>컷오프</th><th>테스트 오류 0 구간</th></tr>
+            <tr><td class="l">Confidence</td><td>0.50</td><td class="mark">(0.404, 0.544]</td></tr>
+            <tr><td class="l">HCC cosine</td><td>−0.0048</td><td>(0.0325, 0.2583]</td></tr>
+            <tr><td class="l">Δscore</td><td>−0.9585</td><td>(−0.8879, −0.5435]</td></tr>
+          </table>
+        </div>
       </div>
     </div>
   </div>

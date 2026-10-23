@@ -296,7 +296,7 @@ validation set** and applied **unchanged** to the test set, as an exploratory an
 optimum is not unique, each threshold is reported with its **equivalence interval** (the range of values
 giving identical performance).
 
-| Output | Cutoff | Equivalence interval (Val) | Equivalence interval (Test) |
+| Output | Cutoff | Zero-error interval (Val) | Zero-error interval (Test) |
 |--------|:------:|:--------------------------:|:---------------------------:|
 | ROC-A (Confidence Score) | 0.50 (prespecified) | — | — |
 | ROC-B (HCC Cosine, mean) | −0.004843 | (−0.0498, −0.0048] | (0.0325, 0.2583] |
