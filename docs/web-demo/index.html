@@ -202,7 +202,7 @@
     모델: EfficientNetV2B0 + CE + SupCon, 384×384 입력, 12×12 patch, d_model 128.<br />
     컷오프: confidence <strong>0.5</strong>(관행값) · 두 닮음 점수는 학습 코호트 validation 의
     <strong>Youden 지점</strong>. 두 운영점의 판정 차이는 유의하지 않았고(McNemar p = 0.125),
-    AUROC 1.0 · 테스트 268장이라 최적 컷오프가 하나로 정해지지 않습니다(등가 구간 존재) — 외부 코호트에서 재산출이 필요합니다.
+    컷오프와 그 등가 구간(같은 판정이 유지되는 임계값 폭)은 검증 세트에서 산출했고, 폭이 넓어 외부 코호트에서 재산정이 필요합니다.
   </div>
 </main>
 

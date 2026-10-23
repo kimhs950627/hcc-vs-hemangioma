@@ -296,11 +296,13 @@ validation set** and applied **unchanged** to the test set, as an exploratory an
 optimum is not unique, each threshold is reported with its **equivalence interval** (the range of values
 giving identical performance).
 
-| Output | Cutoff | Zero-error interval (Val) | Zero-error interval (Test) |
-|--------|:------:|:--------------------------:|:---------------------------:|
-| ROC-A (Confidence Score) | 0.50 (prespecified) | — | — |
-| ROC-B (HCC Cosine, mean) | −0.004843 | (−0.0498, −0.0048] | (0.0325, 0.2583] |
-| ROC-C (Δscore, mean) | −0.958471 | (−1.0001, −0.9585] | (−0.8879, −0.5435] |
+| Output | Cutoff | Equivalence interval (Val) |
+|--------|:------:|:--------------------------:|
+| ROC-A (Confidence Score) | 0.50 (prespecified) | (0.4498, 0.5400] |
+| ROC-B (HCC Cosine, mean) | −0.004843 | (−0.0498, −0.0048] |
+| ROC-C (Δscore, mean) | −0.958471 | (−1.0001, −0.9585] |
+
+Each cutoff sits inside its own interval by construction; both similarity cutoffs coincide with the interval's upper bound, which is set by the lowest-scoring HCC case in the validation set. Performance is reported on the test set only.
 
 ### Statistical Analysis
 

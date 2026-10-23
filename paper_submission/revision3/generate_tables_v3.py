@@ -174,14 +174,14 @@ for r_idx, row in enumerate(t3_data[1:], start=1):
         for run in p.runs:
             run.font.name = "Malgun Gothic"
             run.font.size = Pt(9)
-add_footnote(doc, "Performance is reported for the test set only; validation-set performance is not reported because thresholds were derived there (in-sample). The primary operating point was prespecified at a confidence score of 0.50 rather than a validation-derived Youden point, because AUROC reached the ceiling (1.000) in the derivation cohort. Test set: n=268 (HCC 140, hemangioma 128). Misclassifications at this operating point were false negatives only. The 0.50 cutoff lies outside the test zero-error interval (0.0014, 0.0286]; the six missed HCC cases have predicted probabilities of 0.029-0.404. 95% confidence intervals are Wilson score intervals estimated at the image level.", is_revised=True)
+add_footnote(doc, "Performance is reported for the test set only; validation-set performance is not reported because thresholds were derived there (in-sample). The primary operating point was prespecified at a confidence score of 0.50 rather than a validation-derived Youden point, because AUROC reached the ceiling (1.000) in the derivation cohort. Test set: n=268 (HCC 140, hemangioma 128). Misclassifications at this operating point were false negatives only. The 0.50 cutoff lies inside its validation equivalence interval (0.4498, 0.5400]; the six test HCC cases missed at this operating point have predicted probabilities of 0.029-0.404. 95% confidence intervals are Wilson score intervals estimated at the image level.", is_revised=True)
 
 # --- Table 3B (similarity operating points, test set only) ---
 add_caption(doc, "Table 3B. Exploratory Operating Points of the Similarity Metrics, Test Set", is_revised=True)
 t3b_data = [
-    ["Output", "Cutoff (derived on Validation)", "Test zero-error interval", "Test Sens / Spec (%)", "Test Acc (%)", "Test TP/FP/FN/TN"],
-    ["HCC cosine score (mean)", "-0.004843", "(0.0325, 0.2583]", "100.00 / 99.22", "99.63", "140 / 1 / 0 / 127"],
-    ["Delta score (mean)", "-0.958471", "(-0.8879, -0.5435]", "100.00 / 99.22", "99.63", "140 / 1 / 0 / 127"]
+    ["Output", "Cutoff (derived on Validation)", "Validation equivalence interval", "Test Sens / Spec (%)", "Test Acc (%)", "Test TP/FP/FN/TN"],
+    ["HCC cosine score (mean)", "-0.004843", "(-0.0498, -0.0048]", "100.00 / 99.22", "99.63", "140 / 1 / 0 / 127"],
+    ["Delta score (mean)", "-0.958471", "(-1.0001, -0.9585]", "100.00 / 99.22", "99.63", "140 / 1 / 0 / 127"]
 ]
 t3b = doc.add_table(rows=len(t3b_data), cols=6)
 t3b.style = 'Table Grid'
@@ -195,7 +195,7 @@ for r_idx, row in enumerate(t3b_data[1:], start=1):
         for run in p.runs:
             run.font.name = "Malgun Gothic"
             run.font.size = Pt(8.5)
-add_footnote(doc, "Cutoffs were derived on the validation set (Youden's J) but all performance, confusion matrices and equivalence intervals are reported for the test set only. Zero-error interval = the range of test-set thresholds that keeps test errors at zero; because AUROC reached 1.000 in the derivation cohort, the optimum is not unique. Both similarity outputs produced the same single false positive, which is classified correctly at the primary 0.50 operating point. Discordant classifications versus the primary operating point: 6 versus 1 (McNemar exact p = 0.125); neither superiority nor non-inferiority is claimed. Thresholds require re-derivation in an external cohort.", is_revised=True)
+add_footnote(doc, "Cutoffs and their equivalence intervals were both derived on the validation set; all performance and confusion matrices are reported for the test set only. Equivalence interval = the range of validation thresholds that reproduces the same validation confusion matrix, so it always contains the reported cutoff. Because AUROC reached 1.000 in the derivation cohort the optimum is not unique, and for both similarity scores the cutoff coincides with the upper bound of the interval, which is set by the single lowest-scoring HCC case in the validation set. Both similarity outputs produced the same single false positive, which is classified correctly at the primary 0.50 operating point. Discordant classifications versus the primary operating point: 6 versus 1 (McNemar exact p = 0.125); neither superiority nor non-inferiority is claimed. Thresholds require re-derivation in an external cohort.", is_revised=True)
 
 # --- Table 4 (test set only) ---
 add_caption(doc, "Table 4. Comparison of Dual-Output Metrics in Primary Model (EfficientNetV2B0 + CE+SupCon), Test Set", is_revised=True)
@@ -256,23 +256,8 @@ run_fig.font.bold = True
 run_fig.font.name = "Malgun Gothic"
 run_fig.font.size = Pt(13)
 
-captions = [
-    ("Figure 1. t-SNE Embedding Space Visualization (Primary Model: EfficientNetV2B0 + CE+SupCon).",
-     "Embedding distribution of training and validation sets showing clear intra-class compactness and inter-class separation between HCC (red) and hemangioma (teal) clusters. Left panel illustrates single mean prototype centres; right panel depicts k-means cluster prototypes (k=4).",
-     True),
-    ("Figure 2. Confusion Matrices of Primary Model on Held-out Test Set (n=268).",
-     "Test set only. (A) Confidence score at the prespecified 0.50 operating point: 134 TP, 0 FP, 6 FN, 128 TN. (B) HCC cosine score and (C) Δscore at their validation Youden operating points (exploratory): 140 TP, 1 FP, 0 FN, 127 TN. The single false positive is the sample that is classified correctly at 0.50, so the failure modes differ by operating point (Table 3, Table 3B).",
-     True),
-    ("Figure 3. Triple Receiver Operating Characteristic (ROC) Curves on Test Set.",
-     "Test set only. ROC curves for ROC-A (confidence score), ROC-B (HCC cosine score) and ROC-C (Δscore). All three reach AUROC 1.000 and the curves overlap, so DeLong testing carries no information; no superiority or non-inferiority is claimed. The validation panel is not shown (test-only reporting).",
-     True),
-    ("Figure 4. HCC Cosine Score Distributions with and without Supervised Contrastive Learning (SupCon) in True HCC Cases (n=417; Validation 277 + Test 140).",
-     "The same held-out HCC images were scored by the CE-only and CE+SupCon models (HCC cosine score to the training-set mean HCC prototype). (A) Density distribution, EfficientNetV2B0. (B) Paired individual shift, EfficientNetV2B0: mean 0.783 ± 0.256 (median 0.882) to 0.908 ± 0.160 (median 0.970); mean paired difference +0.125 (95% CI 0.110–0.140); paired t = 16.94; Wilcoxon signed-rank p < 0.001; score increased in 94.7% of images; variance 0.065 to 0.026 (−60.7%; Pitman-Morgan t = 16.84, p < 0.001). (C) Density distribution, ResNet50V2. (D) Paired individual shift, ResNet50V2: mean 0.774 ± 0.265 to 0.878 ± 0.230; mean paired difference +0.104; paired t = 10.98; Wilcoxon p < 0.001; variance 0.070 to 0.053 (−24.3%; Pitman-Morgan t = 4.06, p < 0.001). CE, cross-entropy.",
-     True),
-    ("Figure 5. Hemangioma Cosine Score Distributions with and without Supervised Contrastive Learning (SupCon) in True Hemangioma Cases (n=381; Validation 253 + Test 128).",
-     "The same held-out hemangioma images were scored by the CE-only and CE+SupCon models (hemangioma cosine score to the training-set mean hemangioma prototype). (A) Density distribution, EfficientNetV2B0. (B) Paired individual shift, EfficientNetV2B0: mean 0.937 ± 0.050 (median 0.955) to 0.985 ± 0.006 (median 0.985); mean paired difference +0.048 (95% CI 0.043–0.052); paired t = 19.71; Wilcoxon signed-rank p < 0.001; variance 0.00253 to 0.00003 (Pitman-Morgan t = 106.23, p < 0.001). (C) Density distribution, ResNet50V2. (D) Paired individual shift, ResNet50V2: mean 0.966 ± 0.019 to 0.990 ± 0.004; mean paired difference +0.024 (95% CI 0.022–0.026); paired t = 26.54; Wilcoxon p < 0.001; variance 0.00036 to 0.00002 (Pitman-Morgan t = 49.18, p < 0.001). The large relative variance reduction partly reflects the already small baseline variance under CE-only training.",
-     True)
-]
+from captions_v3 import CAPTIONS as captions
+
 
 for title, desc, is_rev in captions:
     p = doc.add_paragraph()
