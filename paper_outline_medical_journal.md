@@ -178,7 +178,7 @@ Figure 1. t-SNE Visualization of Embedding Space — Primary Model (EfficientNet
 
 ![Figure 1: t-SNE embedding space](cosine_probe_result/effnet_supcon/tsne.png)
 
-*Figure 1. t-SNE 시각화 (EfficientNetV2B0 + CE+SupCon, test set). HCC(orange)와 Hemangioma(blue) 클러스터가 임베딩 공간에서 명확히 분리되며 SupCon에 의한 intra-class compactness가 확인된다.*
+*Figure 1. t-SNE 시각화 (EfficientNetV2B0 + CE+SupCon, 훈련·검증 세트). HCC(orange)와 Hemangioma(blue) 클러스터가 임베딩 공간에서 분리되며, 왼쪽 패널은 평균 프로토타입 중심, 오른쪽 패널은 k-means 클러스터 프로토타입(k=4)을 표시한다.*
 
 #### <span style="color:#DC1414">Table 3. Primary Model — Primary Operating Point (Confidence Score ≥ 0.50), Test Set</span>
 
