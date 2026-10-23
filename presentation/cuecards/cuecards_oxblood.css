@@ -1,0 +1,256 @@
+/* cuecards.css — printable speaker cue cards.
+   One portrait A4 sheet (210 x 297 mm) holds two 148.4 mm cards, split by a dashed
+   cut line. Same physical-unit geometry the deck uses, so it prints at 100 %.
+   Tokens are inherited from the "학술지 판면" deck system (presentation/styles/tokens_v3.css):
+   paper / ink / muted / line / accent / caution. Override with --css on make_cuecards.py.
+
+   ⚠ 색·폰트는 대본마다 새로 유도한다(design-craft `theme-advisor.py`);
+     이 파일의 값은 예시다.
+       T=~/.config/opencode/skills/design-craft/scripts/theme-advisor.py
+       python3 $T --subject "<발표 제목>" --medium cuecard --mood "<톤>" --write /tmp/opencode/cc.css
+       python3 $T --report /tmp/opencode/cc.css        # 대비 PASS 확인
+     → 교체 가능: --ink · --ink-soft · --muted · --line · --accent · --caution · --paper-2 ·
+       --serif · --sans  (테마의 color-* / font-* 에서 매핑한다)
+     ⚠ **폰트는 이 환경에 있는 것만** — 미설치 폰트 스택을 넣으면 지표가 달라져 블록이 카드에서
+       탈락한다(실측: Pretendard 스택 → 1블록 탈락, Batang/맑은 고딕 → 0). 바꿨으면 CHECK 재확인.
+     → **고정(절대 바꾸지 않음)**: --pad-y · --cut · --card-h  (재단·인쇄 기하가 깨진다)
+     → `--fs`/`--lh`/`--gap`/`--pad-x`(인쇄 여백)는 make_cuecards.py 가 CSS 뒤에 :root 로 주입하므로
+       CLI 플래그(`--font-size`·`--line-height`·`--paragraph-gap`)가 이긴다.
+     기본 권장 테마: document-plain(실무·인쇄 안전) · 낭독 리허설이면 editorial-serif. */
+
+:root {
+  --ink: #16202A;
+  --ink-soft: #3A4750;
+  --muted: #5A666F;
+  --line: #D9D5C9;
+  --cut: #C4BFB0;
+  --accent: #0F6E63;
+  --caution: #8A6A2A;
+  --paper-2: #F5F3EE;
+  --serif: Batang, 바탕, "Nanum Myeongjo", "Noto Serif CJK KR", serif;
+  --sans: "Malgun Gothic", "맑은 고딕", "Noto Sans CJK KR", "Apple SD Gothic Neo", sans-serif;
+
+  --fs: 16pt;          /* body size          (--font-size)  */
+  --lh: 1.5;           /* body line-height   (--line-height) */
+  --gap: 2.6mm;        /* block gap          (--paragraph-gap) */
+  --pad-x: 14mm;
+  --pad-y: 9.5mm;
+  --card-h: 148.3mm;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: #8B8B8B;
+  color: var(--ink);
+  font-family: var(--sans);
+  /* Korean must never split inside an 어절 ('독일' -> '독/일'): keep-all + break-word only.
+     `word-break: break-all` / `overflow-wrap: anywhere` are forbidden for body text. */
+  word-break: keep-all;
+  line-break: strict;
+  overflow-wrap: break-word;
+  hyphens: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+#src, #report { display: none; }
+
+/* ---------- sheet + card geometry ---------- */
+
+.sheet {
+  position: relative;
+  width: 210mm;
+  height: 296.6mm; /* 297 mm minus a hair: an exact page-height block makes Chrome break */
+  margin: 0 auto 6mm;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .45);
+  overflow: hidden;
+  page-break-after: always;
+  break-after: page;
+}
+.sheet:last-child { page-break-after: auto; break-after: auto; }
+
+.card {
+  position: absolute;
+  left: 0;
+  width: 210mm;
+  height: var(--card-h);
+  padding: var(--pad-y) var(--pad-x);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.card[data-slot="1"] { top: 0; }
+.card[data-slot="2"] { top: var(--card-h); }
+
+.per4 .card { width: 105mm; }
+.per4 .card[data-slot="1"] { left: 0;      top: 0; }
+.per4 .card[data-slot="2"] { left: 105mm;  top: 0; }
+.per4 .card[data-slot="3"] { left: 0;      top: var(--card-h); }
+.per4 .card[data-slot="4"] { left: 105mm;  top: var(--card-h); }
+
+.cut-h { position: absolute; left: 4mm; right: 4mm; top: var(--card-h); border-top: .4mm dashed var(--cut); }
+.cut-v { position: absolute; top: 4mm; bottom: 4mm; left: 105mm; border-left: .4mm dashed var(--cut); }
+.nocut .cut-h, .nocut .cut-v { display: none; }
+
+/* ---------- card header ---------- */
+
+.ctop {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 8pt;
+  letter-spacing: .1em;
+  color: var(--accent);
+  font-weight: 700;
+}
+.ctop .ccnt {
+  color: var(--muted);
+  font-weight: 400;
+  letter-spacing: .06em;
+}
+
+.cttl {
+  display: flex;
+  align-items: baseline;
+  gap: 2mm;
+  margin-top: 2.2mm;
+  padding-bottom: 2mm;
+  border-bottom: .3mm solid var(--line);
+  font-family: var(--serif);
+}
+.cttl .snum { font-family: var(--sans); font-size: 10pt; font-weight: 700; color: var(--accent); letter-spacing: .02em; }
+.cttl .stitle { font-size: 17pt; font-weight: 700; letter-spacing: -.01em; }
+.cttl .ctime { margin-left: auto; font-family: var(--sans); font-size: 9pt; font-weight: 400; color: var(--muted); }
+.cttl .cmark {
+  font-family: var(--sans);
+  font-size: 8pt;
+  font-weight: 400;
+  color: var(--muted);
+  border: .25mm solid var(--line);
+  padding: .1mm 1.2mm;
+}
+.card.cont .cttl .stitle { font-size: 11.5pt; font-weight: 400; color: var(--ink-soft); }
+.card.part-only .cttl .stitle { font-size: 13pt; }
+
+/* ---------- card body ---------- */
+
+.cbody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 2px; /* keeps the last descender inside the card (paginate.js relies on it) */
+  margin-top: 3.2mm;
+  font-size: var(--fs);
+  line-height: var(--lh);
+  word-break: keep-all;
+  overflow-wrap: break-word;  /* anywhere 는 한글 어절도 쪼갠다 */
+}
+.cbody > :first-child { margin-top: 0; }
+
+.b-p, .b-sub, .b-li, .b-tcap, .b-trow, .b-dir, .b-quote, .b-code { margin: 0 0 var(--gap); }
+.b-p:last-child, .b-li:last-child, .b-dir:last-child, .b-quote:last-child, .b-trow:last-child { margin-bottom: 0; }
+
+.b-sub { font-size: calc(var(--fs) + .5pt); font-weight: 700; }
+
+.b-li { padding-left: 5.5mm; text-indent: -5.5mm; }
+.b-li .mk { display: inline-block; width: 5.5mm; text-indent: 0; color: var(--accent); font-weight: 700; }
+
+/* stage direction / staging cue — never read aloud */
+.b-dir {
+  background: var(--paper-2);
+  border-left: 1.6mm solid var(--caution);
+  padding: 2mm 3mm;
+  font-size: calc(var(--fs) - 2pt);
+  line-height: 1.42;
+  color: var(--ink-soft);
+}
+.b-dir .lab {
+  display: block;
+  font-size: 7.5pt;
+  letter-spacing: .14em;
+  font-weight: 700;
+  color: var(--caution);
+  margin-bottom: .8mm;
+}
+
+/* substantive block quote (spoken/reference content, e.g. 판정 문장) */
+.b-quote {
+  background: #FBFBF7;
+  border-left: 1.6mm solid var(--accent);
+  padding: 2mm 3mm;
+  font-size: calc(var(--fs) - .5pt);
+  color: var(--ink);
+}
+
+.chip {
+  display: inline-block;
+  font-size: .82em;
+  color: var(--caution);
+  background: #FBF7EA;
+  border: .25mm solid #E4DCC2;
+  padding: .1mm 1.2mm;
+  white-space: nowrap;
+}
+
+.b-tcap { font-size: calc(var(--fs) - 4pt); color: var(--muted); letter-spacing: .04em; margin-bottom: 1mm; }
+.b-trow { padding-left: 4mm; text-indent: -4mm; font-size: calc(var(--fs) - 1.5pt); }
+
+.b-code {
+  font-family: Consolas, "D2Coding", monospace;
+  font-size: calc(var(--fs) - 3pt);
+  background: #F7F7F4;
+  padding: 1.6mm 2.4mm;
+  white-space: pre-wrap;
+}
+
+/* ---------- card footer ---------- */
+
+.cfoot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2.4mm;
+  padding-top: 1.4mm;
+  border-top: .25mm solid var(--line);
+  font-size: 8pt;
+  color: var(--muted);
+}
+
+/* ---------- measurement scratch (off-canvas, never printed) ---------- */
+
+.scratch { position: absolute; left: -3000mm; top: 0; width: 210mm; visibility: hidden; }
+.scratch .card { position: static; height: auto; visibility: hidden; }
+.scratch .cbody { height: auto; overflow: visible; }
+
+/* an unused slot on the final sheet prints as clean paper */
+.card.blank > * { display: none; }
+
+/* ---------- print ---------- */
+
+@page { size: A4 portrait; margin: 0; }
+
+@media print {
+  body { background: #fff; }
+  .sheet { margin: 0; box-shadow: none; }
+}
+
+/* ── 테마 덮어쓰기 (editorial-serif · oxblood-archive, 대비 PASS) ──
+   이 환경에는 Noto Sans CJK KR 만 있어 세리프 대신 같은 계열 산세리프로 대체했다.
+   기하 토큰(--pad-y·--card-h·--cut)은 건드리지 않는다. */
+:root {
+  --ink: #1B1113;
+  --ink-soft: #584E4E;
+  --muted: #625959;
+  --line: #DBD1CA;
+  --cut: #C7B9B4;
+  --accent: #8C1C1C;
+  --caution: #7A5400;
+  --paper-2: #E9E1DC;
+  --serif: "Noto Sans CJK KR", "Noto Sans KR", sans-serif;
+  --sans: "Noto Sans CJK KR", "Noto Sans KR", sans-serif;
+}
+
+/* 합자(ﬁ) 비활성 — PDF 텍스트 추출·검색이 깨지지 않게 한다 */
+body, .card, .card * { font-variant-ligatures: none; font-feature-settings: "liga" 0, "clig" 0; }
