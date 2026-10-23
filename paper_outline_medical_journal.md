@@ -128,7 +128,7 @@ HCC Cosine Score. 학습 완료 후 훈련 세트 HCC 표본들의 평균 임베
 </span>
 ### 2.6 통계 분석
 
-<span style="color:#DC1414">모델 변별력은 AUROC로 평가하고 신뢰구간은 DeLong 방법으로 추정하였다.[14] 세 출력의 AUROC가 모두 1.000인 경우 ROC 곡선이 완전히 중첩되어 DeLong 검정은 정보를 주지 못하므로, **우월성과 비열등성 어느 쪽도 주장하지 않는다.**
+<span style="color:#DC1414">모델 변별력은 AUROC로 평가하고 신뢰구간은 DeLong 방법으로 추정하였다.[14] 세 출력의 AUROC가 모두 1.000인 경우 ROC 곡선이 겹쳐 DeLong 검정은 정보를 주지 못하므로, **우월성과 비열등성 어느 쪽도 주장하지 않는다.**
 
 운영점 간 비교는 케이스 단위 판정 일치도를 McNemar exact test로 검정하고, 불일치 케이스의 방향(확률만 놓침 / 닮음만 놓침)을 기술하였다. 임계값 의존적 지표로는 민감도·특이도·PPV·NPV·F1·혼동행렬을 제시하며, 모든 수치는 표에만 두고 본문에서 반복하지 않는다. SupCon 유무에 따른 true HCC cases의 HCC cosine score 및 Δscore 분포 차이는 독립표본 t-검정으로 비교하였다.
 
@@ -219,13 +219,13 @@ Figure 2. Confusion Matrices — Primary Model, Test Set (Three Outputs, 2-A, 2-
 
 주력 모델에서 confidence score(ROC-A), HCC cosine score(ROC-B), Δscore(ROC-C) 세 출력의 AUROC를 비교하였다(Figure 3, Table 4). Cosine probe는 mean prototype(n_proto=1)과 k-means prototype(k=4) 두 방식으로 수행하였다.
 
-Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon, 3-A, B)
+Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon), Test Set
 
 | Test Set |
 |:-:|
 | ![](cosine_probe_result/effnet_supcon/triple_roc_test.png) |
 
-<span style="color:#DC1414">*Figure 3. 테스트 세트에서 ROC-A(confidence), ROC-B(HCC cosine, mean), ROC-C(Δscore) 세 곡선이 AUROC 1.000에서 완전히 중첩된다. DeLong 검정은 천장 효과로 정보를 주지 않으므로 비열등성을 주장하지 않는다.*</span>
+<span style="color:#DC1414">*Figure 3. 테스트 세트에서 ROC-A(confidence), ROC-B(HCC cosine, mean), ROC-C(Δscore) 세 곡선이 AUROC 1.000에서 겹친다. DeLong 검정은 천장 효과로 정보를 주지 않으므로 비열등성을 주장하지 않는다.*</span>
 
 #### <span style="color:#DC1414">Table 4. Three-Way ROC Comparison — Primary Model, Test Set</span>
 
@@ -239,7 +239,7 @@ Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon, 3-A,
 
 <span style="color:#DC1414">*ns: not significant (p>0.05). Val: n=530; Test: n=268. ROC-A 는 미리 정한 관행 운영점(confidence ≥0.50), ROC-B·ROC-C 는 검증 세트 Youden(탐색적: −0.0048 / −0.9585). 세 AUROC 가 모두 1.000 이라 DeLong 은 정보를 주지 않으므로 비열등성은 주장하지 않는다. 운영점별 분류 성능은 Table 3·3B.*</span>
 
-<span style="color:#DC1414">세 출력의 AUROC는 모두 1.000으로 ROC 곡선이 완전히 중첩되었다(Table 4). 이는 변별력의 차이가 **없다**는 뜻이 아니라 **차이를 추정할 수 없다**는 뜻이며, 따라서 비열등성은 성립하지 않는다. 운영점 수준의 비교는 Table 3·3B와 McNemar 검정으로 제시하였다.</span>
+<span style="color:#DC1414">세 출력의 AUROC는 모두 1.000으로 ROC 곡선이 겹쳤다(Table 4). 이는 변별력의 차이가 **없다**는 뜻이 아니라 **차이를 추정할 수 없다**는 뜻이며, 따라서 비열등성은 성립하지 않는다. 운영점 수준의 비교는 Table 3·3B와 McNemar 검정으로 제시하였다.</span>
 
 #### Table 4B. 전 모델 AUROC 비교 (Test Set)
 
@@ -252,7 +252,7 @@ Figure 3. Triple ROC Curve — Primary Model (EfficientNetV2B0 + CE+SupCon, 3-A,
 | ResNet | CE+SupCon | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 (ns) |
 | ResNet | NNCLR | 0.999 | 0.068 | 0.989 | 0.998 | < 0.001 |
 
-*NNCLR: 2단계 학습 — 1단계: NNCLR label-free SSL 사전학습; 2단계: CE+SupCon 미세조정. CE/CE+SupCon 조건(bold 포함)에서 모든 출력의 AUROC가 일관되게 1.000을 유지하였으며 DeLong 검정에서 confidence score와 cosine 기반 표지자 간 통계적 차이가 없었다. NNCLR 조건에서 mean prototype 기반 HCC cosine score의 현저한 열화는 SSL 사전학습이 형성한 클래스 비의존적 임베딩 구조가 CE+SupCon 미세조정 이후에도 완전히 재편되지 않음을 반영한다.*
+*NNCLR: 2단계 학습 — 1단계: NNCLR label-free SSL 사전학습; 2단계: CE+SupCon 미세조정. CE/CE+SupCon 조건(bold 포함)에서 모든 출력의 AUROC가 일관되게 1.000을 유지하였으며 DeLong 검정에서 confidence score와 cosine 기반 표지자 간 통계적 차이가 없었다. NNCLR 조건에서 mean prototype 기반 HCC cosine score의 현저한 열화는 SSL 사전학습이 형성한 클래스 비의존적 임베딩 구조가 CE+SupCon 미세조정 이후에도 크게 재편되지 않음을 반영한다.*
 
 ### 3.5 SupCon 학습의 필요성: True HCC Cases에서의 Score 분포 비교
 
