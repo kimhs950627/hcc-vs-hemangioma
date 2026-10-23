@@ -275,7 +275,7 @@ function rampStyle(ramp) { return `background: linear-gradient(90deg, ${ramp.joi
 async function loadModel() {
   ort.env.wasm.numThreads = 1;            // GitHub Pages cannot set COOP/COEP, so no threads
   ort.env.wasm.wasmPaths = new URL("./vendor/", document.baseURI).href;
-  config = await (await fetch("config.json")).json();
+  config = await (await fetch("config.json", { cache: "no-store" })).json();
   $("model-chip").innerHTML = `${config.training}<br />ONNX · ${config.precision} · ${config.inputSize}²<br />${config.embedDim}-d · ${config.patchGrid}×${config.patchGrid}`;
   session = await ort.InferenceSession.create("model/hcc_classifier.onnx", { executionProviders: ["wasm"] });
   return session;
@@ -380,14 +380,28 @@ const METRICS = [
 
 function renderResult(result, meta) {
   const cutoffs = config.cutoffs || CUTOFF_FALLBACK;
-  const malignant = result.confidence >= cutoffs.confidence_score;
-  const accent = malignant ? "var(--malignant)" : "var(--benign)";
+  // Three markers, three cutoffs (confidence 0.5; cosine and Δscore = validation Youden).
+  // A single "malignant" headline from confidence alone would hide disagreement.
+  const votes = [
+    result.confidence >= cutoffs.confidence_score,
+    result.hccCosine >= cutoffs.hcc_cosine_score,
+    result.delta >= cutoffs.delta_score,
+  ];
+  const nHcc = votes.filter(Boolean).length;
+  const allHcc = nHcc === 3;
+  const allBenign = nHcc === 0;
+  const malignant = allHcc;
+  const accent = allHcc ? "var(--malignant)" : allBenign ? "var(--benign)" : "var(--caution)";
 
   $("verdict").hidden = false;
   $("verdict-bar").style.background = accent;
-  $("verdict-label").textContent = malignant ? "HCC" : "HEMANGIOMA";
+  $("verdict-label").textContent = allHcc ? "HCC" : allBenign ? "HEMANGIOMA" : "불일치";
   $("verdict-label").style.color = accent;
-  $("verdict-detail").textContent = malignant ? "악성 의심 · Malignant concern" : "양성 · Benign";
+  $("verdict-detail").textContent = allHcc
+    ? "악성 의심 · Malignant concern"
+    : allBenign
+      ? "양성 · Benign"
+      : `지표 불일치 ${nHcc}/3 HCC · 사람 판독 필요`;
   $("verdict-note").textContent = meta.note;
   $("verdict-pct").textContent = `${(result.confidence * 100).toFixed(1)}%`;
   $("verdict-pct").style.color = accent;
