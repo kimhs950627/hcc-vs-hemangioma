@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window-level colours only. Every in-app colour lives in ui/theme/Tokens.kt. -->
+    <color name="ink">#070A0F</color>
+    <color name="ic_launcher_background">#0F151D</color>
+</resources>

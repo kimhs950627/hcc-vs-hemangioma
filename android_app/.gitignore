@@ -1,0 +1,13 @@
+# Android build output
+.gradle/
+build/
+app/build/
+local.properties
+.kotlin/
+*.apk
+captures/
+
+# Staged models (both precisions, ~41 MB) and the generated assets.
+# Regenerate with: python tools/export_tflite.py
+app/src/main/model/
+app/src/test/resources/python_reference.json

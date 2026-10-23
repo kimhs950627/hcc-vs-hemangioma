@@ -1,0 +1,34 @@
+START 2026-10-12  0:54:35.46 
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1791734077.255915   12952 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1791734082.382833   12952 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+I0000 00:00:1791734086.121639   12952 cpu_feature_guard.cc:227] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[Predictor] Building ConvHybridViT (384x384)...
+[ConvHybridViT] backbone=efficientnetv2_b0  input=(384, 384, 3)  fmap=12¡¿12  n_patch=144  seq_len=1+144=145  d_model=128  depth=4  n_heads=8  PE=sinusoidal  attn_mode=CA
+[ConvHybridViT] CA mode: attn_weights shape per layer = [B, 8, 1, 144]
+[ConvHybridViT] total_params=6,764,880  trainable=6,685,584
+[Predictor] Loading weights from: classifier_y0taaeki_BM.weights.h5...
+[Predictor] Model loaded successfully.
+[analyze] 01_jcth2024_fig1b_type2a_homogeneous_hyperechoic_HCC.png
+    [gradcam] fmap=(1, 12, 12, 128) gh,gw=12,12 cam2d=(12, 12)
+[analyze] 02_jmat2013_fig4_hyperechoic_HCC.png
+    [gradcam] fmap=(1, 12, 12, 128) gh,gw=12,12 cam2d=(12, 12)
+[analyze] 03_jmat2013_fig10_two_hyperechoic_HCC_with_halo.png
+    [gradcam] fmap=(1, 12, 12, 128) gh,gw=12,12 cam2d=(12, 12)
+[analyze] 04_jmat2013_fig11B_hyperechoic_HCC.png
+    [gradcam] fmap=(1, 12, 12, 128) gh,gw=12,12 cam2d=(12, 12)
+[analyze] 05_jmat2013_fig12C_hyperechoic_HCC.png
+    [gradcam] fmap=(1, 12, 12, 128) gh,gw=12,12 cam2d=(12, 12)
+
+=== SUMMARY ===
+01_jcth2024_fig1b_type2a_homogeneous_hyperechoic_HCC.png P(HCC)=0.9999 HCCcos=0.976 Hemcos=-0.245 dScore=1.221
+02_jmat2013_fig4_hyperechoic_HCC.png                    P(HCC)=0.9998 HCCcos=0.989 Hemcos=-0.164 dScore=1.153
+03_jmat2013_fig10_two_hyperechoic_HCC_with_halo.png     P(HCC)=0.9646 HCCcos=0.785 Hemcos=0.310 dScore=0.474
+04_jmat2013_fig11B_hyperechoic_HCC.png                  P(HCC)=1.0000 HCCcos=0.980 Hemcos=-0.243 dScore=1.223
+05_jmat2013_fig12C_hyperechoic_HCC.png                  P(HCC)=0.9999 HCCcos=0.981 Hemcos=-0.236 dScore=1.217
+
+combined figure: D:\fm_paper_works\hcc-vs-hemangioma\scratch\mimic_cam_attn\mimic_cam_attn_combined.png
+EXITCODE=0 
+DONE 2026-10-12  1:08:41.40 

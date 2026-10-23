@@ -1,0 +1,50 @@
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792325754.840832    3392 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792325769.992135    3392 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+I0000 00:00:1792325784.906151    3392 cpu_feature_guard.cc:227] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+I0000 00:00:1792325801.788728    3392 devices.cc:76] Number of eligible GPUs (core count >= 8, compute capability >= 0.0): 0 (Note: TensorFlow was not compiled with CUDA or ROCm support)
+I0000 00:00:1792325801.788994    3392 single_machine.cc:377] Starting new session
+W0000 00:00:1792325807.291627    3392 tf_tfl_flatbuffer_helpers.cc:425] Ignored output_format.
+W0000 00:00:1792325807.291711    3392 tf_tfl_flatbuffer_helpers.cc:428] Ignored drop_control_dependency.
+I0000 00:00:1792325808.601127    3392 flatbuffer_export.cc:4615] Estimated count of arithmetic ops: 5.127 G  ops, equivalently 2.564 G  MACs
+I0000 00:00:1792325809.702879    3392 devices.cc:76] Number of eligible GPUs (core count >= 8, compute capability >= 0.0): 0 (Note: TensorFlow was not compiled with CUDA or ROCm support)
+I0000 00:00:1792325809.703106    3392 single_machine.cc:377] Starting new session
+W0000 00:00:1792325814.576883    3392 tf_tfl_flatbuffer_helpers.cc:425] Ignored output_format.
+W0000 00:00:1792325814.576944    3392 tf_tfl_flatbuffer_helpers.cc:428] Ignored drop_control_dependency.
+I0000 00:00:1792325815.787339    3392 flatbuffer_export.cc:4615] Estimated count of arithmetic ops: 5.127 G  ops, equivalently 2.564 G  MACs
+C:\Users\pc\AppData\Roaming\Python\Python314\site-packages\tensorflow\lite\python\interpreter.py:468: UserWarning:     Warning: tf.lite.Interpreter is deprecated and is scheduled for deletion in
+    TF 2.20. Please use the LiteRT interpreter from the ai_edge_litert package.
+    See the [migration guide](https://ai.google.dev/edge/litert/migration)
+    for details.
+    
+  warnings.warn(_INTERPRETER_DELETION_WARNING)
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+[Predictor] Building ConvHybridViT (384x384)...
+[ConvHybridViT] backbone=efficientnetv2_b0  input=(384, 384, 3)  fmap=12¡¿12  n_patch=144  seq_len=1+144=145  d_model=128  depth=4  n_heads=8  PE=sinusoidal  attn_mode=CA
+[ConvHybridViT] CA mode: attn_weights shape per layer = [B, 8, 1, 144]
+[ConvHybridViT] total_params=6,764,880  trainable=6,685,584
+[Predictor] Loading weights from: classifier_y0taaeki_BM.weights.h5...
+[Predictor] Model loaded successfully.
+[export] fp32 flatbuffer: 27,187,104 bytes in 24.8s
+[export] fp16 flatbuffer: 13,791,400 bytes
+[verify] --- fp32 ---
+[verify] hcc1                               probs=7.92e-08 embedding=1.19e-05 attn=2.56e-08 dcos=3.89e-06
+[verify] hcc2                               probs=3.64e-10 embedding=2.15e-06 attn=3.73e-09 dcos=1.19e-07
+[verify] hcc5                               probs=2.71e-09 embedding=2.86e-06 attn=9.31e-09 dcos=6.18e-07
+[verify] new_hcc                            probs=1.54e-09 embedding=3.28e-06 attn=4.19e-09 dcos=6.71e-07
+[verify] --- fp16 ---
+[verify] hcc1                               probs=1.95e-04 embedding=2.81e-02 attn=4.77e-05 dcos=9.47e-03
+[verify] hcc2                               probs=2.33e-06 embedding=1.53e-02 attn=1.79e-05 dcos=1.32e-03
+[verify] hcc5                               probs=8.11e-06 embedding=8.35e-03 attn=2.00e-05 dcos=1.70e-03
+[verify] new_hcc                            probs=1.36e-06 embedding=6.11e-03 attn=1.99e-05 dcos=4.50e-04
+[export] fp16 rejected: dcos=9.47e-03 (limit 2e-03), dprob=1.95e-04 (limit 2e-03)
+[export] shipping fp32, 27187104 bytes | worst dcos=3.89e-06 dprob=7.92e-08 demb=1.19e-05
+[fixture] cv2.INTER_AREA vs float64 area average: max diff 0.499 (uint8 rounding only)
+[fixture] bilinear+uint8 vs tf.image.resize: max diff 0.000 (must be 0)
+[fixture] preprocess all_enabled   glare=0.0923  mean=108.0 -> 158.1
+[fixture] preprocess glare_only    glare=0.0923  mean=108.0 -> 105.0
+[fixture] preprocess disabled      glare=0.0000  mean=108.0 -> 108.0
+[export] fixture written (4 cases); models staged in D:\fm_paper_works\hcc-vs-hemangioma\android_app\app\src\main\model
+EXIT=0
