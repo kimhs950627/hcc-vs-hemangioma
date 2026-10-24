@@ -15,9 +15,9 @@
 
 ## 1. 파일 세트 고정 (파일명 규칙 포함)
 
-- [x] 원고(본문만, 표 없음) — `manuscript_v3_marked.docx`
-  - 수정 표시는 빨강(RGB 220,20,20). 제출본은 표시 제거판을 따로 만들 것.
-- [x] **표시 제거판** — `manuscript_v3_clean.docx` (빨간 표시 0개 확인; `generate_manuscript_v3.py`가 marked와 함께 생성)
+- [x] 원고(본문만, 표 없음) — `manuscript_v3_marked.docx` **← 제출본**
+  - 수정·신규 문장은 빨강(RGB 220,20,20). 심사자가 리비전 반영을 바로 보도록 **표시를 지우지 않는다.**
+- [ ] `manuscript_v3_clean.docx` — 내부 확인용(빨강 0개). 저널이 "표시 없는 판"을 별도로 요구할 때만 쓴다. 기본은 제출하지 않음.
 - [x] 표 — `tables_v3.docx` (표 7개, 각 표 각주 포함)
 - [x] 그림 — `figures_v3.docx` (그림 5개 / 이미지 7개, 캡션 포함) + `figures/` 낱개 파일
 - [x] 응답서 — `Response_to_Reviewers_v5.docx` / `.txt`
