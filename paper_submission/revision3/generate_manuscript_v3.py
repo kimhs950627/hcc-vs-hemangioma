@@ -240,6 +240,7 @@ with open(txt_path, "w", encoding="utf-8") as f:
 
 print(f"Saved plain text manuscript to: {txt_path}")
 
+
 # Write docx with RED markup for revised parts
 doc = docx.Document()
 
@@ -305,3 +306,16 @@ except PermissionError:
     doc.save(fallback_path)
     print(f"WARNING: {docx_path} is currently locked (open in Word). Saved to: {fallback_path}")
 
+
+# Submission copy: same document with the revision marks removed (every run black).
+for _p in doc.paragraphs:
+    for _r in _p.runs:
+        _r.font.color.rgb = BLACK
+clean_path = os.path.join(OUT_DIR, "manuscript_v3_clean.docx")
+try:
+    doc.save(clean_path)
+    print(f"Saved clean (unmarked) docx manuscript to: {clean_path}")
+except PermissionError:
+    fallback_clean = os.path.join(OUT_DIR, "manuscript_v3_clean_updated.docx")
+    doc.save(fallback_clean)
+    print(f"WARNING: {clean_path} is currently locked (open in Word). Saved to: {fallback_clean}")

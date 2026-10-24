@@ -17,11 +17,11 @@
 
 - [x] 원고(본문만, 표 없음) — `manuscript_v3_marked.docx`
   - 수정 표시는 빨강(RGB 220,20,20). 제출본은 표시 제거판을 따로 만들 것.
-- [ ] **표시 제거판 생성** — `manuscript_v3_clean.docx` (제출용). 지금은 marked만 있다.
+- [x] **표시 제거판** — `manuscript_v3_clean.docx` (빨간 표시 0개 확인; `generate_manuscript_v3.py`가 marked와 함께 생성)
 - [x] 표 — `tables_v3.docx` (표 7개, 각 표 각주 포함)
 - [x] 그림 — `figures_v3.docx` (그림 5개 / 이미지 7개, 캡션 포함) + `figures/` 낱개 파일
 - [x] 응답서 — `Response_to_Reviewers_v5.docx` / `.txt`
-- [ ] **커버레터** — 아직 없음. 1쪽: 연구 한 줄 요약, 왜 KJFP인지, 재투고임을 명시, 모든 저자 승인, 이해상충 없음.
+- [x] **커버레터 초안** — `Cover_Letter_v1.docx` / `.txt` (1쪽). `[교신저자]`·`[연락처]`·`[날짜]`·공저자 칸은 저자가 채운다.
 - [ ] **보조자료(Supplementary)** — 표 2를 옮길 경우 `supplementary_v1.docx` 신규 작성.
 - [ ] 파일명 규칙 통일: `KJFP_원고_김현수_v1.docx`, `KJFP_표_v1.docx`, `KJFP_그림_v1.docx`, `KJFP_응답서_v1.docx`.
 

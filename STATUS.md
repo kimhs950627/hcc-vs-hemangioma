@@ -18,10 +18,11 @@
 
 ## 논문 패키지 (`paper_submission/revision3/`)
 
-- `manuscript_v3_marked.docx` (표 없음, 수정 부분 빨간색) / `manuscript_v3_final.txt`
+- `manuscript_v3_marked.docx` (수정 부분 빨간색) · `manuscript_v3_clean.docx` (제출용, 표시 없음) / `manuscript_v3_final.txt`
 - `tables_v3.docx` (표 7개 + 그림 캡션), `figures_v3.docx` (그림 5개, 이미지 7개)
 - `Response_to_Reviewers_v5.docx` / `.txt` (v4 레이아웃 유지)
 - `figures/` 배포 세트, `captions_v3.py`(캡션 단일 출처), `equivalence_interval.py`(구간 재현)
+- `Cover_Letter_v1.docx` / `.txt` 초안 (교신저자·연락처·날짜만 채우면 됨)
 
 ## 확정된 수치·정의 (재제출 때 그대로 쓴다)
 
