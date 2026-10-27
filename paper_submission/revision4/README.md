@@ -2,6 +2,15 @@
 
 편집위원회 2차 결정: Minor Revision, 마감 2026-12-25(60일). 이번 라운드 수정 표시는 **파란색**.
 
+## 현재 상태 (2026-10-27 기준, 최종)
+
+- 본문 **9,994자**(한도 10,000), 국문요약 791자, 영문초록 243단어, 참고문헌 18개, 표 5 + 그림 5 = 10개
+- 기계 검증 `verify_kjfp.py` **37항목 PASS**
+- 제출 폴더 `final_files/`: `manuscript_v5_kjfp.docx`, `tables_v5.docx`, `Title_Page_v1.docx`, `Supplementary_Methods_v1.docx`, `Response_to_Reviewers_v6.docx` (+ `figures_v4.docx`)
+- 렌더 검증 완료(LibreOffice 25.8.7, 사용자 설치). 표는 A4·한 면에 하나·행 분할 없음
+- 자체 심사 기록: `self-revision-with-skill/REVIEW.md` (HIGH 4 · MED 13 · LOW 8, H1·H3·H4는 pass, H2는 십분위 제시로 재구성)
+- 아래 「3차 수정」절이 이번 라운드의 실제 변경 내역이다.
+
 ## 끝난 것 (지시받은 3건)
 
 ### 1. 참고문헌 확보·검증 → `REFERENCE_AUDIT.md` + `CITATION_SUPPORT_AUDIT.md`
@@ -61,10 +70,31 @@
 - Comment 5: Methods 2.2에 학습방식 목적 3줄 + NNCLR 가설 명시, 손실식·코사인 공식 → Supplementary S3/S4
 - 감축: Results 3.2, 고찰 첫 문단, 제한점 둘째·셋째 압축 + k-means → S4
 
-## 아직 안 한 것 (지시 대기)
-- **용어 표기 일관성**(comment 3) — 국·영문 병기 정리, 기술용어 의미 설명
-- **Discussion 2번 보강**(comment 2) — similarity score가 도움이 되는 임상 상황과 해석 한계
-- Response to Reviewers v6, Cover letter 갱신, blue 표시 최종 렌더 확인(Word 없음 → 육안 확인 필요)
+## 3차 수정 (2026-10-27, 자체 검토 · 렌더 검증)
+
+`self-revision-with-skill/REVIEW.md` (paper-review 스킬 자체 심사) 결과를 반영하였다.
+
+- **r = −0.80 폐기 → 십분위 제시**: Results 3.5에서 상관계수를 삭제하고 1분위 0.125→0.566(Δ +0.441)~10분위 0.959→0.983(Δ +0.024)의 단조 감소, 점수 0.5 미만 43장(10.3%)→17장(4.1%), 확률 0.50에서 놓친 HCC 6장의 코사인 0.26–0.55(하위 0–4백분위), 모든 혈관종 최고값 0.032보다 높다는 사실을 제시. Δscore 개선 없음(16→20장)도 함께 밝힘
+- **고찰 평이화**: "상향 이동·분산 감소·저점수 증례의 큰 상승 폭은 그 자체만으로 임상적 타당성의 직접적 증거로 보기 어렵다. 두 클래스 간격은 오히려 좁아졌으므로 표상 기하의 변화로 한정하며, 외부 코호트와 더 많은 데이터셋으로 추가 검증이 필요하다"로 교체(전문용어·영문 병기 제거)
+- **Supplementary S7 + 표 S4 신설**: 십분위 10행 표, 구간별 빈도(0.5/0.6/0.7/0.8 미만), 클래스 분리(HCC 최저 0.258 vs 혈관종 최고 0.032), Δscore caveat. 소제목이 페이지 하단에 홀로 남지 않도록 `keep_with_next` 적용
+- **표 레이아웃**: US Letter·2.5 cm → A4·3 cm, 표마다 새 페이지 + `cantSplit`, 고정 열너비(모델명·AUROC 단어 쪼개짐 해결), 헤더 `Sens./Spec.` 축약
+- **그림 설명문 위치**: `tables_v5.docx` → 원고 말미 섹션으로 이동(저널 구성 순서), 표 파일에는 표만
+- **Figure 4·5 설명문 P 대문자** 통일
+- **답변서 Comment 2에 ⑤ 항목** 추가(십분위·구간 빈도 제시 근거), 본문 자수 동기화
+- 렌더 검증: LibreOffice 25.8.7을 `~/opt/lo` 에 사용자 설치(root 불필요) → docx→PDF→PNG 로 쪽번호·표 배치·파란 표시 확인. Batang 미설치로 미리보기는 Noto Serif CJK 대체
+
+## 자체 심사(REVIEW.md) 잔여 항목 — 판정
+
+- **H1 patient_id**: 클린 서브셋 배포본에 patient id 없음(사용자 확인) → 현행 유지
+- **H2 r=−0.80**: 폐기하고 십분위·구간 빈도로 대체(위 3차 항목). 상관 자체를 주장하지 않음
+- **H3 · H4**: 사용자 판정 pass (Table 2는 confidence AUROC만, Figure 3은 세 ROC가 겹침)
+
+## 남은 항목
+
+- Word 육안 확인(쪽번호 시작·표 패널·파란 표시) — LibreOffice 렌더로 대체 확인함
+- 표지 전화/팩스·상세주소, 한글 저자명 표기(사용자 판단: 불필요)
+- 본문 여유 6자(9,994/10,000) — 추가 서술 시 다른 곳 감축 선행 필요
+- 발표자료(`presentation/`)는 이번 수정 대상에서 제외(발표 종료)
 
 ## 파일
 - `manuscript_v4_marked.docx` (파란색 표시, 내부 확인용) · `manuscript_v4_clean.docx` · `manuscript_v4_final.txt`
