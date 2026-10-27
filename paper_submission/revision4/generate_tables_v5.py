@@ -6,7 +6,7 @@ File: tables_and_figures_revised.docx
 import os
 import pathlib
 import docx
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Cm, Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import parse_xml, OxmlElement
 from docx.oxml.ns import nsdecls, qn
@@ -172,7 +172,7 @@ add_footnote(doc, "Values follow the patient-level split published by Tak et al.
 # --- Table 2 ---
 add_caption(doc, "Table 2. Ablation: Backbone × Training Mode (Validation Set, Confidence Score)", is_revised=True)
 t2_data = [
-    ["#", "Backbone", "Training Mode", "Cutoff", "AUROC", "Sensitivity (%)", "Specificity (%)", "F1 Score"],
+    ["#", "Backbone", "Training Mode", "Cutoff", "AUROC", "Sens. (%)", "Spec. (%)", "F1 Score"],
     ["1", "ResNet50V2", "CE Only", "0.000182", "1.000", "100.00", "100.00", "1.0000"],
     ["2", "EfficientNetV2B0", "CE Only", "0.001642", "0.9999", "100.00", "99.60", "0.9982"],
     ["3", "ResNet50V2", "CE + SupCon", "0.000202", "1.000", "99.64", "100.00", "0.9982"],
@@ -312,6 +312,45 @@ for t in doc.tables:
                     run.font.name = "Batang"
                     if run.font.size is None:
                         run.font.size = Pt(8.5)
+
+
+# ---- KJFP page setup: A4, 3 cm margins, one table per page, no row splitting ----
+_sec = doc.sections[0]
+_sec.page_width, _sec.page_height = Cm(21.0), Cm(29.7)
+_sec.top_margin = _sec.bottom_margin = _sec.left_margin = _sec.right_margin = Cm(3)
+
+for _p in doc.paragraphs:
+    if _p.text.startswith(("Table 1B.", "Table 2.", "Table 3.", "Table 4.")):
+        _p.paragraph_format.page_break_before = True
+
+for _t in doc.tables:
+    _t.autofit = False
+    _tblPr = _t._tbl.tblPr
+    for _el in _tblPr.findall(qn('w:tblLayout')):
+        _tblPr.remove(_el)
+    _lay = OxmlElement('w:tblLayout')
+    _lay.set(qn('w:type'), 'fixed')
+    _tblPr.append(_lay)
+    for _row in _t.rows:
+        _trPr = _row._tr.get_or_add_trPr()
+        _cs = OxmlElement('w:cantSplit')
+        _trPr.append(_cs)
+
+# column widths (cm): keep model names and headers on one line
+if len(doc.tables) >= 3:
+    _w2 = [0.8, 3.2, 2.3, 1.9, 1.7, 1.7, 1.7, 1.6]
+    for _i, _w in enumerate(_w2):
+        doc.tables[2].columns[_i].width = Cm(_w)
+    for _row in doc.tables[2].rows:
+        for _i, _w in enumerate(_w2):
+            _row.cells[_i].width = Cm(_w)
+if len(doc.tables) >= 6:
+    _w4b = [3.0, 2.3, 1.9, 1.9, 1.9, 1.9, 1.9]
+    for _i, _w in enumerate(_w4b):
+        doc.tables[5].columns[_i].width = Cm(_w)
+    for _row in doc.tables[5].rows:
+        for _i, _w in enumerate(_w4b):
+            _row.cells[_i].width = Cm(_w)
 
 doc_path = os.path.join(OUT_DIR, "tables_v5.docx")
 doc.save(doc_path)
