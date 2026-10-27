@@ -1,0 +1,31 @@
+1. Introduction 연구의 필요성과 핵심질문이 잘 드러나도록 정리:
+내 발표자료를 참고하라. 필요하면 발표자료에 제시된 논문의 citation 새로 더 넣어라.
+발표자료에도 나와 있듯이,
+liver sono 보고 양성 및 악성을 비교하는 task는 어려운 task이다. 임상정보를 가진 상태에서 사람이 보면 76%, 임상정보를 가지고 ai가 하면 over 80%의 정확도 (중국 논문 있음)
+-> ai가 도움을 줄 수 있겠다
+-> 그런데 대부분의 ai는 분류 시 confidence score만을 사용. 이는 종종 모델이 계산한, 특정 label에 속할 확률로 해석되지만, over confident하다는 보고가 있고, 사람이 판단하는 메커니즘과는 다르다
+사람이 판단할 때는 의사 자신이 학습한  "전형성" 에 환자의 영상이 얼마나 부합하는 가를 따짐.
+-> 이번 연구에서는 전통적인 ai output인 confidence score 말고, 전형성(HCC score) 및 전형성의 차이(Hemangioma보다 얼마나 HCC에 가까운가, delta score) 를 함께 반환하는 모델을 만듬
+-> 연구자나 임상의사들이 confidence 말고 전형성을 추가적으로 수치화함으로써 "얼마나 전형적인 hcc/hemangioma인지"도 알 수 있고 환자에게 설명해 줄 수 있게 하며, 병변을 추적관찰할 때에도 같은 lesion label일지라도 어떻게 소견이 변화하는지를 숫자로서 추적할 수 있게 함.
+즉, 분류의 정확도 개선을 목표로 하기도 했고 모델/lesion 해석을 좀 더 다양하게 할 수 있도록 하는 것이 연구 목적
+-> 실험 결과 정확도 및 기타 분류지표 개선은 되지 않았지만 해석 시 사용가능한 또 다른 지표를 제공함 (분류 정확도가 높은 편이며 score 계산방식이 human doctor의 전형성 판단방식을 수학적으로 구현한 것이므로)
+위 사항을 introduction 및 discussion에도 새로 작성.
+
+2. similarity score가 confidence score와 비교하여 어떤 추가정보 (discussion에서)
+
+3. 국문과 영문 용어 표기 일관되게 정리, 4. figure, table 구성 간결화, 6. 반복되는 설명 줄이고 제출양식 맞추기, 7. Reference 적절성 검토
+-> 이미 네가 다 했음, 그래도 다시 검토해봐.
+
+5. Method에서 모델 아키텍처 및 학습방법의 어려움
+-> Supcon을 사용하여 cosine score에 의미를 부여하였다, EfficientNetV2B0과 ResNet50V2를 비교하고, CE 단독 학습과 SupCon을 추가한 학습의 차이를 평가하였다
+등으로 정리한 뒤 기술적인 세부사항 (loss 수식, 하이퍼파라미터, 옵티마이저 및 아키텍처 설명)은 supplementary로.
+
+또한 CE, SupCon, NNCLR 및 ablation study 역시 각각 무엇을 확인하기 위한 것인지 간단히 설명하여 비전문 독자도 비교의 목적을 쉽게 이해할 수 있도록 정리해 주시면 좋겠습니다.
+-> CE는 CrossEntropy로 모델이 특정 이미지를 HCC냐 Hemangioma냐 로만 판단하게 하는 전략 (단순 분류 전략)
+SupCon은 같은 질환의 임베딩은 비슷하게, 다른 질환의 임베딩은 서로 다르게 (거리가 멀게, similarity가 낮게) 강제하는 것
+CE, SupCon은 label이 있는 경우에 시행, NNCLR은 이미지의 label이 없거나, label이 있어도 쓰지 않는 Self-Supervised learning으로,
+모델이 label정보가 아니라 이미지의 분포, 이미지 자체의 특성을 미리 학습하게 함
+이번 논문에서는 nnclr이 이미지 자체의 domain knowledge를 학습 먼저 시킴으로써 분류성능을 상승시킬 것으로 기대했으나 실제 실험에서는 그렇지 않았음,
+NNCLR을 하기에는 이미지 수가 너무 적었다고 생각함
++ Supervised Contrastive Learning은 CVPR에 2020~2021에 제시된 논문으로 이 논문도 citation할 것
++ Cosine similarity score의 수식과 의미도 supplementary로.

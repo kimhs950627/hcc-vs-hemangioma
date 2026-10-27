@@ -1,0 +1,189 @@
+# B-mode 복부 초음파에서 간세포암과 간혈관종 감별을 위한 딥러닝 모델의 Confidence Score와 임베딩 기반 유사도 점수: 단일기관 공개 데이터셋을 이용한 탐색적 연구
+
+# Confidence Score and Embedding-Based Similarity Score of a Deep Learning Model for Differentiating Hepatocellular Carcinoma from Hemangioma on B-mode Abdominal Ultrasound: An Exploratory Study Using a Single-Center Public Dataset
+
+## 영문초록 (Abstract)
+
+### Background
+
+B-mode ultrasound is the first-line imaging test for focal liver lesions, but distinguishing early hepatocellular carcinoma (HCC) from hemangioma on B-mode images alone remains difficult. Classification models usually return only a softmax confidence score, reflecting decision strength rather than resemblance to a typical lesion.
+
+### Methods
+
+We used the clean subset of the SMC-LUD public dataset with its original patient-level 70:20:10 split. A hybrid vision transformer with an EfficientNetV2B0 backbone was trained with cross-entropy and supervised contrastive loss. Three outputs were compared: the confidence score, the cosine similarity to the training-set HCC prototype (HCC cosine similarity score), and the margin between the two class prototypes (delta score). The operating point of the primary analysis was prespecified at 0.50; similarity cutoffs were derived in the validation set by Youden's J and applied unchanged to the test set.
+
+### Results
+
+All three outputs reached a test-set AUROC of 1.000, a ceiling effect that precludes comparison of discrimination. Failures occurred in different images at the 0.50 and the similarity operating points (6 versus 1 discordant images; McNemar exact P = 0.125); neither superiority nor non-inferiority is claimed. After supervised contrastive training the HCC cosine similarity score shifted upward with reduced variance, and the hemangioma score behaved similarly.
+
+### Conclusion
+
+Dual-output indices are technically feasible, but this dataset cannot demonstrate incremental benefit over the confidence score. External validation with cutoffs re-derived in the target population is required.
+
+### Keywords
+
+Carcinoma, Hepatocellular; Hemangioma; Ultrasonography; Deep Learning; Diagnosis, Computer-Assisted; Neural Networks, Computer
+
+## 1. 서론
+
+간세포암(hepatocellular carcinoma, HCC)은 원발성 간암의 대부분을 차지하며 전 세계적으로 암 관련 사망의 주요 원인 중 하나이다.1,2) 복부 초음파 검사는 비침습적이고 접근성이 높아 간 병변 선별에 가장 널리 쓰이는 1차 영상 도구이지만,2,3) 우연히 발견된 간 국소 병변을 HCC와 흔한 양성 종양인 간혈관종(hepatic hemangioma)으로 감별하는 일은 B-mode 단독 소견만으로는 여전히 어렵다.4)
+
+이러한 감별의 어려움은 두 질환 모두 영상 소견상 넓은 스펙트럼과 비전형적 표현형을 지니기 때문이다. 전형적인 HCC는 만성 간질환이나 간경변 배경에서 저에코 결절로 관찰되지만, 특히 2 cm 미만 병변에서는 일부 증례가 고에코성을 띠어 혈관종과 유사하게 관찰될 수 있다.5) 간혈관종 역시 전형적으로는 경계가 명확한 균질한 고에코 종괴로 나타나나, 내부 에코가 부분적으로 저에코이거나 테두리 소견을 보이는 비전형적 혈관종은 악성 종양을 모사하여 진단적 혼선을 유발한다.6-8) 따라서 임상의는 조영증강 CT, MRI 또는 조영증강 초음파(CEUS) 등의 정밀 2차 영상 검사에 크게 의존하게 된다.9)
+
+최근 딥러닝 연구는 이러한 감별을 보조할 수 있음을 보여주었다. 13개 병원 2,143명을 대상으로 한 다기관 연구에서 15년 경력 초음파 판독자 236명의 악성–양성 국소 병변 감별 민감도는 76.1%, 특이도는 76.9%였던 반면, 딥러닝 모델은 86.5%와 85.5%(AUC 0.924)였고 정확도는 조영증강 CT와 같은 84.7%로 MRI(87.9%)에는 미치지 못하였다.10) B-mode 초음파 기반 머신러닝 연구에서도 3 cm 이하 간세포암 분류의 가능성이 보고되었다.11) 그러나 기존 모델은 대부분 소프트맥스 확률 하나만 출력한다. 소프트맥스는 모델이 두 질환에 부여한 최종 확률값으로, 이 값은 결정 강도일 뿐이며 보정되지 않으면 실제 확률과 일치하지 않고 과잉확신을 보인다.12) 따라서 숙련 판독자가 병변을 전형적인 간세포암의 소견과 얼마나 닮았는지 연속적으로 비교하는 판단 과정을 대신하지 못한다.
+
+임베딩 공간에서 지도 대조학습(supervised contrastive learning, SupCon)을 적용하면 클래스 내 응집성이 높아지고, 훈련 세트의 질환별 중심 벡터(prototype)와의 코사인 유사도 점수로 '전형성'과 두 질환 전형 사이의 상대적 위치를 수치화할 수 있다.13) 본 연구는 SMC-LUD 정제 서브셋에서 HCC와 간혈관종을 감별하는 모델을 구축하고, 확률(confidence score)에 더해 전형성(HCC 코사인 유사도 점수)과 전형성 차이(Δscore)를 함께 산출하는 이중 출력 체계의 기술적 타당성과 해석 가능성을 탐색적으로 평가하고자 하였다. 결론적으로, 확률 0.50과 코사인 유사도 점수로 분류하였을 때의 분류성능 차이는 통계적으로 유의하지 않았다(McNemar exact test P = 0.125).
+
+## 2. 대상 및 방법
+
+2.1 연구 대상 및 데이터셋 구성
+
+본 연구는 삼성서울병원이 구축하여 공개한 B-mode 간 초음파 데이터셋 SMC-LUD14)를 활용한 단일기관 후향적 연구이다. 전체 코호트는 2015년부터 2024년까지 1,021명의 5,385장 영상으로, HCC는 수술적 절제 또는 생검으로 확진되었고 간혈관종은 숙련된 복부 영상의학과 전문의의 전형적 영상 소견과 공식 판독 문서로 진단되었다. 이 중 측정선(caliper) 등 주석 인공음영이 없는 Clean 서브셋(744명, 2,656장)을 분석 대상으로 하였고, 원저가 환자 단위로 공개한 70:20:10 분할을 그대로 준용하여 훈련 1,858장(HCC 972장, 혈관종 886장), 검증 530장(HCC 277장, 혈관종 253장), 테스트 268장(HCC 140장, 혈관종 128장)을 사용하였다. 744명에서 2,656장이 얻어져 환자 대 영상은 1:1이 아니며(환자당 평균 3.57장), 공개 데이터에 영상별 환자 식별자가 없어 세트 간 중복 여부를 본 연구팀이 직접 재검증하지는 못하였다. 본 연구는 소속 기관의 기관생명윤리위원회 승인을 받았으며(PMC 2026-07-001), 보고는 진단정확도 연구 지침(STARD 2015)을 참고하였다.
+
+2.2 모델 아키텍처 및 학습 프로토콜
+
+분류 모델은 두 가지 합성곱 백본(EfficientNetV2B015), ResNet50V2)에 경량 트랜스포머 인코더를 결합한 Hybrid Vision Transformer 구조로 구축하였다. 비교의 목적은 두 가지였다. 첫째, 더 복잡한 학습 전략이 실제로 분류를 개선하는지, 둘째, 관찰된 현상이 특정 백본에 국한되는지 확인하는 것이다. 이를 위해 백본 2종과 학습 방식 3종의 6개 조합을 동일한 조건에서 학습하였다. 각 학습 방식의 목적은 다음과 같다. 교차 엔트로피 단독은 정답 라벨로 확률을 맞히는 기본 조건이다. 여기에 지도 대조손실을 더한 조건은 같은 질환의 영상을 임베딩 공간에서 가깝게 모아 클래스 중심과의 거리를 안정화하려는 시도이다. NNCLR 자기지도 사전학습 조건은 라벨 없이 표현을 먼저 익힌 뒤 미세조정하는 방식으로, 수천 장 규모의 작은 데이터에서 라벨 의존을 줄이는 데 도움이 될 수 있다는 가설에서 포함하였으며, 이 가설 자체를 검증한 것은 아니다. 손실함수의 정의는 Supplementary Methods S3에, 구현 세부사항은 S1–S2에 기술하였다.
+
+2.3 이중 출력 영상표지자의 정의
+
+제안하는 모델은 동일한 병변 영상에 대해 두 가지 형태의 보완적 출력을 제공한다:
+
+1) Confidence Score: 최종 분류 레이어의 소프트맥스 출력 중 HCC 클래스에 할당된 값(0~1)으로, 모델의 결정 강도를 나타낸다.
+
+2) HCC Cosine Score: 훈련 세트 HCC 임베딩 벡터들의 평균인 단일 중심 벡터와 대상 병변 임베딩 벡터 간의 코사인 유사도 점수로 정의하며, 계산식은 Supplementary Methods S4에 제시하였다. 훈련 세트 임베딩을 k-means(k=4)로 나눈 서브 프로토타입 방식은 민감도 분석으로 S4에 함께 기술하였다.
+
+3) Δscore: 대상 병변의 HCC cosine similarity score에서 훈련 세트 혈관종 프로토타입과의 코사인 유사도 점수(Hemangioma cosine similarity score)를 뺀 값으로 정의되며, 두 경쟁 질환 간 상대적 기하학적 마진을 나타낸다. 모든 프로토타입 벡터는 데이터 유출을 방지하기 위해 오직 훈련 세트만을 사용하여 산출하였다.
+
+2.4 임계값 설정 및 통계 분석
+
+주 분석의 운영 임계값은 관행값 0.50으로 미리 정하였다. 검증 세트에서 Youden's J로 임계값을 고르면 AUROC가 천장(1.000)에 닿아 최적값이 유일하게 정해지지 않고 사실상 '항상 HCC'에 가까운 값이 선택되기 때문이다. 코사인 유사도 점수의 임계값은 검증 세트에서만 Youden's J로 결정해 테스트 세트에 변경 없이 적용하였고, 천장 효과로 최적값이 유일하지 않으므로 같은 혼동행렬을 내는 검증 임계값 범위(등가 구간)를 함께 보고한다(정의와 산출 절차는 Supplementary Methods S5). 이 값들은 유도 코호트에 종속되므로 외부 코호트에서 재산출하기 전에는 이전할 수 없다. 변별력은 AUROC(수신자조작특성 곡선 아래 면적)로 평가하고 민감도·특이도·정확도에는 Wilson score 방식의 95% 신뢰구간을, 양성·음성예측도와 F1은 점추정값으로 제시하였다. AUROC 곡선 간 비교는 DeLong 검정16)으로 계산하였으나 천장 조건에서는 검정력이 제한되므로 비열등성·동등성의 증거로 단정하지 않았다. 운영점 간 불일치는 McNemar exact test로, CE 단독 모델과 CE+SupCon 모델의 코사인 유사도 점수 분포 차이는 동일 영상 대응표본으로 paired t-test, Wilcoxon signed-rank test, Pitman-Morgan test로 평가하였다. 유의수준은 양측 P < 0.05로 정의하였고, 분석은 Python(NumPy, SciPy, scikit-learn)과 TensorFlow/Keras로 수행하였다.
+
+## 3. 결과
+
+3.1 데이터셋 특성
+
+전체 코호트의 인구통계학적 특성은 Table 1에, Clean 서브셋의 세트별 클래스 분포는 Table 1B에 제시하였다. HCC 환자군은 혈관종 환자군보다 연령이 높았고 남성 비율이 높았으며, 병변 최대 직경 중앙값은 2.90 cm(사분위수 범위 2.10–4.50 cm)였다.
+
+3.2 백본 및 학습 방식별 성능 비교 (Ablation Study)
+
+백본 및 학습 방식별 비교는 모델 선택을 위한 검증 세트(n=530) 분석이며 성능 값은 Table 2에 정리하였다. 주력 모델인 EfficientNetV2B0 + CE+SupCon(#4)은 세 출력 모두 천장에 도달하였고, ResNet50V2(#3)도 비슷한 수준이었으나 주력 모델은 더 적은 파라미터(7.1M vs 23.6M)로 같은 성능을 보였다. 반면 NNCLR 2단계 학습(#5, #6)은 CE+SupCon 단독보다 낮았다. 이 비교는 운영점 성능이 아니므로 테스트 세트 성능과 혼동하지 않도록 Table 2 각주에 밝혔다.
+
+3.3 주력 모델의 테스트 세트 분류 성능
+
+임베딩 공간에서 두 클래스가 분리되는지 확인하기 위해 훈련·검증 세트 임베딩을 2차원으로 축소해 보여주는 t-SNE 시각화를 제시하였다(Figure 1). 주력 모델의 분류 성능은 확률 0.50(주 분석)과 코사인 유사도 점수 운영점(탐색적)으로 나누어 Table 3에 제시하였다. 확률 0.50에서는 위음성이, 코사인 유사도 점수 운영점에서는 위양성이 발생했고 두 오류 집합은 겹치지 않았다(Table 3A, 3B; Figure 2A, 2B, 2C). 세 임계값과 등가 구간은 모두 검증 세트에서 산출되었고, 확률 0.50과 두 코사인 유사도 점수 임계값은 각자의 구간 안에 위치하였다. 코사인 유사도 점수에서는 구간의 위쪽 경계가 곧 임계값이었는데, 이는 검증 세트에서 가장 낮은 점수를 보인 HCC 한 증례가 경계를 정한 결과이며 테스트에는 변경 없이 적용하였다.
+
+3.4 이중 출력 표지자의 비교
+
+주력 모델의 세 출력(ROC-A confidence score, ROC-B HCC cosine similarity score, ROC-C Δscore)의 변별력을 비교하였다(Table 4A, Figure 3). 세 출력의 AUROC는 모두 1.000으로 ROC 곡선이 겹쳐 변별력의 차이를 추정할 수 없었고, 이 조건에서는 비열등성을 판정할 수 없다. 운영점 수준의 비교는 McNemar exact test로 제시하였으며 불일치 6건 대 1건이었다(Table 3). 학습 방식과 백본을 달리한 6개 모델에서도 AUROC는 대체로 천장에 도달하였고, 자기지도학습 조합에서 코사인 유사도 점수의 AUROC가 0.5 아래로 내려간 예외가 관찰되었다(Table 4B). 테스트 세트의 오분류 1건(실제 혈관종)은 다섯 가지 출력 정의 모두에서 동일하게 위양성으로 판정되었다. 즉 오분류 사례가 극히 적어 cosine 기반 표지자의 증분 이득은 이 데이터로 입증할 수 없었다.
+
+3.5 미학습 영상에서의 코사인 유사도 점수 분포
+
+SupCon 학습이 임베딩 공간에 미치는 영향을 평가하기 위해 검증·테스트 세트의 실제 HCC 영상(n=417)과 혈관종 영상(n=381)에서 CE 단독 모델과 CE+SupCon 모델의 코사인 유사도 점수를 동일 영상 대응으로 비교하였다. SupCon 적용 후 HCC cosine similarity score는 상향 이동하고 분산은 감소하였으며 두 변화 모두 유의하였다(Figure 4). 혈관종 영상에서도 hemangioma cosine similarity score의 상향 이동과 분산 감소가 관찰되었고, ResNet50V2에서도 같은 경향이었다(Figure 5). 실제 HCC 영상의 94.7%에서 점수가 상승하였고, 상승 폭은 프로토타입에서 멀리 있던 증례에서 컸다(r=−0.80). 즉 분산 감소는 이미 충분히 전형적이라고 모델이 판단했던 증례보다, SupCon 이전에는 전형성이 떨어진다고 판단했던 증례에서의 상승에 주로 기인하였다.
+
+한편 동일한 대응 비교에서 각 클래스는 자신의 프로토타입 방향으로 이동하는 동시에 상대 클래스 프로토타입 방향으로도 일부 이동하였다. 이는 코사인 유사도 점수가 두 클래스 사이의 상대적 위치를 반영한다는 점을 시사한다. Δscore는 두 점수의 차이로 정의되는 보조 지표로만 소개하며, 본 연구의 논지는 HCC cosine similarity score에 둔다.
+
+## 4. 고찰
+
+본 연구는 B-mode 복부 초음파에서 간세포암과 간혈관종을 감별하는 EfficientNetV2B0 기반 hybrid vision transformer를 구축하고, 단일 확률 외에 임베딩 공간의 코사인 유사도 점수(HCC 코사인 유사도 점수 및 Δscore)를 함께 산출하는 이중 출력 체계를 탐색적으로 제안하였다.
+
+다만 softmax 기반 confidence score를 실제 질환 확률로 해석하거나 단일 출력만으로 판단 근거로 삼는 데에는 한계가 있다. Softmax 출력은 0과 1 사이로 정규화되지만 별도의 calibration이 없으면 실제 질환 확률과 일치한다고 보장할 수 없고,12) 현대 심층신경망은 높은 정확도에도 예측 confidence가 실제 정확도보다 높은 overconfidence를 보인다.12) 이러한 calibration error는 흉부 X선과 안저 영상을 포함한 의료영상 분류에서도 보고되었다.17,18) 본 연구도 별도의 calibration을 시행하지 않았으므로 HCC 클래스의 softmax 출력은 실제 HCC 확률이 아닌 상대적 결정 강도로 해석하였다. 이런 이유로 임베딩 공간의 프로토타입 유사도에 기반한 cosine similarity score를 함께 제시하였으며, 이 지표는 테스트 세트에서 confidence score와 같은 수준의 변별력을 보였고 SupCon 적용 시 실제 HCC 영상에서 점수 분포 변화가 유의하였다.
+
+임상 판독 환경에서 초음파 의사는 국소 병변을 대할 때 이진 확률뿐 아니라 '병변이 전형적인 간세포암의 소견을 얼마나 닮았는가'를 연속적으로 고찰한다. 본 연구의 두 지표는 이 두 가지를 분리해 보여준다. 확률은 결정 강도를, 코사인 유사도 점수는 전형성의 정도를, Δscore는 두 질환 전형 사이에서 병변이 놓인 위치를 나타내므로, 같은 오답이라도 어느 방향으로 치우쳤는지 판독자가 확인할 수 있다. 이 지표가 쓰일 수 있는 상황은 네 가지로 생각할 수 있다. 첫째, 이중 판독에서 확률과 유사도 점수가 불일치하는 증례를 우선 검토하는 용도이다. 둘째, 병변이 전형적 소견에서 얼마나 떨어져 있는지를 환자에게 설명하는 자료이다. 셋째, 같은 병변을 시간을 두고 추적하며 점수의 이동을 관찰하는 용도인데, 본 데이터는 종단 관찰이 없어 제안 수준에 머문다. 넷째, 증례 회람과 교육에서 판단 근거를 공유하는 데 쓸 수 있다. 다만 점수의 절대값은 의미가 없고 같은 모델 안에서의 상대 비교로만 읽어야 하며, 임계값과 등가 구간은 유도 코호트에 종속된다. SupCon 적용 시 두 클래스 간 간격이 오히려 좁아졌으므로 Δscore의 해석에도 주의가 필요하다. 이 값들은 보정되지 않았고 본 연구의 범위는 단일기관의 정제된 2진 감별 과제에 한정되므로, 외부 검증 전에는 임상 결정을 대체할 수 없다.
+
+본 연구는 한정된 컴퓨팅 자원으로 경량 모델만을 학습하였고 단일기관의 수천 장 규모 데이터셋을 사용하였다. 이러한 조건에서는 모델이 질환의 일반적 영상 특징보다 학습 영상 자체를 기억하거나 단축 경로를 찾을 수 있으며, Vision Transformer 계열은 합성곱 신경망보다 공간적 귀납적 편향이 약해 이런 경향이 더 나타날 수 있다. AUROC가 1.000에 도달한 상황에서는 이런 차이를 분류 성능만으로 구별하기 어렵다. CE 단독 모델은 미학습 HCC 영상에서 cosine similarity score 분산이 컸던 반면 CE+SupCon 모델에서는 점수가 상향 이동하고 분산이 감소하였는데(Figure 4), 이는 SupCon이 임베딩 공간에서 같은 질환의 영상을 더 가깝게 모으는 추가 정규화로 작용했을 가능성을 시사한다. 다만 코사인 유사도 점수의 상향 이동과 분산 감소는 SupCon 목적함수(클래스 내 응집)가 충족된 결과이므로 임상적 타당성의 독립적 증거로 해석할 수 없고, 같은 분석에서 두 클래스 간 간격은 오히려 축소되는 경향이 관찰되었다. 따라서 SupCon의 효과는 분류 성능의 향상이 아니라 표상 기하의 변화로 한정하여 보고한다.
+
+그러나 본 연구의 결과는 다음과 같은 제한점의 맥락에서 신중하게 해석되어야 한다. 첫째, 본 연구의 과제는 무증상 고위험군에서 미세 병변을 조기에 찾는 '감시 또는 선별 검사'가 아니라 이미 초음파에서 발견된 결절에 대한 'HCC와 혈관종의 2진 감별'에 국한된다. 또한 원 데이터셋에서 HCC는 수술이나 생검으로 확진된 반면 간혈관종은 영상 판독 소견으로 진단되었고 HCC 병변의 직경 중앙값도 2.90 cm로 컸다. 이러한 참조표준의 비대칭성과 전형적 증례 중심의 선정은 스펙트럼 편향과 선택 편향을 수반하며, 관찰된 높은 정확도는 이상적인 데이터 정제 환경이 반영된 결과일 가능성이 높다.
+
+둘째, 만성 B형·C형 간염, 간경변증, 거친 지방간 등 다양한 배경 간 실질 에코에 따른 층화 분석을 수행하지 못하였다. 공개 데이터에 배경 간 질환 정보가 없어, 모델이 병변 자체의 내부 에코뿐 아니라 간경변 배경 실질이나 정상 간 실질의 배경 음영을 단축 경로로 학습했을 가능성을 배제하기 어렵다.
+
+셋째, 단일 기관의 후향적 데이터셋에 대한 내부 검증에 국한되어 타 기관, 타 초음파 장비, 다양한 검사자 환경을 포괄하는 외부 검증이 수행되지 못하였다. 초음파는 장비 이득, 동적 범위, 탐촉자 주파수, 검사자 술기에 따른 변동성이 크므로 일반화 가능성은 다기관 전향적 검증 전까지 단정할 수 없다.
+
+넷째, 744명이 제공한 2,656장의 영상은 환자와 1:1로 대응하지 않으며(환자당 평균 3.57장), 공개 데이터에 영상별 환자 식별자가 없어 환자 단위 예측값 집계나 cluster bootstrap 분석을 수행하지 못하였다. 제시된 신뢰구간은 영상 단위 신뢰구간이며, 동일 환자의 복수 영상 간 환자 내 상관성 때문에 실제보다 좁게 추정되었을 가능성이 있다.
+
+다섯째, 세 출력이 모두 AUROC 1.000에 도달하는 천장 효과로 변별력의 차이를 추정할 수 없었고 최적 임계값도 유일하게 정해지지 않는다. 따라서 임계값을 한 점이 아니라 등가 구간과 함께 보고하였으며(Table 3B), 관행값 0.50과 코사인 유사도 점수 운영점의 판정 차이도 유의하지 않았다. 두 운영점이 서로 다른 증례에서 실패했으므로 유사도 점수의 독자적 기여는 이 데이터만으로 판정할 수 없고, 외부 코호트에서 임계값을 재산출한 뒤 평가해야 한다.
+
+결론적으로 본 연구는 B-mode 초음파에서 임베딩 기하 구조를 활용한 유사도 표지자의 도출 가능성을 제시한 탐색적 기술 연구로서 의의가 있다. 배경 간 실질 정보가 포함된 다기관 코호트와 독립 외부 검증을 통해 비전형적 병변 및 소간암에서의 진단적 보완 가치를 검증하는 후속 연구가 필요하다.
+
+## 5. 결론
+
+본 연구는 정제된 B-mode 복부 초음파 영상에서 HCC와 혈관종을 감별하는 EfficientNetV2B0 기반 hybrid vision transformer를 구축하고, confidence score와 함께 임베딩 공간의 기하학적 유사도를 정량화하는 HCC cosine similarity score 및 Δscore를 도출하였다. 내부 테스트 세트에서 높은 분류 정확도를 달성하였으나, 참조표준의 비대칭성과 선택 편향, 배경 간 정보 부재, 외부 검증 결여로 일반화에는 한계가 있다. 제안 방법의 임상적 유용성은 다양한 배경 간 환경과 다기관 외부 검증을 통해 평가되어야 한다.
+
+## 국문요약
+
+### 연구배경
+
+B-mode 초음파는 간 국소 병변의 1차 영상 검사이지만, 간세포암과 혈관종을 B-mode 소견만으로 감별하기는 어렵다. 기존 분류 모델은 대부분 소프트맥스 확률 하나만 출력해 병변이 전형적 간세포암과 얼마나 닮았는지에 대한 정보를 주지 않는다.
+
+### 방법
+
+공개 데이터셋 SMC-LUD의 Clean 서브셋을 원저의 환자 단위 분할 그대로 사용하였다. EfficientNetV2B0 기반 hybrid vision transformer를 교차 엔트로피와 지도 대조학습으로 학습하고, confidence score, 훈련 세트 HCC 프로토타입과의 cosine 유사도(HCC cosine similarity score), 두 프로토타입 간 마진(Δscore)을 산출하였다. 주 분석 운영점은 0.50으로 미리 정하고, 코사인 유사도 점수 임계값은 검증 세트에서 Youden's J로 결정해 테스트 세트에 고정하였다.
+
+### 결과
+
+세 출력의 테스트 세트 AUROC는 모두 1.000으로 천장 효과 때문에 변별력 차이를 추정할 수 없었다. 확률 0.50과 코사인 유사도 점수 운영점은 서로 다른 증례에서 실패했고(불일치 6건 대 1건, McNemar exact P = 0.125), 우월성과 비열등성 어느 쪽도 주장하지 않는다. SupCon 적용 후 미학습 HCC 영상에서 cosine similarity score는 상향 이동하고 분산이 감소하였다.
+
+### 결론
+
+이중 출력 지표는 기술적으로 산출 가능하지만, 이 데이터셋만으로는 confidence score에 대한 증분 이득을 입증할 수 없다. 대상 집단에서 임계값을 다시 유도한 외부 검증이 필요하다.
+
+중심단어: 간세포암; 간혈관종; 초음파; 딥러닝; 컴퓨터 보조 진단; 신경망
+
+## 참고문헌 (References)
+
+1. Sung H, Ferlay J, Siegel RL, Laversanne M, Soerjomataram I, Jemal A, et al. Global cancer statistics 2020: GLOBOCAN estimates of incidence and mortality worldwide for 36 cancers in 185 countries. CA Cancer J Clin 2021; 71: 209-49.
+
+2. European Association for the Study of the Liver. EASL clinical practice guidelines: management of hepatocellular carcinoma. J Hepatol 2018; 69: 182-236.
+
+3. Korean Liver Cancer Association, National Cancer Center. 2022 KLCA-NCC Korea practice guideline for the management of hepatocellular carcinoma. Clin Mol Hepatol 2022; 28: 583-705.
+
+4. Minami Y, Nishida N, Kudo M. Imaging diagnosis of various hepatocellular carcinoma subtypes and its hypervascular mimics: differential diagnosis based on conventional interpretation and artificial intelligence. Liver Cancer 2023; 12: 103-15.
+
+5. Rapaccini GL, Pompili M, Caturelli E, Covino M, Lippi ME, Beccaria S, et al. Hepatocellular carcinomas <2 cm in diameter complicating cirrhosis: ultrasound and clinical features in 153 consecutive patients. Liver Int 2004; 24: 124-30.
+
+6. Moody AR, Wilson SR. Atypical hepatic hemangioma: a suggestive sonographic morphology. Radiology 1993; 188: 413-7.
+
+7. Choi JC, Baek YH, Jeong JS, Lee SW, Han SY, Cho JH. Discrete hypoechoic ring in hepatic cavernous hemangioma resembling a malignant tumor: correlation with histologic features. Gut Liver 2009; 3: 226-30.
+
+8. Lin S, Zhang L, Li M, Cheng Q, Zhang L, Zheng S. Atypical hemangioma mimicking mixed hepatocellular cholangiocarcinoma. Medicine (Baltimore) 2017; 96: e9192.
+
+9. Sirli R, Sporea I, Sandulescu DL, Popescu A, Danila M, Saftoiu A, et al. Contrast enhanced ultrasound for the diagnosis of liver hemangiomas: results of a Romanian multicentre study. Med Ultrason 2015; 17: 444-50.
+
+10. Yang Q, Wei J, Hao X, Kong D, Yu X, Jiang T, et al. Improving B-mode ultrasound diagnostic performance for focal liver lesions using deep learning: a multicentre study. EBioMedicine 2020; 56: 102777.
+
+11. Du Z, Fan F, Ma J, Liu J, Yan X, Chen X, et al. Development and validation of an ultrasound-based interpretable machine learning model for the classification of <=3 cm hepatocellular carcinoma: a multicentre retrospective diagnostic study. eClinicalMedicine 2025; 81: 103098.
+
+12. Guo C, Pleiss G, Sun Y, Weinberger KQ. On calibration of modern neural networks. In: Proceedings of the 34th International Conference on Machine Learning; 2017. p. 1321-30.
+
+13. Khosla P, Teterwak P, Wang C, Sarna A, Tian Y, Isola P, et al. Supervised contrastive learning. In: Advances in Neural Information Processing Systems 33; 2020.
+
+14. Tak J, Ko RE, Kwon RD, Abbas Z, Cho YH, Kim J, et al. SMC-LUD: large-scale B-mode liver ultrasound dataset for hepatocellular carcinoma and hemangioma classification. Sci Data 2026; 13: 649.
+
+15. Tan M, Le QV. EfficientNetV2: smaller models and faster training. In: Proceedings of the 38th International Conference on Machine Learning; 2021.
+
+16. DeLong ER, DeLong DM, Clarke-Pearson DL. Comparing the areas under two or more correlated receiver operating characteristic curves: a nonparametric approach. Biometrics 1988; 44: 837-45.
+
+17. Sambyal AS, Niyaz U, Krishnan NC, Bathula DR. Understanding calibration of deep neural networks for medical image classification. Comput Methods Programs Biomed 2023; 242: 107816.
+
+18. Rajaraman S, Ganesan P, Antani S. Deep learning model calibration for improving performance in class-imbalanced medical image classification tasks. PLoS One 2022; 17: e0262838.
+
+## 그림 설명문 (Figure Legends)
+
+Figure 1. t-SNE Embedding Space Visualization (Primary Model: EfficientNetV2B0 + CE+SupCon).
+
+Embedding distribution of training and validation sets showing clear intra-class compactness and inter-class separation between HCC (red) and hemangioma (teal) clusters. Left panel illustrates single mean prototype centres; right panel depicts k-means cluster prototypes (k=4).
+
+Figure 2. Confusion Matrices of Primary Model on Held-out Test Set (n=268).
+
+Test set only. (A) Confidence score at the prespecified 0.50 operating point: 134 TP, 0 FP, 6 FN, 128 TN. Panels A-C are presented together in a single figure. (B) HCC cosine similarity score and (C) Δscore at their validation Youden operating points (exploratory): 140 TP, 1 FP, 0 FN, 127 TN. The single false positive is the sample that is classified correctly at 0.50, so the failure modes differ by operating point (Table 3A, 3B).
+
+Figure 3. Triple Receiver Operating Characteristic (ROC) Curves on Test Set.
+
+Test set only. ROC curves for ROC-A (confidence score), ROC-B (HCC cosine similarity score) and ROC-C (Δscore). All three reach AUROC 1.000 and the curves overlap, so DeLong testing carries no information; no superiority or non-inferiority is claimed. The validation panel is not shown (test-only reporting).
+
+Figure 4. HCC Cosine Score Distributions with and without Supervised Contrastive Learning (SupCon) in True HCC Cases (n=417; Validation 277 + Test 140).
+
+The same held-out HCC images were scored by the CE-only and CE+SupCon models (HCC cosine similarity score to the training-set mean HCC prototype). (A) Density distribution, EfficientNetV2B0. (B) Paired individual shift, EfficientNetV2B0: mean 0.783 ± 0.256 (median 0.882) to 0.908 ± 0.160 (median 0.970); mean paired difference +0.125 (95% CI 0.110–0.140); paired t = 16.94; Wilcoxon signed-rank P < 0.001; score increased in 94.7% of images; variance 0.065 to 0.026 (−60.7%; Pitman-Morgan t = 16.84, P < 0.001). (C) Density distribution, ResNet50V2. (D) Paired individual shift, ResNet50V2: mean 0.774 ± 0.265 to 0.878 ± 0.230; mean paired difference +0.104; paired t = 10.98; Wilcoxon P < 0.001; variance 0.070 to 0.053 (−24.3%; Pitman-Morgan t = 4.06, P < 0.001). CE, cross-entropy.
+
+Figure 5. Hemangioma Cosine Score Distributions with and without Supervised Contrastive Learning (SupCon) in True Hemangioma Cases (n=381; Validation 253 + Test 128).
+
+The same held-out hemangioma images were scored by the CE-only and CE+SupCon models (hemangioma cosine similarity score to the training-set mean hemangioma prototype). (A) Density distribution, EfficientNetV2B0. (B) Paired individual shift, EfficientNetV2B0: mean 0.937 ± 0.050 (median 0.955) to 0.985 ± 0.006 (median 0.985); mean paired difference +0.048 (95% CI 0.043–0.052); paired t = 19.71; Wilcoxon signed-rank P < 0.001; variance 0.00253 to 0.00003 (Pitman-Morgan t = 106.23, P < 0.001). (C) Density distribution, ResNet50V2. (D) Paired individual shift, ResNet50V2: mean 0.966 ± 0.019 to 0.990 ± 0.004; mean paired difference +0.024 (95% CI 0.022–0.026); paired t = 26.54; Wilcoxon P < 0.001; variance 0.00036 to 0.00002 (Pitman-Morgan t = 49.18, P < 0.001). The large relative variance reduction partly reflects the already small baseline variance under CE-only training.
