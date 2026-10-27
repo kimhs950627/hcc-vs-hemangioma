@@ -44,7 +44,7 @@
 `KJFP_STYLE_CHECKLIST.md`(SSOT) 기준으로 서식·분량·구조를 재구성했다.
 
 - `manuscript_v5_kjfp.docx` — A4·3 cm·두 줄·바탕체 10 pt·쪽번호, 위첨자 인용, 영문초록 243 words,
-  국문요약 791자, 본문 9,777자, 참고문헌 18개(6인 규칙·`저널 연도; 권: 면` 형식)
+  국문요약 791자, 본문 9,993자, 참고문헌 18개(6인 규칙·`저널 연도; 권: 면` 형식)
 - `Title_Page_v1.docx` — 저자 김현수(0009-0009-8896-5344)·이진희*(0000-0001-7762-4952), Presbyterian Medical Center(예수병원) 전주 54987, 교신저자 이진희 jin56878@jesushospital.com, 원고 연락 김현수 kimhs950627@gmail.com, 연구비·이해관계 없음 〔전화/팩스·상세주소 확인〕
 - `tables_v5.docx` — Table 3·3B 통합, 전 표 3선형, 주석 위첨자 a·b·c
 - `figures_kjfp/` — JPEG 600 dpi (Fig 2·3은 원자료에서 실제 600 dpi 재렌더)
