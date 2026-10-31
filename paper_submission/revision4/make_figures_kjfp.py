@@ -24,7 +24,7 @@ DPI = 600
 
 PANELS = [
     ("(A) Confidence score", "confidence_score", 0.50, "$\\geq$ 0.50 (prespecified)"),
-    ("(B) HCC cosine score", "hcc_cosine_mean", -0.004843, "Youden point (exploratory)"),
+    ("(B) HCC cosine similarity score", "hcc_cosine_mean", -0.004843, "Youden point (exploratory)"),
     ("(C) $\\Delta$score", "delta_mean", -0.958471, "Youden point (exploratory)"),
 ]
 
@@ -70,7 +70,7 @@ def roc(yv, s):
 fig, ax = plt.subplots(figsize=(4.4, 4.2), dpi=DPI)
 for col, label, style in [
         ("confidence_score", "ROC-A confidence score", "-"),
-        ("hcc_cosine_mean", "ROC-B HCC cosine score", "--"),
+        ("hcc_cosine_mean", "ROC-B HCC cosine similarity score", "--"),
         ("delta_mean", "ROC-C $\\Delta$score", "-.")]:
     sc = np.array([float(r[col]) for r in rows])
     fpr, tpr = roc(y, sc)
