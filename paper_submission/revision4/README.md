@@ -2,11 +2,12 @@
 
 편집위원회 2차 결정: Minor Revision, 마감 2026-12-25(60일). 이번 라운드 수정 표시는 **파란색**.
 
-## 현재 상태 (2026-10-27 기준, 최종)
+## 현재 상태 (2026-10-31 기준, 최종)
 
 - 본문 **9,994자**(한도 10,000), 국문요약 791자, 영문초록 243단어, 참고문헌 18개, 표 5 + 그림 5 = 10개
-- 기계 검증 `verify_kjfp.py` **37항목 PASS**
-- 제출 폴더 `final_files/`: `manuscript_v5_kjfp.docx`, `tables_v5.docx`, `Title_Page_v1.docx`, `Supplementary_Methods_v1.docx`, `Response_to_Reviewers_v6.docx` (+ `figures_v4.docx`)
+- 기계 검증 `verify_kjfp.py` **39항목 PASS**
+- 제출 폴더 `final_files/`: `manuscript_v5_kjfp.docx`, `tables_v5.docx`, `Title_Page_v1.docx`, `Supplementary_Methods_v1.docx`, `Response_to_Reviewers_v6.docx`, `figures_v5.docx`(읽기용), `figures_v5.pptx`(투고용 Image File), `figures/`(JPEG 5장, 600 dpi)
+- 2026-10-31: Figure 4 캡션 분산 감소율 `−24.3%` → **`−25.0%`**(0.070430→0.052827, 그림 내 표기와 일치). 그림 파일은 `figures_v4.docx`(revision 3 잔재)를 폐기하고 `generate_figures_v5.py` 로 재생성 — revision 표기·작업 경로 문구 없음
 - 렌더 검증 완료(LibreOffice 25.8.7, 사용자 설치). 표는 A4·한 면에 하나·행 분할 없음
 - 자체 심사 기록: `self-revision-with-skill/REVIEW.md` (HIGH 4 · MED 13 · LOW 8, H1·H3·H4는 pass, H2는 십분위 제시로 재구성)
 - 아래 「3차 수정」절이 이번 라운드의 실제 변경 내역이다.
